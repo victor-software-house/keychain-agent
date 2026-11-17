@@ -10,18 +10,53 @@ let strict: [SwiftSetting] = [
 ]
 
 let package = Package(
-    name: "keychain-agent",
+    name: "signd",
     platforms: [.macOS(.v26)],
     products: [
-        .executable(name: "keychain-agent", targets: ["keychain-agent"]),
+        .executable(name: "signd", targets: ["signd"]),
+    ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-nio.git", exact: "2.105.0"),
+        .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
+        .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
     ],
     targets: [
-        // The SSH agent message format, with no Security or socket code, so tests check it byte by byte.
-        .target(name: "AgentProtocol", swiftSettings: strict),
-        .executableTarget(name: "keychain-agent", dependencies: ["AgentProtocol"], swiftSettings: strict),
+        // The SSH encoding of keys and signatures, with no platform code.
+        .target(name: "SSHWire", swiftSettings: strict),
+        // The SSH agent messages (RFC 9987), with no platform code.
+        .target(name: "AgentProtocol", dependencies: ["SSHWire"], swiftSettings: strict),
+        // Keys: the keychain store, the Secure Enclave, and signing in memory.
+        .target(
+            name: "KeyStore",
+            dependencies: ["SSHWire", "AgentProtocol", .product(name: "CryptoExtras", package: "swift-crypto")],
+            swiftSettings: strict
+        ),
+        // The agent's state and the socket server.
+        .target(
+            name: "AgentServer",
+            dependencies: [
+                "AgentProtocol", "KeyStore", "SSHWire",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOFoundationCompat", package: "swift-nio"),
+            ],
+            swiftSettings: strict
+        ),
+        .executableTarget(
+            name: "signd",
+            dependencies: [
+                "AgentServer", "AgentProtocol", "KeyStore", "SSHWire",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+            ],
+            swiftSettings: strict
+        ),
         .testTarget(
-            name: "AgentProtocolTests",
-            dependencies: ["AgentProtocol"],
+            name: "SigndTests",
+            dependencies: [
+                "SSHWire", "AgentProtocol", "KeyStore", "AgentServer",
+                .product(name: "CryptoExtras", package: "swift-crypto"),
+                .product(name: "NIOCore", package: "swift-nio"),
+            ],
             resources: [.copy("Fixtures")],
             swiftSettings: strict
         ),
