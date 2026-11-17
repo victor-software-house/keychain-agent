@@ -1,5 +1,9 @@
 # Changelog
 
+## signd 0.0.4
+
+- The package starts the agent after it installs, so an upgrade through the cask no longer leaves the agent stopped ([`5276a55`](https://github.com/victor-software-house/signd/commit/5276a559370c9485e5bd885b2e1c5c5a5f912848)).
+
 ## signd 0.0.3
 
 - `signd service enable` starts the agent again when its login item is enabled but launchd no longer runs it, as after a cask upgrade ([`c4afb96`](https://github.com/victor-software-house/signd/commit/c4afb96a43544f39f764d1005235f30db744672d)).
