@@ -63,6 +63,12 @@ wait_for_agent
 [ "$(agent_pid)" != "$old" ] || fail "the agent did not restart"
 sign_and_verify "after a restart"
 
+# A cask upgrade removes the job from launchd and leaves the login item enabled.
+launchctl bootout "gui/$(id -u)/com.victor-software-house.signd"
+"$signd" service enable > /dev/null
+wait_for_agent
+sign_and_verify "after service enable restored a removed job"
+
 cat > "$work/probe.swift" << 'SWIFT'
 import Foundation
 import Security
