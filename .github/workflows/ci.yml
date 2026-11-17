@@ -39,4 +39,7 @@ jobs:
           version: 2026.11.6
       - run: xcodebuild -version
       - run: mise run check
+        env:
+          # A test vault with one SSH Key item; the live test is skipped when this is empty, as on a fork.
+          OP_TEST_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TEST_SERVICE_ACCOUNT_TOKEN }}
       - run: mise run ci:e2e
