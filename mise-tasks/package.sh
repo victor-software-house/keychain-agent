@@ -31,7 +31,7 @@ codesign --verify --strict --deep --verbose=2 "$app"
 # pkgbuild marks bundles relocatable by default; signd must stay in /Applications.
 pkgbuild --analyze --root build/root build/components.plist
 plutil -replace 0.BundleIsRelocatable -bool NO build/components.plist
-pkgbuild --root build/root --component-plist build/components.plist --install-location / \
+pkgbuild --root build/root --component-plist build/components.plist --scripts Bundle/scripts --install-location / \
   --identifier com.victor-software-house.signd.pkg --version "$version" build/signd-component.pkg
 productbuild --package build/signd-component.pkg --sign 'Developer ID Installer' build/signd.pkg
 xcrun notarytool submit build/signd.pkg --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
