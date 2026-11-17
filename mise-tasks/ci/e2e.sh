@@ -1,72 +1,84 @@
 #!/bin/sh
-#MISE description="Serve a throwaway RSA key from a temporary keychain: ssh-add lists it, ssh-keygen signs with it, and the keychain refuses to export it; macOS only"
+#MISE description="Run the built agent on a temporary socket and drive it with ssh-add and ssh-keygen; macOS only"
 #MISE depends=["build"]
-# The temporary keychain joins the user's search list for the test, and the original
-# list comes back when the script exits, pass or fail.
+# The build is unsigned here, so the keychain store is unavailable and the agent serves
+# only keys that ssh-add adds; signd's Secure Enclave keys are checked by e2e:hardware.
 set -eu
 
-bin=$(swift build --show-bin-path)/keychain-agent
+bin=$(swift build --show-bin-path)/signd
 work=$(mktemp -d)
-keychain=$work/e2e.keychain-db
-password=e2e
-label=keychain-agent-e2e
-original=$(security list-keychains -d user | tr -d '"')
+socket=$work/s.sock
 pid=
 
-cleanup() {
+stop() {
   if [ -n "$pid" ]; then
     kill "$pid" 2> /dev/null || true
     wait "$pid" 2> /dev/null || true
+    pid=
   fi
-  # shellcheck disable=SC2086 # one path per word
-  security list-keychains -d user -s $original
-  security delete-keychain "$keychain" 2> /dev/null || true
+}
+
+cleanup() {
+  stop
   rm -rf "$work"
 }
 trap cleanup EXIT
 
 fail() {
   echo "✘ $1" >&2
-  cat "$work/agent.log" >&2
   exit 1
 }
 
-security create-keychain -p "$password" "$keychain"
-security unlock-keychain -p "$password" "$keychain"
-# No timeout: the keychain stays unlocked for the whole test.
-security set-keychain-settings "$keychain"
-# shellcheck disable=SC2086 # one path per word
-security list-keychains -d user -s "$keychain" $original
+start() {
+  "$bin" serve --socket "$socket" 2>> "$work/agent.log" &
+  pid=$!
+  tries=0
+  until SSH_AUTH_SOCK=$socket ssh-add -l > /dev/null 2>&1 || [ $? -eq 1 ]; do
+    tries=$((tries + 1))
+    if [ "$tries" -gt 50 ]; then fail "the agent did not answer in 5 seconds"; fi
+    sleep 0.1
+  done
+}
 
-openssl req -x509 -newkey rsa:3072 -nodes -keyout "$work/key.pem" -out "$work/cert.pem" -days 1 -subj "/CN=$label" 2> /dev/null
-ssh-keygen -y -f "$work/key.pem" | cut -d' ' -f1,2 > "$work/expected.pub"
-openssl pkcs12 -export -legacy -inkey "$work/key.pem" -in "$work/cert.pem" -name "$label" -passout pass:e2e -out "$work/key.p12"
-rm "$work/key.pem"
-security import "$work/key.p12" -k "$keychain" -P e2e -x -A > /dev/null
-cdhash=$(codesign -dvvv "$bin" 2>&1 | awk -F= '/^CDHash=/ { print $2 }')
-security set-key-partition-list -S "cdhash:$cdhash" -l "$label" -k "$password" "$keychain" > /dev/null
+export SSH_AUTH_SOCK="$socket"
+start
 
-"$bin" --socket "$work/agent.sock" "$label" 2> "$work/agent.log" &
-pid=$!
-tries=0
-while [ ! -S "$work/agent.sock" ]; do
-  tries=$((tries + 1))
-  if [ "$tries" -gt 50 ]; then fail "the agent made no socket in 5 seconds"; fi
-  sleep 0.1
-done
-export SSH_AUTH_SOCK="$work/agent.sock"
-
-listed=$(ssh-add -L | cut -d' ' -f1,2)
-[ "$listed" = "$(cat "$work/expected.pub")" ] || fail "ssh-add -L listed '$listed'"
+[ "$(stat -f %Lp "$socket")" = 600 ] || fail "the socket mode is $(stat -f %Lp "$socket"), not 600"
 
 printf 'e2e\n' > "$work/message"
-ssh-keygen -Y sign -f "$work/expected.pub" -n e2e "$work/message" 2> /dev/null || fail "ssh-keygen -Y sign failed"
-printf 'e2e %s\n' "$(cat "$work/expected.pub")" > "$work/allowed"
-ssh-keygen -Y verify -f "$work/allowed" -I e2e -n e2e -s "$work/message.sig" < "$work/message" > /dev/null ||
-  fail "the signature does not verify"
+for type in ed25519 ecdsa rsa; do
+  ssh-keygen -q -t "$type" -N '' -C "e2e-$type" -f "$work/$type"
+  ssh-add -q "$work/$type" 2> /dev/null || fail "ssh-add refused the $type key"
+  ssh-add -L | grep -q "e2e-$type" || fail "ssh-add -L does not list the $type key"
+  ssh-keygen -Y sign -f "$work/$type.pub" -n e2e "$work/message" 2> /dev/null || fail "ssh-keygen -Y sign failed with the $type key"
+  printf 'e2e %s\n' "$(cut -d' ' -f1,2 "$work/$type.pub")" > "$work/allowed"
+  ssh-keygen -Y verify -f "$work/allowed" -I e2e -n e2e -s "$work/message.sig" < "$work/message" > /dev/null 2>&1 ||
+    fail "the $type signature does not verify"
+  rm "$work/message.sig"
+done
 
-if security export -k "$keychain" -t privKeys -f pkcs12 -P e2e -o "$work/out.p12" 2> /dev/null; then
-  fail "the keychain exported the key"
-fi
+if ssh-add -x < /dev/null > /dev/null 2>&1; then fail "the agent accepted lock"; fi
+ssh-keygen -Y sign -f "$work/ed25519.pub" -n e2e "$work/message" 2> /dev/null || fail "signing stopped after a refused lock"
+rm "$work/message.sig"
 
-echo "✔ the agent listed and signed with the key, and the keychain refused to export it"
+ssh-add -D > /dev/null 2>&1 || fail "ssh-add -D failed"
+if ssh-add -L > /dev/null 2>&1; then fail "ssh-add -D left keys"; fi
+
+if ssh-add -c "$work/ed25519" > /dev/null 2>&1; then fail "the agent accepted a confirm constraint"; fi
+ssh-add -q -t 2 "$work/ed25519" 2> /dev/null || fail "ssh-add -t refused the key"
+ssh-add -L | grep -q e2e-ed25519 || fail "the key with a lifetime is not listed"
+sleep 3
+if ssh-add -L > /dev/null 2>&1; then fail "the key outlived its 2-second lifetime"; fi
+
+# A length prefix of 300 KiB closes that connection; the agent keeps serving others.
+perl -e 'print pack("N", 300 * 1024)' | nc -U "$socket" > /dev/null 2>&1 || true
+ssh-add -q "$work/ed25519" 2> /dev/null || fail "the agent stopped serving after an oversized message"
+
+stop
+start
+ssh-add -l > /dev/null 2>&1 || [ $? -eq 1 ] || fail "the agent did not restart over its stale socket"
+
+"$bin" status --socket "$socket" --json > "$work/status.json" || fail "signd status did not reach the agent"
+grep -q '"agentAnswers" : true' "$work/status.json" || fail "signd status reports no agent"
+
+echo "✔ the agent served ed25519, ecdsa and rsa keys added by ssh-add, refused lock and confirm, honoured lifetimes and ssh-add -D, and survived an oversized message and a restart"

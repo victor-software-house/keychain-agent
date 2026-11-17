@@ -1,9 +1,8 @@
-# keychain-agent's version is the VERSION file. verctl renders
-# Sources/keychain-agent/Version.swift from it through .ctl/templates/Version.swift.jinja,
-# which `keychain-agent --version` prints. publisher none releases it on GitHub only, and
-# the Release workflow attaches keychain-agent.pkg to that release.
+# signd's version is the VERSION file. verctl renders Sources/signd/Version.swift from it
+# through .ctl/templates/Version.swift.jinja, which `signd --version` prints. publisher none
+# releases it on GitHub only, and the Release workflow attaches signd.pkg to that release.
 packages:
-  - name: keychain-agent
+  - name: signd
     path: VERSION
     publisher: none
 
