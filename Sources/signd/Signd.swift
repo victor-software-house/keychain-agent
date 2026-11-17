@@ -204,7 +204,17 @@ struct Service: ParsableCommand {
     struct Enable: ParsableCommand {
         func run() throws {
             switch Service.agent.status {
+            case .enabled where Self.agentAnswers():
+                print("enabled")
             case .enabled:
+                // The cask's uninstall step, which an upgrade also runs, removes the job from
+                // launchd while the login item stays enabled; registering again restores it.
+                do {
+                    try Service.agent.unregister()
+                    try Service.agent.register()
+                } catch {
+                    throw Failure("cannot register the agent again: \(error)")
+                }
                 print("enabled")
             case .requiresApproval:
                 throw Failure("approve signd in System Settings, General, Login Items")
@@ -212,6 +222,15 @@ struct Service: ParsableCommand {
                 do { try Service.agent.register() } catch { throw Failure("cannot register the agent: \(error)") }
                 print(Service.agent.status == .enabled ? "enabled" : "registered; approve signd in System Settings, General, Login Items")
             }
+        }
+
+        /// Whether the agent answers within two seconds, which covers one that launchd is starting.
+        static func agentAnswers() -> Bool {
+            for _ in 0 ..< 20 {
+                if AgentClient(path: defaultSocketPath).status() != nil { return true }
+                usleep(100_000)
+            }
+            return false
         }
     }
 
