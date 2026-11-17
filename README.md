@@ -33,3 +33,7 @@ The app carries a Developer ID provisioning profile, which grants its keychain a
 
 `openspec/` holds the requirements and the planned changes; `tasks.yaml` holds the queue.  
 CI builds and tests on GitHub-hosted runners, which have no Secure Enclave, so `mise run e2e:hardware` checks Secure Enclave keys on a Mac before each release.
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE).
