@@ -34,12 +34,18 @@ public actor Agent {
     public typealias Opener = @Sendable (StoredKey) throws(SignError) -> any Signer
 
     private let opener: Opener
+    private let keysRead: @Sendable ([StoredKey]) -> Void
 
-    public init(store: any KeyStore, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openStored) {
+    /// `keysRead` runs after each successful read of the stored keys, as the SSH routing files follow them.
+    public init(
+        store: any KeyStore, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openStored,
+        keysRead: @escaping @Sendable ([StoredKey]) -> Void = { _ in }
+    ) {
         self.store = store
         self.version = version
         self.lifetime = lifetime
         self.opener = opener
+        self.keysRead = keysRead
     }
 
     /// Opens a key by its kind: a Secure Enclave key through its handle, a wrapped key by opening its seal into memory.
@@ -58,6 +64,7 @@ public actor Agent {
             failed = []
             let blobs = Set(stored.map(\.publicBlob))
             open = open.filter { blobs.contains($0.key) }
+            keysRead(stored)
         } catch {
             stored = []
             open = [:]

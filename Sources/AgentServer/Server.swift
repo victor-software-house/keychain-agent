@@ -7,11 +7,14 @@ import NIOFoundationCompat
 import NIOPosix
 import os
 import SSHWire
+import Sync
 
 /// signd's own extensions, for its command line.
 public enum PrivateExtension {
     public static let status = "signd-status@victor-software-house.com"
     public static let reload = "signd-reload@victor-software-house.com"
+    /// Runs a check of 1Password now and answers with its `CheckSummary` as JSON.
+    public static let sync = "signd-sync@victor-software-house.com"
 }
 
 /// Splits the byte stream into message bodies by their 4-byte length.
@@ -33,10 +36,12 @@ struct FrameDecoder: ByteToMessageDecoder {
 /// Serves the agent on a Unix socket.
 public struct Server: Sendable {
     let agent: Agent
+    let sync: SyncService?
     let pool: NIOThreadPool
 
-    public init(agent: Agent) {
+    public init(agent: Agent, sync: SyncService? = nil) {
         self.agent = agent
+        self.sync = sync
         pool = .singleton
     }
 
@@ -45,6 +50,7 @@ public struct Server: Sendable {
     /// Listens on `path` until the task is cancelled.
     public func run(socketPath path: String) async throws {
         await agent.reload()
+        await sync?.start()
         let directory = (path as NSString).deletingLastPathComponent
         try FileManager.default.createDirectory(atPath: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
         let server = try await ServerBootstrap(group: MultiThreadedEventLoopGroup.singleton)
@@ -98,8 +104,10 @@ public struct Server: Sendable {
     func respond(to request: Request) async -> Response {
         switch request {
         case .identities:
+            sync?.noteRequest()
             return .identities(await agent.identities())
         case let .sign(blob, data, flags):
+            sync?.noteRequest()
             guard let signer = await agent.signer(for: blob) else { return .failure }
             do {
                 // Signing runs on the thread pool, so a slow Secure Enclave call holds no event loop or actor.
@@ -130,7 +138,16 @@ public struct Server: Sendable {
             return .success
         case PrivateExtension.reload:
             await agent.reload()
+            await sync?.reconfigure()
             return .success
+        case PrivateExtension.sync:
+            guard let sync else { return .failure }
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = .sortedKeys
+            guard let json = try? encoder.encode(await sync.checkNow()) else { return .failure }
+            var contents = Data()
+            contents.appendString(json)
+            return .extensionResponse(name: name, contents: contents)
         case PrivateExtension.status:
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
