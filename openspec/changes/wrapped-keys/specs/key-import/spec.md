@@ -53,8 +53,8 @@ signd SHALL bind each wrapped key to its own Secure Enclave key-agreement key an
 
 #### Scenario: A tampered item
 
-- **WHEN** a test replaces one wrapped item's ciphertext with another's
-- **THEN** signd logs the failed open, omits that key from its identities, and serves the others
+- **WHEN** a test replaces one wrapped item's ciphertext with another's, and a sign request names that key
+- **THEN** signd logs the failed open, refuses the signature, omits that key from its identities from then on, and serves the others
 
 ### Requirement: Wrapped keys sign fast once open
 
