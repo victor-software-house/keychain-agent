@@ -401,6 +401,253 @@ func oneVault(_ items: Item...) -> FakeSource {
     }
 }
 
+@Suite struct ReviewFindings {
+    @Test func aFailedClientOpenIsRetriedByTheNextCheck() async throws {
+        let source = oneVault(sshItem("i1", title: "deploy"))
+        let failing = Flag(true)
+        let opens = Counter()
+        let rig = try SyncRig(source: source, factory: { _ throws(OnePasswordError) in
+            opens.increment()
+            if failing.value { throw OnePasswordError(kind: .other, message: "no network") }
+            return source
+        })
+        await rig.service.start()
+        let first = await rig.service.checkNow()
+        #expect(first.outcome == .failed)
+        #expect(first.message?.contains("no network") == true)
+        #expect(rig.state().nextAttempt != nil)
+        failing.set(false)
+        let second = await rig.service.checkNow()
+        #expect(second.outcome == .ok)
+        #expect(second.added == ["deploy"])
+        #expect(opens.value >= 2)
+    }
+
+    @Test func aClientThatCannotOpenIsNotATokenRefusal() async throws {
+        let source = oneVault()
+        let rig = try SyncRig(source: source, factory: { _ throws(OnePasswordError) in
+            throw OnePasswordError(kind: .authentication, message: "cannot start")
+        })
+        await rig.service.start()
+        let summary = await rig.service.checkNow()
+        #expect(summary.outcome == .failed)
+        #expect(rig.state().lastResult == .failed)
+        #expect(rig.state().nextAttempt != nil)
+    }
+
+    @Test func loginStartsAgainAfterARefusedToken() async throws {
+        let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
+        rig.source.fail(with: OnePasswordError(kind: .authentication, message: "refused"))
+        await rig.service.start()
+        #expect(await rig.service.checkNow().outcome == .tokenRefused)
+        #expect(rig.state().nextAttempt == nil)
+
+        // The same token, accepted now; signd login clears the state file and tells the agent.
+        rig.source.fail(with: nil)
+        SyncState.remove(at: rig.stateURL)
+        await rig.service.login()
+        rig.service.noteRequest()
+        #expect(await eventually { (try? rig.store.list().count) == 1 })
+        #expect(rig.state().lastResult == .ok)
+    }
+
+    @Test func aCheckInFlightWritesNothingAfterLogout() async throws {
+        let source = oneVault(sshItem("i1", title: "deploy"))
+        let rig = try SyncRig(source: source)
+        let service = rig.service
+        await service.start()
+        source.slow(.milliseconds(400))
+        let check = Task { await service.checkNow() }
+        #expect(await eventually { source.calls.item == 1 })
+        let result = await service.logout()
+        let summary = await check.value
+        #expect(result == LogoutResult(ok: true, removed: 0))
+        #expect(summary.message == "the token changed during the check")
+        #expect(try rig.store.list().isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: rig.stateURL.path))
+        #expect(rig.token.value == nil)
+        #expect(rig.token.deleteCount == 1)
+    }
+
+    @Test func aCheckInFlightWritesNothingAfterANewLogin() async throws {
+        let source = oneVault(sshItem("i1", title: "deploy"))
+        let rig = try SyncRig(source: source)
+        let service = rig.service
+        await service.start()
+        source.slow(.milliseconds(400))
+        let check = Task { await service.checkNow() }
+        #expect(await eventually { source.calls.item == 1 })
+        rig.token.set("another")
+        await service.login()
+        _ = await check.value
+        #expect(try rig.store.list().isEmpty)
+        source.slow(.zero)
+        #expect(await service.checkNow().added == ["deploy"])
+    }
+
+    @Test func logoutKeepsLocalKeys() async throws {
+        let store = MemoryStore()
+        var local = storedSoftwareKey("mine")
+        local.source = "local"
+        try store.add(local)
+        let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")), store: store)
+        await rig.service.start()
+        _ = await rig.service.checkNow()
+        #expect(try store.list().count == 2)
+        let result = await rig.service.logout()
+        #expect(result == LogoutResult(ok: true, removed: 1))
+        #expect(try store.list() == [local])
+        #expect(await rig.service.checkNow().outcome == .notSignedIn)
+    }
+
+    @Test func aRenameFreesANameForAnotherItemInTheSameCheck() async throws {
+        let rig = try SyncRig(source: oneVault(sshItem("i1", title: "alpha")))
+        await rig.service.start()
+        _ = await rig.service.checkNow()
+        rig.source.put(sshItem("i1", title: "beta", updated: at(10)))
+        rig.source.put(sshItem("i2", title: "alpha", updated: at(10)))
+        let summary = await rig.service.checkNow()
+        #expect(summary.skipped == 0)
+        let keys = try rig.store.list()
+        #expect(keys.map(\.name).sorted() == ["alpha", "beta"])
+        #expect(keys.first { $0.name == "alpha" }?.itemID == "i2")
+    }
+
+    @Test func aNameTakenByALocalKeyIsReadAgainUntilItFrees() async throws {
+        let store = MemoryStore()
+        var local = storedSoftwareKey("deploy")
+        local.source = "local"
+        try store.add(local)
+        let rig = try SyncRig(source: oneVault(sshItem("i1", title: "Deploy")), store: store)
+        await rig.service.start()
+        #expect(await rig.service.checkNow().skipped == 1)
+        #expect(rig.state().vaultVersions["v1"] == nil)
+
+        rig.source.resetCalls()
+        let again = await rig.service.checkNow()
+        #expect(again.requests == 3)
+        #expect(again.skipped == 1)
+
+        try store.delete(name: "deploy")
+        #expect(await rig.service.checkNow().added == ["deploy"])
+        #expect(rig.state().vaultVersions["v1"] != nil)
+        rig.source.resetCalls()
+        #expect(await rig.service.checkNow().requests == 1)
+    }
+
+    @Test func aRestartDoesNotCutARateLimitShort() async throws {
+        let rig = try SyncRig(source: oneVault(), random: 1)
+        rig.source.fail(with: OnePasswordError(kind: .rateLimited, message: "429"))
+        await rig.service.start()
+        #expect(await rig.service.checkNow().outcome == .rateLimited)
+        let before = rig.clock.requestedSleeps.count
+        await rig.service.start()
+        #expect(await eventually { rig.clock.requestedSleeps.count > before && rig.clock.requestedSleeps.last == 4200 })
+        #expect(rig.state().nextAttempt == at(4200))
+    }
+
+    @Test func signdSyncWithinAMinuteGetsTheLastResult() async throws {
+        let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
+        await rig.service.start()
+        let first = await rig.service.syncRequested()
+        let second = await rig.service.syncRequested()
+        #expect(first == second)
+        #expect(rig.source.calls.vaults == 1)
+        rig.clock.advance(61)
+        _ = await rig.service.syncRequested()
+        #expect(rig.source.calls.vaults == 2)
+    }
+
+    @Test func aForwardedConnectionMayUseNoPrivateExtension() async throws {
+        let store = MemoryStore()
+        let agent = await makeAgent(store)
+        let server = Server(agent: agent)
+        let connection = Connection()
+        let status = Request.extension(name: PrivateExtension.status, contents: Data())
+        guard case .extensionResponse = await server.respond(to: status, on: connection) else {
+            Issue.record("status was refused on a connection that is not forwarded")
+            return
+        }
+        var bind = Data()
+        bind.appendString(Data([1]))
+        bind.appendString(Data([2]))
+        bind.appendString(Data([3]))
+        bind.append(1)
+        #expect(await server.respond(to: .extension(name: Extension.sessionBind, contents: bind), on: connection) == .success)
+        #expect(await server.respond(to: status, on: connection) == .failure)
+        #expect(await server.respond(to: .extension(name: PrivateExtension.sync, contents: Data()), on: connection) == .failure)
+        #expect(await server.respond(to: .extension(name: PrivateExtension.logout, contents: Data()), on: connection) == .failure)
+        // A bind that says it is not forwarded leaves a connection as it was.
+        let local = Connection()
+        bind.removeLast()
+        bind.append(0)
+        _ = await server.respond(to: .extension(name: Extension.sessionBind, contents: bind), on: local)
+        guard case .extensionResponse = await server.respond(to: status, on: local) else {
+            Issue.record("status was refused on a connection that is not forwarded")
+            return
+        }
+    }
+
+    @Test func anItemTheClientCannotDecodeIsSkippedAndTheRestAreChecked() async throws {
+        let source = oneVault(sshItem("bad", title: "broken"), sshItem("good", title: "fine"))
+        source.failItem("bad", with: OnePasswordError(kind: .other, message: "the reply could not be decoded"))
+        let rig = try SyncRig(source: source)
+        await rig.service.start()
+        let summary = await rig.service.checkNow()
+        #expect(summary.outcome == .ok)
+        #expect(summary.added == ["fine"])
+        #expect(summary.skipped == 1)
+        // The broken item is not read again until it changes.
+        source.put(sshItem("good", title: "fine", updated: at(10)))
+        source.resetCalls()
+        _ = await rig.service.checkNow()
+        #expect(source.calls.item == 1)
+    }
+
+    @Test func titlesAndReasonsLoseControlAndFormatCharacters() async throws {
+        let rig = try SyncRig(source: oneVault(
+            sshItem("i1", title: "evil\u{202E}key\u{1B}[2J"),
+            sshItem("i2", title: "bad\u{202E}host", hosts: "a\u{1B}b")
+        ))
+        await rig.service.start()
+        _ = await rig.service.checkNow()
+        let key = try #require(try rig.store.list().first)
+        #expect(key.comment == "evilkey[2J")
+        let skipped = try #require(SyncStatus(signedIn: true, state: rig.state()).skipped.first)
+        #expect(skipped.item == "badhost")
+        #expect(skipped.reason.unicodeScalars.allSatisfy { $0.properties.generalCategory != .control && $0.properties.generalCategory != .format })
+        #expect(skipped.reason.contains("ab"))
+    }
+
+    @Test func badIntervalsAndLifetimesAreRefused() throws {
+        for text in ["infs", "nans", "1e25s", "1e308d", "1s", "59s", "25h", "-1m", "5"] {
+            #expect(Settings.validSeconds(.interval, text) == nil, "\(text)")
+        }
+        for text in ["infs", "1e25s", "0s", "31d", "-1s"] {
+            #expect(Settings.validSeconds(.keyLifetime, text) == nil, "\(text)")
+        }
+        #expect(Settings.validSeconds(.interval, "1m") == 60)
+        #expect(Settings.validSeconds(.interval, "24h") == 86400)
+        #expect(Settings.validSeconds(.keyLifetime, "1s") == 1)
+        #expect(Settings.validSeconds(.keyLifetime, "30d") == 2_592_000)
+        #expect(throws: SettingsError.self) { try Settings().set(.interval, "infs") }
+        #expect(throws: SettingsError.self) { try Settings().set(.keyLifetime, "1e25s") }
+    }
+
+    @Test func aBadNoteValueIsReportedAndTheDefaultApplies() async throws {
+        let rig = try SyncRig(source: oneVault(noteItem(interval: "1s", keyLifetime: "infs")))
+        await rig.service.start()
+        _ = await rig.service.checkNow()
+        #expect(rig.service.fleet.values.isEmpty)
+        let status = SyncStatus(signedIn: true, state: rig.state())
+        #expect(status.skipped.count == 2)
+        if Settings().value(.interval) == nil {
+            #expect(status.interval.source == .default)
+            #expect(status.interval.seconds == 300)
+        }
+    }
+}
+
 @Suite struct StoredFormat {
     /// The item format before synced keys, which the Macs already hold.
     struct LegacyKey: Codable {

@@ -21,6 +21,7 @@ final class FakeSource: OnePasswordSource {
         var items: [String: Item] = [:]
         var calls = Calls()
         var failure: OnePasswordError?
+        var itemFailures: [String: OnePasswordError] = [:]
         var delay: Duration = .zero
     }
 
@@ -31,6 +32,9 @@ final class FakeSource: OnePasswordSource {
     func resetCalls() { state.withLock { $0.calls = Calls() } }
 
     func fail(with error: OnePasswordError?) { state.withLock { $0.failure = error } }
+
+    /// Makes one item's fetch fail, as an item the client cannot decode does.
+    func failItem(_ id: String, with error: OnePasswordError?) { state.withLock { $0.itemFailures[id] = error } }
 
     func slow(_ delay: Duration) { state.withLock { $0.delay = delay } }
 
@@ -87,6 +91,7 @@ final class FakeSource: OnePasswordSource {
 
     func item(vaultID _: String, itemID: String) async throws(OnePasswordError) -> Item {
         let found: Item? = try await answer(count: { $0.item += 1 }, value: { $0.items[itemID] })
+        if let failure = state.withLock({ $0.itemFailures[itemID] }) { throw failure }
         guard let found else { throw OnePasswordError(kind: .other, message: "no such item") }
         return found
     }
@@ -152,6 +157,35 @@ final class TestClock: Sendable {
     }
 }
 
+/// The token the test's keychain holds.
+final class TokenBox: Sendable {
+    private let storage: Mutex<String?>
+    private let deletes = Mutex(0)
+
+    init(_ token: String?) { storage = Mutex(token) }
+
+    var value: String? { storage.withLock { $0 } }
+    var deleteCount: Int { deletes.withLock { $0 } }
+
+    func set(_ token: String?) { storage.withLock { $0 = token } }
+
+    func delete() {
+        deletes.withLock { $0 += 1 }
+        set(nil)
+    }
+}
+
+/// A switch the test flips while a closure reads it.
+final class Flag: Sendable {
+    private let storage: Mutex<Bool>
+
+    init(_ value: Bool) { storage = Mutex(value) }
+
+    var value: Bool { storage.withLock { $0 } }
+
+    func set(_ value: Bool) { storage.withLock { $0 = value } }
+}
+
 /// Counts how often the agent was told to read the keys.
 final class Counter: Sendable {
     private let count = Mutex(0)
@@ -167,6 +201,7 @@ struct SyncRig: ~Copyable {
     let directory: TestDirectory
     let service: SyncService
     let changes: Counter
+    let token: TokenBox
 
     var stateURL: URL { directory.url.appendingPathComponent("sync.json") }
 
@@ -180,10 +215,12 @@ struct SyncRig: ~Copyable {
         self.directory = directory
         let changes = Counter()
         self.changes = changes
+        let box = TokenBox(token)
+        self.token = box
         let make: SourceFactory = factory ?? { _ in source }
         service = SyncService(
             SyncService.Dependencies(
-                token: { token }, makeSource: make, store: store, wrap: softwareWrapper, hostName: { hostName },
+                token: { box.value }, deleteToken: { box.delete() }, makeSource: make, store: store, wrap: softwareWrapper, hostName: { hostName },
                 interval: { _ in 300 }, now: { clock.now }, sleep: { try await clock.sleep($0) },
                 schedule: SyncSchedule(random: { random }), stateURL: stateURL,
                 changed: { changes.increment() }

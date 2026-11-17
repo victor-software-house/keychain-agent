@@ -64,10 +64,24 @@ struct AgentClient {
     /// Asks the agent to check 1Password now and returns the check's result, or nil when no agent answers.
     func sync() -> CheckSummary? {
         // A check makes several requests to 1Password, so it may take longer than a status call.
-        guard let reply = callExtension(PrivateExtension.sync, timeout: 300), reply.first == MessageType.extensionResponse.rawValue else { return nil }
+        decoded(PrivateExtension.sync, timeout: 300)
+    }
+
+    /// Asks the agent to sign out, and returns what it did, or nil when no agent that knows the request answers.
+    func logout() -> LogoutResult? {
+        decoded(PrivateExtension.logout, timeout: 60)
+    }
+
+    /// Tells the agent that a new token is stored, so it starts syncing from it; does nothing when none runs.
+    func login() {
+        _ = callExtension(PrivateExtension.login)
+    }
+
+    private func decoded<Value: Decodable>(_ name: String, timeout: Int) -> Value? {
+        guard let reply = callExtension(name, timeout: timeout), reply.first == MessageType.extensionResponse.rawValue else { return nil }
         var reader = Reader(reply.dropFirst())
-        guard reader.text() == PrivateExtension.sync, let json = reader.string() else { return nil }
-        return try? JSONDecoder().decode(CheckSummary.self, from: json)
+        guard reader.text() == name, let json = reader.string() else { return nil }
+        return try? JSONDecoder().decode(Value.self, from: json)
     }
 
     /// Asks a running agent to read the stored keys again; does nothing when none runs.

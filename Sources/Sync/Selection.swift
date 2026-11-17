@@ -26,6 +26,15 @@ public enum Selection {
         String(title.lowercased().map { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-" || $0 == "_") ? $0 : "-" })
     }
 
+    /// `text` without control and format characters, which a title, a host or an error message could use to hide or reorder what a terminal shows.
+    public static func clean(_ text: String) -> String {
+        var result = String.UnicodeScalarView()
+        for scalar in text.unicodeScalars where scalar.properties.generalCategory != .control && scalar.properties.generalCategory != .format {
+            result.append(scalar)
+        }
+        return String(result)
+    }
+
     /// The separators of a `macs` list.
     static func list(_ text: String) -> [String] {
         text.split { $0 == "," || $0.isWhitespace }.map(String.init)

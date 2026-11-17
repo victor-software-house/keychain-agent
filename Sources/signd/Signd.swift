@@ -271,7 +271,7 @@ struct Login: AsyncParsableCommand {
         }
         do { try TokenStore().write(token) } catch { throw Failure(error) }
         SyncState.remove()
-        AgentClient(path: defaultSocketPath).reload()
+        AgentClient(path: defaultSocketPath).login()
         print("signed in; the token reads \(vaults.count) vault\(vaults.count == 1 ? "" : "s")")
     }
 }
@@ -280,17 +280,25 @@ struct Logout: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Delete the stored token and every key synced from 1Password; local keys stay.")
 
     func run() throws {
-        let store = KeychainStore()
-        let synced = try storedKeys().filter(\.isSynced)
-        do {
-            for key in synced { try store.delete(name: key.name) }
-            try TokenStore().delete()
-        } catch {
-            throw Failure(error)
+        let removed: Int
+        if let result = AgentClient(path: defaultSocketPath).logout() {
+            // The agent drops a check in flight first, so that it cannot write a key after this.
+            guard result.ok else { throw Failure("the agent could not remove everything; run signd logout again") }
+            removed = result.removed
+        } else {
+            // No agent answers, so nothing is checking: the state and the token go first, so no later check starts from them.
+            let store = KeychainStore()
+            let synced = try storedKeys().filter(\.isSynced)
+            SyncState.remove()
+            do {
+                try TokenStore().delete()
+                for key in synced { try store.delete(name: key.name) }
+            } catch {
+                throw Failure(error)
+            }
+            removed = synced.count
         }
-        SyncState.remove()
-        AgentClient(path: defaultSocketPath).reload()
-        print("signed out; removed \(synced.count) synced key\(synced.count == 1 ? "" : "s")")
+        print("signed out; removed \(removed) synced key\(removed == 1 ? "" : "s")")
     }
 }
 
@@ -420,7 +428,8 @@ struct Serve: AsyncParsableCommand {
         )
         let sync = SyncService(
             SyncService.Dependencies(
-                token: { () throws(StoreError) -> String? in try TokenStore().read() }, makeSource: LiveSource.factory(version: signdVersion), store: store, wrap: LiveSource.wrapper,
+                token: { () throws(StoreError) -> String? in try TokenStore().read() }, deleteToken: { () throws(StoreError) in try TokenStore().delete() },
+                makeSource: LiveSource.factory(version: signdVersion), store: store, wrap: LiveSource.wrapper,
                 interval: { settings.resolve(.interval, fleet: $0).seconds }, changed: { await agent.reload() }
             ),
             fleet: fleet

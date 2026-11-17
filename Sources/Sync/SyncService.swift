@@ -17,12 +17,33 @@ public final class FleetSettings: Sendable {
     func set(_ values: [String: String]) { storage.withLock { $0 = values } }
 }
 
+/// Counts token changes, so a check that started under an old token can tell, as it never holds the actor between its steps.
+final class Epoch: Sendable {
+    private let storage = Mutex(0)
+
+    var value: Int { storage.withLock { $0 } }
+
+    func bump() { storage.withLock { $0 += 1 } }
+}
+
+/// What `signd logout` did in the agent.
+public struct LogoutResult: Codable, Sendable, Equatable {
+    public var ok: Bool
+    public var removed: Int
+
+    public init(ok: Bool, removed: Int) {
+        self.ok = ok
+        self.removed = removed
+    }
+}
+
 /// Checks 1Password on a schedule and keeps the stored keys in step with it.
 ///
 /// Nothing a client request does awaits this actor: `noteRequest` only reads and sets a small gate, and starts any check on its own task.
 public actor SyncService {
     public struct Dependencies: Sendable {
         public var token: @Sendable () throws(StoreError) -> String?
+        public var deleteToken: @Sendable () throws(StoreError) -> Void
         public var makeSource: SourceFactory
         public var store: any KeyStore
         public var wrap: KeyWrapper
@@ -33,12 +54,13 @@ public actor SyncService {
         public var sleep: @Sendable (_ seconds: TimeInterval) async throws -> Void
         public var schedule: SyncSchedule
         public var stateURL: URL
-        /// Called after a check changed keys, so the agent reads them.
+        /// Called after a check or a logout changed keys, so the agent reads them.
         public var changed: @Sendable () async -> Void
 
         public init(
-            token: @escaping @Sendable () throws(StoreError) -> String?, makeSource: @escaping SourceFactory, store: any KeyStore,
-            wrap: @escaping KeyWrapper, hostName: @escaping @Sendable () -> String = { Selection.localHostName() },
+            token: @escaping @Sendable () throws(StoreError) -> String?, deleteToken: @escaping @Sendable () throws(StoreError) -> Void,
+            makeSource: @escaping SourceFactory, store: any KeyStore, wrap: @escaping KeyWrapper,
+            hostName: @escaping @Sendable () -> String = { Selection.localHostName() },
             interval: @escaping @Sendable (_ fleet: [String: String]) -> TimeInterval,
             now: @escaping @Sendable () -> Date = { Date() },
             sleep: @escaping @Sendable (_ seconds: TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0), tolerance: .seconds(1)) },
@@ -46,6 +68,7 @@ public actor SyncService {
             changed: @escaping @Sendable () async -> Void
         ) {
             self.token = token
+            self.deleteToken = deleteToken
             self.makeSource = makeSource
             self.store = store
             self.wrap = wrap
@@ -73,18 +96,26 @@ public actor SyncService {
         case none, check, readToken
     }
 
+    private enum Ended {
+        case done(SyncState)
+        case failed(CheckOutcome, String)
+        case stale
+    }
+
+    /// `signd sync` within this long of the last check gets that check's result, so a loop of calls cannot use up the rate limit.
+    private static let syncWindow: TimeInterval = 60
+
     public nonisolated let fleet: FleetSettings
     private nonisolated let gate = Mutex(Gate())
+    private nonisolated let epoch = Epoch()
     private let dependencies: Dependencies
     private var state = SyncState()
     private var token: String?
     private var source: (any OnePasswordSource)?
     private var clientTask: Task<Result<any OnePasswordSource, OnePasswordError>, Never>?
-    private var startupError: OnePasswordError?
     private var checkTask: Task<CheckSummary, Never>?
     private var timer: Task<Void, Never>?
-    /// Counts token changes, so a client opened for an old token is dropped.
-    private var generation = 0
+    private var lastSummary: (summary: CheckSummary, at: Date)?
 
     public init(_ dependencies: Dependencies, fleet: FleetSettings = FleetSettings()) {
         self.dependencies = dependencies
@@ -93,12 +124,55 @@ public actor SyncService {
 
     /// Reads the state and the token, opens the client in the background when a token is stored, and schedules the first check.
     public func start() {
-        configure(initial: true)
+        configure(force: true)
     }
 
-    /// Reads the token again, as after `signd login` or `signd logout`.
+    /// Reads the token again, as after a key command; a token that has not changed keeps the schedule.
     public func reconfigure() {
-        configure(initial: false)
+        configure(force: false)
+    }
+
+    /// Starts again from the state file and the stored token, as after `signd login`, even when the token is the same one,
+    /// so that a token the last login found refused gets a new try.
+    public func login() {
+        configure(force: true)
+    }
+
+    /// Signs out: clears the token, drops the check in flight, and deletes the synced keys and the state.
+    /// The check in flight cannot write after this returns, because it asks before each write whether its token is still current.
+    public func logout() async -> LogoutResult {
+        epoch.bump()
+        timer?.cancel()
+        timer = nil
+        checkTask?.cancel()
+        clientTask?.cancel()
+        clientTask = nil
+        source = nil
+        token = nil
+        lastSummary = nil
+        var result = LogoutResult(ok: true, removed: 0)
+        do {
+            try dependencies.deleteToken()
+        } catch {
+            log.error("cannot delete the token: \(error.description, privacy: .public)")
+            result.ok = false
+        }
+        SyncState.remove(at: dependencies.stateURL)
+        state = SyncState()
+        fleet.set([:])
+        do {
+            for key in try dependencies.store.list() where key.isSynced {
+                try dependencies.store.delete(name: key.name)
+                result.removed += 1
+            }
+        } catch {
+            log.error("cannot delete the synced keys: \(error.description, privacy: .public)")
+            result.ok = false
+        }
+        gate.withLock { $0.tokenUnreadable = false }
+        publish()
+        await dependencies.changed()
+        return result
     }
 
     /// A list or sign request happened: when the last success is older than the interval, starts a check in the background and returns at once.
@@ -135,9 +209,17 @@ public actor SyncService {
         await performCheck()
     }
 
+    /// What `signd sync` asks for: a check now, unless one ended less than a minute ago, and then that one's result.
+    public func syncRequested() async -> CheckSummary {
+        if checkTask == nil, let last = lastSummary, dependencies.now().timeIntervalSince(last.at) < Self.syncWindow {
+            return last.summary
+        }
+        return await performCheck()
+    }
+
     // MARK: Configuration
 
-    private func configure(initial: Bool) {
+    private func configure(force: Bool) {
         let current: String?
         do throws(StoreError) {
             current = try dependencies.token()
@@ -147,8 +229,8 @@ public actor SyncService {
             gate.withLock { $0.tokenUnreadable = true }
             return
         }
-        if !initial && current == token { return }
-        generation += 1
+        if !force && current == token { return }
+        epoch.bump()
         token = current
         timer?.cancel()
         timer = nil
@@ -156,7 +238,7 @@ public actor SyncService {
         clientTask?.cancel()
         clientTask = nil
         source = nil
-        startupError = nil
+        lastSummary = nil
         state = SyncState.load(from: dependencies.stateURL)
         fleet.set(state.fleet)
         guard let current else {
@@ -166,9 +248,14 @@ public actor SyncService {
         _ = startClient(current)
         Task { await self.warm() }
         if state.lastResult != .tokenRefused {
+            let now = dependencies.now()
             let interval = dependencies.interval(state.fleet)
-            let delay = dependencies.schedule.phase(interval: interval)
-            state.nextAttempt = dependencies.now().addingTimeInterval(delay)
+            var delay = dependencies.schedule.phase(interval: interval)
+            // A restart does not cut a backoff or a rate-limit wait short.
+            if let next = state.nextAttempt, state.lastResult == .rateLimited || state.lastResult == .failed, next > now {
+                delay = max(delay, next.timeIntervalSince(now))
+            }
+            state.nextAttempt = now.addingTimeInterval(delay)
             persist()
             startTimer(delay)
         }
@@ -209,22 +296,22 @@ public actor SyncService {
         return task
     }
 
-    /// Opens the client in the background, so the first check finds it ready.
+    /// Opens the client in the background, so the first check finds it ready. A failure is only logged: each check opens it again.
     private func warm() async {
         do throws(OnePasswordError) {
             _ = try await ensureSource()
         } catch {
-            startupError = error
+            log.error("cannot open the 1Password client: \(error.message, privacy: .public)")
         }
     }
 
     private func ensureSource() async throws(OnePasswordError) -> any OnePasswordSource {
         if let source { return source }
-        guard let token else { throw OnePasswordError(kind: .authentication, message: "no token is stored") }
-        let opened = generation
+        guard let token else { throw OnePasswordError(kind: .other, message: "no token is stored") }
+        let opened = epoch.value
         let task = clientTask ?? startClient(token)
         let result = await task.value
-        guard opened == generation else { throw OnePasswordError(kind: .other, message: "the token changed") }
+        guard opened == epoch.value else { throw OnePasswordError(kind: .other, message: "the token changed") }
         if clientTask == task { clientTask = nil }
         switch result {
         case let .success(client):
@@ -252,42 +339,66 @@ public actor SyncService {
             return CheckSummary(outcome: .notSignedIn, message: "no token is stored; run signd login")
         }
         gate.withLock { $0.running = true }
+        let started = epoch.value
+        let epoch = epoch
         var counters = Counters()
         var changes = Changes()
-        var outcome = CheckOutcome.ok
-        var message: String?
-        var next = state
-        do {
-            if let error = startupError {
-                startupError = nil
-                throw error
-            }
-            let client = try await ensureSource()
-            let check = SyncCheck(source: client, store: dependencies.store, wrap: dependencies.wrap, hostName: dependencies.hostName())
-            next = try await check.run(from: state, counters: &counters, changes: &changes)
-        } catch let error as OnePasswordError {
-            switch error.kind {
-            case .authentication:
-                outcome = .tokenRefused
-                message = "1Password refused the token: \(error.message)"
-            case .rateLimited:
-                outcome = .rateLimited
-                message = "1Password rate limited the check"
-            case .other:
-                outcome = .failed
-                message = error.message
-            }
-        } catch let error as StoreError {
-            outcome = .failed
-            message = error.description
+        var ended: Ended
+
+        var opening: OnePasswordError?
+        var client: (any OnePasswordSource)?
+        do throws(OnePasswordError) {
+            client = try await ensureSource()
         } catch {
-            outcome = .failed
-            message = String(describing: error)
+            opening = error
+        }
+        if let client {
+            let check = SyncCheck(
+                source: client, store: dependencies.store, wrap: dependencies.wrap, hostName: dependencies.hostName(),
+                isCurrent: { epoch.value == started }
+            )
+            do {
+                ended = .done(try await check.run(from: state, counters: &counters, changes: &changes))
+            } catch is Stale {
+                ended = .stale
+            } catch let error as OnePasswordError {
+                // Only a call that 1Password answers can show that it refuses the token.
+                switch error.kind {
+                case .authentication: ended = .failed(.tokenRefused, "1Password refused the token: \(error.message)")
+                case .rateLimited: ended = .failed(.rateLimited, "1Password rate limited the check")
+                case .other: ended = .failed(.failed, error.message)
+                }
+            } catch let error as StoreError {
+                ended = .failed(.failed, error.description)
+            } catch {
+                ended = .failed(.failed, String(describing: error))
+            }
+        } else {
+            let reason = opening?.message ?? "the client did not open"
+            ended = .failed(opening?.kind == .rateLimited ? .rateLimited : .failed, "cannot open the 1Password client: \(reason)")
+        }
+        if epoch.value != started { ended = .stale }
+
+        if case .stale = ended {
+            if !changes.isEmpty { await dependencies.changed() }
+            return CheckSummary(
+                outcome: .failed, message: "the token changed during the check", requests: counters.requests, fetched: counters.fetched,
+                added: changes.added, replaced: changes.replaced, removed: changes.removed
+            )
         }
 
         let now = dependencies.now()
         let schedule = dependencies.schedule
-        var updated = outcome == .ok ? next : state
+        var outcome = CheckOutcome.ok
+        var message: String?
+        var updated = state
+        switch ended {
+        case let .done(next): updated = next
+        case let .failed(kind, reason):
+            outcome = kind
+            message = Selection.clean(reason)
+        case .stale: break
+        }
         let interval = dependencies.interval(updated.fleet)
         updated.lastCheck = now
         updated.lastResult = outcome
@@ -317,10 +428,12 @@ public actor SyncService {
         publish()
         if !changes.isEmpty { await dependencies.changed() }
         scheduleNext()
-        return CheckSummary(
+        let summary = CheckSummary(
             outcome: outcome, message: message, requests: counters.requests, fetched: counters.fetched,
             added: changes.added, replaced: changes.replaced, removed: changes.removed, skipped: updated.skipped.filter(\.isReported).count
         )
+        lastSummary = (summary, now)
+        return summary
     }
 
     // MARK: The timer

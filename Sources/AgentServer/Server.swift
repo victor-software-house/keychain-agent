@@ -8,6 +8,7 @@ import NIOPosix
 import os
 import SSHWire
 import Sync
+import Synchronization
 
 /// signd's own extensions, for its command line.
 public enum PrivateExtension {
@@ -15,6 +16,22 @@ public enum PrivateExtension {
     public static let reload = "signd-reload@victor-software-house.com"
     /// Runs a check of 1Password now and answers with its `CheckSummary` as JSON.
     public static let sync = "signd-sync@victor-software-house.com"
+    /// Starts syncing again from the stored token, as after `signd login`.
+    public static let login = "signd-login@victor-software-house.com"
+    /// Signs out, and answers with a `LogoutResult` as JSON.
+    public static let logout = "signd-logout@victor-software-house.com"
+
+    /// Every extension of signd's command line; a connection that the SSH client forwarded may use none of them.
+    static let all: Set<String> = [status, reload, sync, login, logout]
+}
+
+/// What the agent knows about one connection.
+final class Connection: Sendable {
+    private let forwarded = Mutex(false)
+
+    var isForwarded: Bool { forwarded.withLock { $0 } }
+
+    func markForwarded() { forwarded.withLock { $0 = true } }
 }
 
 /// Splits the byte stream into message bodies by their 4-byte length.
@@ -88,8 +105,9 @@ public struct Server: Sendable {
     private func serve(_ connection: NIOAsyncChannel<ByteBuffer, ByteBuffer>) async {
         do {
             try await connection.executeThenClose { inbound, outbound in
+                let state = Connection()
                 for try await frame in inbound {
-                    let body = await respond(to: Request(body: Data(buffer: frame))).body
+                    let body = await respond(to: Request(body: Data(buffer: frame)), on: state).body
                     var reply = ByteBuffer()
                     reply.writeInteger(UInt32(body.count))
                     reply.writeBytes(body)
@@ -101,7 +119,7 @@ public struct Server: Sendable {
         }
     }
 
-    func respond(to request: Request) async -> Response {
+    func respond(to request: Request, on connection: Connection = Connection()) async -> Response {
         switch request {
         case .identities:
             sync?.noteRequest()
@@ -122,32 +140,36 @@ public struct Server: Sendable {
             return await agent.remove(blob: blob)
         case .removeAll:
             return await agent.removeAll()
-        case let .extension(name, _):
-            return await respond(toExtension: name)
+        case let .extension(name, contents):
+            return await respond(toExtension: name, contents: contents, on: connection)
         case .unsupported, .malformed:
             return .failure
         }
     }
 
-    private func respond(toExtension name: String) async -> Response {
+    private func respond(toExtension name: String, contents: Data, on connection: Connection) async -> Response {
+        if PrivateExtension.all.contains(name), connection.isForwarded { return .failure }
         switch name {
         case Extension.query:
             return .query
         case Extension.sessionBind:
             await agent.recordSessionBind()
+            if Self.isForwarding(contents) { connection.markForwarded() }
             return .success
         case PrivateExtension.reload:
             await agent.reload()
             await sync?.reconfigure()
             return .success
+        case PrivateExtension.login:
+            guard let sync else { return .failure }
+            await sync.login()
+            return .success
+        case PrivateExtension.logout:
+            guard let sync else { return .failure }
+            return Self.json(await sync.logout(), name: name)
         case PrivateExtension.sync:
             guard let sync else { return .failure }
-            let encoder = JSONEncoder()
-            encoder.outputFormatting = .sortedKeys
-            guard let json = try? encoder.encode(await sync.checkNow()) else { return .failure }
-            var contents = Data()
-            contents.appendString(json)
-            return .extensionResponse(name: name, contents: contents)
+            return Self.json(await sync.syncRequested(), name: name)
         case PrivateExtension.status:
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -158,6 +180,23 @@ public struct Server: Sendable {
         default:
             return .failure
         }
+    }
+
+    private static func json(_ value: some Encodable, name: String) -> Response {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = .sortedKeys
+        guard let json = try? encoder.encode(value) else { return .failure }
+        var contents = Data()
+        contents.appendString(json)
+        return .extensionResponse(name: name, contents: contents)
+    }
+
+    /// Whether a `session-bind@openssh.com` message says the connection is forwarded: its last field, after the host key,
+    /// the session identifier and the signature.
+    static func isForwarding(_ contents: Data) -> Bool {
+        var reader = Reader(contents)
+        guard reader.string() != nil, reader.string() != nil, reader.string() != nil, let flag = reader.byte() else { return false }
+        return flag != 0
     }
 
     /// Drops expired keys at an interval set by the key lifetime: half of it, from 1 to 60 seconds.

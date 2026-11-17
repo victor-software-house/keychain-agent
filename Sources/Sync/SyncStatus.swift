@@ -36,10 +36,12 @@ public struct SyncStatus: Codable, Sendable {
         lastCheck = state.lastCheck
         lastSuccess = state.lastSuccess
         lastResult = state.lastResult
-        lastMessage = state.lastMessage
+        lastMessage = state.lastMessage.map(Selection.clean)
         nextAttempt = signedIn ? state.nextAttempt : nil
         requests = state.requests
         fetched = state.fetched
-        skipped = state.skipped.filter(\.isReported).map { Skipped(item: $0.title, itemID: $0.itemID, vaultID: $0.vaultID, reason: $0.reason) }
+        skipped = state.skipped.filter(\.isReported).map {
+            Skipped(item: Selection.clean($0.title), itemID: $0.itemID, vaultID: $0.vaultID, reason: Selection.clean($0.reason))
+        }
     }
 }
