@@ -12,7 +12,7 @@ queue:
     blocked_by: []
     acceptance:
       - Every requirement in the signd-agent change specs passes in CI or on a physical Mac, with evidence under its tasks.
-      - signd 0.1.0 is released as a signed and notarized app through the cask.
+      - signd 0.0.2 is released as a signed and notarized app through the cask.
     plan: openspec/changes/signd-agent/tasks.md
 
   - id: SGD-002

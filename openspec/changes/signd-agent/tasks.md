@@ -33,7 +33,7 @@
 ## 5. Command line
 
 - [x] 5.1 Implement `key create|list|show|delete`, `status`, `config get|set|unset` and `serve`, each with `--json`; verify the `cli` scenarios in `mise run ci:e2e`.
-  2026-11-17 UTC: `key create` needs the Secure Enclave, so the `cli` scenarios ran on a Mac with the v0.1.0 cask. A duplicate name exits 1 naming the key, `--host` shows in `key list`, `--json` parses, and `status` exits 1 with the agent stopped.
+  2026-11-17 UTC: `key create` needs the Secure Enclave, so the `cli` scenarios ran on a Mac with the cask install of the 0.1.0 build ([`23d374c`][23d374c]). That release was later retracted for 0.0.2. A duplicate name exits 1 naming the key, `--host` shows in `key list`, `--json` parses, and `status` exits 1 with the agent stopped.
 - [x] 5.2 Implement `service enable|disable` with `SMAppService.agent` and the bundled LaunchAgent plist; verify on a headless Mac over SSH that enabling twice leaves one agent, and record the result in design.md if `SMAppService` refuses.
   2026-11-17 UTC: over SSH on a headless Mac, `service enable` twice left one agent, and launchd restarted it on `kickstart -k`; `SMAppService` did not refuse.
 
@@ -44,13 +44,13 @@
 - [x] 6.2 Assemble, sign and notarize `Signd.app` and `signd.pkg` in the package job, generating the entitlements from the profile; verify a publish-off release run passes `spctl` for both.
   2026-11-17 UTC: the [publish-off run][run-44146012807] signed, notarized and stapled `signd.pkg`; `pkgutil --check-signature` and `spctl --assess --type install` accepted the artifact as notarized Developer ID.
 - [x] 6.3 Switch the cask to the app and the linked command; verify the `packaging` scenarios after `brew install` on a physical Mac.
-  2026-11-17 UTC: [the cask][tap#10] installed [v0.1.0][v0.1.0] on a Mac and linked `/opt/homebrew/bin/signd`; `e2e:hardware` then passed against `/Applications/Signd.app`, and the link listed the same keys.
+  2026-11-17 UTC: [the cask][tap#10] installed the 0.1.0 build ([`23d374c`][23d374c]) on a Mac and linked `/opt/homebrew/bin/signd`; `e2e:hardware` then passed against `/Applications/Signd.app`, and the link listed the same keys.
 - [x] 6.4 Add `mise run e2e:hardware` for the physical-Mac checks of design decision 8; verify it passes and record the run as evidence here.
   2026-11-17 UTC: `mise run e2e:hardware` passed on a locked, headless Mac with a Developer ID signed `Signd.app`.
 
 ## 7. Integration
 
-- [ ] 7.1 Release signd as 0.1.0, a breaking change after keychain-agent 0.0.1, then upgrade it to the next patch on a physical Mac. Verify that a key created under 0.1.0 still signs after the upgrade with no prompt.
+- [ ] 7.1 Release signd 0.0.2, the first signd release after keychain-agent 0.0.1, and install it over an earlier signd build on a physical Mac. Verify that a key created under the earlier build still signs after the upgrade with no prompt.
 
 ## Workflow follow-up
 
@@ -59,5 +59,5 @@
 [signd#4]: https://github.com/victor-software-house/signd/pull/4
 [ci-44141158233]: https://github.com/victor-software-house/signd/actions/runs/44141158233
 [run-44146012807]: https://github.com/victor-software-house/signd/actions/runs/44146012807
-[v0.1.0]: https://github.com/victor-software-house/signd/releases/tag/v0.1.0
+[23d374c]: https://github.com/victor-software-house/signd/commit/23d374c1c67828f6dd3bb6cd93c32513686cb616
 [tap#10]: https://github.com/victor-software-house/homebrew-private/pull/10
