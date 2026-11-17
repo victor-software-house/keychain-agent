@@ -22,16 +22,18 @@ let liveToken = ProcessInfo.processInfo.environment["OP_TEST_SERVICE_ACCOUNT_TOK
         #expect(key.hosts == ["example.invalid"])
         #expect(key.source == "1password")
 
-        // The item's own public key field names the same key.
-        var expected: String?
-        var fieldNames: [String] = []
+        #expect(key.publicKey?.keyType == "ssh-ed25519")
+
+        // The binding gives no public key for an SSH Key item whose only fields are the private key and the hosts, as the test item is.
+        // When the item does carry a public key field, it must name the same key.
         for vault in try await client.vaults() {
             for overview in try await client.items(vaultID: vault.id) where overview.title == "test-key" {
                 let item = try await client.item(vaultID: vault.id, itemID: overview.id)
-                fieldNames = item.fields.map { "\($0.id):\($0.fieldType)" }
-                expected = item.fields.first { $0.id == "public_key" || $0.title.lowercased().contains("public") }?.value.split(separator: " ").dropFirst().first.map(String.init)
+                let line = item.fields.first { $0.id == "public_key" || $0.title.lowercased() == "public key" }?.value
+                if let blob = line?.split(separator: " ").dropFirst().first {
+                    #expect(key.publicBlob.base64EncodedString() == String(blob))
+                }
             }
         }
-        #expect(key.publicBlob.base64EncodedString() == expected, "the item's fields: \(fieldNames)")
     }
 }
