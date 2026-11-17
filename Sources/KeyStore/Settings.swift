@@ -7,12 +7,30 @@ public struct Settings: Sendable {
     /// A setting signd reads, with its default.
     public enum Key: String, CaseIterable, Sendable {
         case keyLifetime = "key-lifetime"
+        case interval
 
         public var defaultValue: String {
             switch self {
             case .keyLifetime: "1h"
+            case .interval: "5m"
             }
         }
+    }
+
+    /// Where a setting's value comes from, in order of precedence.
+    public enum Source: String, Codable, Sendable {
+        /// `signd config set` on this Mac.
+        case local
+        /// The `signd` note in 1Password, for every Mac.
+        case note
+        case `default`
+    }
+
+    /// A setting's value, its length in seconds, and where it came from.
+    public struct Resolved: Sendable, Equatable {
+        public let value: String
+        public let seconds: TimeInterval
+        public let source: Source
     }
 
     public init() {}
@@ -25,10 +43,7 @@ public struct Settings: Sendable {
     }
 
     public func set(_ key: Key, _ value: String) throws(SettingsError) {
-        switch key {
-        case .keyLifetime:
-            guard Self.seconds(value) != nil else { throw .invalid(key.rawValue, value) }
-        }
+        guard Self.validSeconds(key, value) != nil else { throw .invalid(key.rawValue, value) }
         write(key, value as CFString)
     }
 
@@ -39,9 +54,21 @@ public struct Settings: Sendable {
         CFPreferencesAppSynchronize(Self.domain as CFString)
     }
 
-    /// How long a private key stays in memory after its last signature.
-    public var keyLifetime: TimeInterval {
-        value(.keyLifetime).flatMap(Self.seconds) ?? Self.seconds(Key.keyLifetime.defaultValue)!
+    /// A setting's value: the local one, else the `signd` note's in `fleet`, else the default.
+    /// A value that is not a valid duration for the setting is passed over.
+    public func resolve(_ key: Key, fleet: [String: String] = [:]) -> Resolved {
+        let candidates: [(String?, Source)] = [(value(key), .local), (fleet[key.rawValue], .note)]
+        for (value, source) in candidates {
+            if let value, let seconds = Self.validSeconds(key, value) { return Resolved(value: value, seconds: seconds, source: source) }
+        }
+        let value = key.defaultValue
+        return Resolved(value: value, seconds: Self.seconds(value)!, source: .default)
+    }
+
+    /// A duration that suits `key`: the interval must be above zero.
+    public static func validSeconds(_ key: Key, _ text: String) -> TimeInterval? {
+        guard let seconds = seconds(text) else { return nil }
+        return key == .interval && seconds <= 0 ? nil : seconds
     }
 
     /// Reads a duration such as `90s`, `30m`, `1h` or `2d`.

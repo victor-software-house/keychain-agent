@@ -55,6 +55,18 @@ public struct KeychainStore: KeyStore {
         try check(status)
     }
 
+    public func replace(_ key: StoredKey) throws(StoreError) {
+        let encoder = PropertyListEncoder()
+        encoder.outputFormat = .binary
+        guard let data = try? encoder.encode(key) else { throw .corrupt(key.name) }
+        var query = base()
+        query[kSecAttrAccount as String] = key.name
+        let update: [String: Any] = [kSecValueData as String: data, kSecAttrLabel as String: "signd: \(key.name)"]
+        let status = SecItemUpdate(query as CFDictionary, update as CFDictionary)
+        if status == errSecItemNotFound { throw .notFound(key.name) }
+        try check(status)
+    }
+
     public func delete(name: String) throws(StoreError) {
         var query = base()
         query[kSecAttrAccount as String] = name

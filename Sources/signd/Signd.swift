@@ -329,7 +329,7 @@ struct Serve: AsyncParsableCommand {
     func run() async throws {
         signal(SIGPIPE, SIG_IGN)
         let settings = Settings()
-        let agent = Agent(store: KeychainStore(), version: signdVersion, lifetime: { settings.keyLifetime })
+        let agent = Agent(store: KeychainStore(), version: signdVersion, lifetime: { settings.resolve(.keyLifetime).seconds })
         try await Server(agent: agent).run(socketPath: socket)
     }
 }
