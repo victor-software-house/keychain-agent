@@ -3,7 +3,7 @@
 ## Context
 
 The `signd-agent` change stores Secure Enclave P-256 keys as data-protection keychain items in signd's access group.
-Its [research](../signd-agent/research.md) found no Swift library for passphrase-protected OpenSSH keys, and measured an HPKE open with a Secure Enclave recipient at 4.78 ms.
+Its [research](../2026-11-17-signd-agent/research.md) found no Swift library for passphrase-protected OpenSSH keys, and measured an HPKE open with a Secure Enclave recipient at 4.78 ms.
 
 ## Goals / Non-Goals
 

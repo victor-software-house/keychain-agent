@@ -1,45 +1,42 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/victor-software-house/qctl/main/schema/tasks.schema.json
 schema_version: 6
 prefix: SGD
-active: null
+active: SGD-003
 queue:
-  - id: SGD-001
-    title: Build the signd agent core
-    scope: signd-agent
-    outcome: >-
-      signd serves Secure Enclave keys that only its signed app can use, from a
-      resident agent.
-    blocked_by: []
-    acceptance:
-      - Every requirement in the signd-agent change specs passes in CI or on a physical Mac, with evidence under its tasks.
-      - signd 0.0.2 is released as a signed and notarized app through the cask.
-    plan: openspec/changes/signd-agent/tasks.md
-
-  - id: SGD-002
-    title: Hold Ed25519, ECDSA and RSA keys wrapped by the Secure Enclave
-    scope: wrapped-keys
-    outcome: >-
-      signd imports and generates the common SSH key types, usable only by signd, and
-      replaces keychain-agent.
-    blocked_by:
-      - SGD-001
-    acceptance:
-      - Every requirement in the wrapped-keys change specs passes, with evidence under its tasks.
-      - No Mac runs keychain-agent, and its keys sign through signd.
-    plan: openspec/changes/wrapped-keys/tasks.md
-
   - id: SGD-003
     title: Sync SSH keys from 1Password with only a service account token
     scope: onepassword-sync
     outcome: >-
       A Mac needs only signd login with a token; keys and SSH hosts follow from
       1Password within one interval.
-    blocked_by:
-      - SGD-002
+    blocked_by: []
     acceptance:
       - Every requirement in the onepassword-sync change specs passes, with evidence under its tasks.
       - swift-onepassword is a public package whose release signd links.
       - A key replaced in 1Password reaches every Mac within one interval.
     plan: openspec/changes/onepassword-sync/tasks.md
-archive: []
+archive:
+  - id: SGD-002
+    title: Hold Ed25519, ECDSA and RSA keys wrapped by the Secure Enclave
+    scope: wrapped-keys
+    outcome: >-
+      signd imports and generates the common SSH key types, usable only by signd, and
+      replaces keychain-agent.
+    plan: openspec/changes/archive/2026-11-17-wrapped-keys/tasks.md
+    completed: 2026-11-17T22:13:22
+    evidence:
+      - openspec/changes/archive/2026-11-17-wrapped-keys/
+    disposition: completed
+
+  - id: SGD-001
+    title: Build the signd agent core
+    scope: signd-agent
+    outcome: >-
+      signd serves Secure Enclave keys that only its signed app can use, from a
+      resident agent.
+    plan: openspec/changes/archive/2026-11-17-signd-agent/tasks.md
+    completed: 2026-11-17T22:13:22
+    evidence:
+      - openspec/changes/archive/2026-11-17-signd-agent/
+    disposition: completed
 horizon: []
