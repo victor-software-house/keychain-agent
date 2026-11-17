@@ -31,7 +31,7 @@ public enum Routing {
 
     /// Writes `~/.ssh/signd/config` and each routed key's public file, and deletes the public file of a key that is gone or has no hosts.
     /// Each file is replaced whole, so SSH never reads a half-written one.
-    public static func write(_ keys: [StoredKey], socket: String, home: URL = FileManager.default.homeDirectoryForCurrentUser) throws {
+    public static func write(_ keys: [StoredKey], socket: String, home: URL) throws {
         let directory = home.appendingPathComponent(".ssh/signd")
         let manager = FileManager.default
         try manager.createDirectory(at: directory, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])

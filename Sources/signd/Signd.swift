@@ -412,7 +412,7 @@ struct Serve: AsyncParsableCommand {
             store: store, version: signdVersion, lifetime: { settings.resolve(.keyLifetime, fleet: fleet.values).seconds },
             keysRead: { keys in
                 do {
-                    try Routing.write(keys, socket: socketPath)
+                    try Routing.write(keys, socket: socketPath, home: FileManager.default.homeDirectoryForCurrentUser)
                 } catch {
                     routingLog.error("cannot write the SSH routing files: \(String(describing: error), privacy: .public)")
                 }
