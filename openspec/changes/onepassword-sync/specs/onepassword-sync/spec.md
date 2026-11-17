@@ -40,7 +40,7 @@ signd SHALL sync every SSH Key item in every vault the token reads, except an it
 
 ### Requirement: Changes reach every Mac within one interval
 
-signd SHALL check 1Password at a random point within each interval, 10 seconds unless a setting changes it, and SHALL add, replace and remove synced keys to match their items.
+signd SHALL check 1Password at a random point within each interval, 5 minutes unless a setting changes it, and SHALL add, replace and remove synced keys to match their items.
 
 #### Scenario: A key is replaced
 
@@ -55,7 +55,7 @@ signd SHALL check 1Password at a random point within each interval, 10 seconds u
 #### Scenario: The default interval
 
 - **WHEN** neither `signd config` nor the `signd` note sets `interval`
-- **THEN** `signd status` shows an interval of 10 seconds
+- **THEN** `signd status` shows an interval of 5 minutes
 
 ### Requirement: Requests never wait for 1Password
 

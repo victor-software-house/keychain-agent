@@ -54,7 +54,6 @@ The daily limit counts every service account in the account, so other tools' rea
 
 | Macs | Shortest T | T | Check reads per day | Reads per changed key |
 |:--|:--|:--|:--|:--|
-| 2 | 6 s | 10 s | 17,280 | 6 |
 | 10 | 29 s | 5 min | 2,880 | 30 |
 | 1,000 | 48 min | 60 min | 24,000 | 3,000 |
 | 5,000 | 4 h | 4 h | 30,000 | 15,000 |
