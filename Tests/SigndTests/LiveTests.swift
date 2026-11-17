@@ -24,12 +24,14 @@ let liveToken = ProcessInfo.processInfo.environment["OP_TEST_SERVICE_ACCOUNT_TOK
 
         // The item's own public key field names the same key.
         var expected: String?
+        var fieldNames: [String] = []
         for vault in try await client.vaults() {
             for overview in try await client.items(vaultID: vault.id) where overview.title == "test-key" {
                 let item = try await client.item(vaultID: vault.id, itemID: overview.id)
-                expected = item.fields.first { $0.title.lowercased() == "public key" }?.value.split(separator: " ").dropFirst().first.map(String.init)
+                fieldNames = item.fields.map { "\($0.id):\($0.fieldType)" }
+                expected = item.fields.first { $0.id == "public_key" || $0.title.lowercased().contains("public") }?.value.split(separator: " ").dropFirst().first.map(String.init)
             }
         }
-        #expect(key.publicBlob.base64EncodedString() == expected)
+        #expect(key.publicBlob.base64EncodedString() == expected, "the item's fields: \(fieldNames)")
     }
 }
