@@ -15,6 +15,14 @@ public struct Settings: Sendable {
             case .interval: "5m"
             }
         }
+
+        /// The shortest and longest value, in seconds: an interval of 1 minute to 24 hours, and a key lifetime of 1 second to 30 days.
+        public var bounds: ClosedRange<TimeInterval> {
+            switch self {
+            case .keyLifetime: 1...2_592_000
+            case .interval: 60...86_400
+            }
+        }
     }
 
     /// Where a setting's value comes from, in order of precedence.
@@ -65,22 +73,23 @@ public struct Settings: Sendable {
         return Resolved(value: value, seconds: Self.seconds(value)!, source: .default)
     }
 
-    /// A duration that suits `key`: the interval must be above zero.
+    /// A duration that suits `key`, within its bounds.
     public static func validSeconds(_ key: Key, _ text: String) -> TimeInterval? {
-        guard let seconds = seconds(text) else { return nil }
-        return key == .interval && seconds <= 0 ? nil : seconds
+        guard let seconds = seconds(text), key.bounds.contains(seconds) else { return nil }
+        return seconds
     }
 
     /// Reads a duration such as `90s`, `30m`, `1h` or `2d`.
     public static func seconds(_ text: String) -> TimeInterval? {
-        guard let unit = text.last, let number = Double(text.dropLast()), number >= 0 else { return nil }
-        return switch unit {
+        guard let unit = text.last, let number = Double(text.dropLast()), number >= 0, number.isFinite else { return nil }
+        let seconds: TimeInterval? = switch unit {
         case "s": number
         case "m": number * 60
         case "h": number * 3600
         case "d": number * 86400
         default: nil
         }
+        return seconds.flatMap { $0.isFinite ? $0 : nil }
     }
 }
 
@@ -89,7 +98,9 @@ public enum SettingsError: Error, Sendable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case let .invalid(key, value): "invalid value \(value) for \(key): use a duration such as 90s, 30m, 1h or 2d"
+        case let .invalid(key, value):
+            let range = Settings.Key(rawValue: key).map { ", from \(Int($0.bounds.lowerBound)) to \(Int($0.bounds.upperBound)) seconds" } ?? ""
+            return "invalid value \(value) for \(key): use a duration such as 90s, 30m, 1h or 2d\(range)"
         }
     }
 }
