@@ -5,6 +5,8 @@ import SSHWire
 public enum KeyKind: String, Codable, Sendable {
     /// A P-256 key inside the Secure Enclave; `keyData` is its opaque handle.
     case secureEnclave = "secure-enclave"
+    /// An Ed25519, ECDSA or RSA key sealed to a Secure Enclave key-agreement key; `keyData` is that key's opaque handle.
+    case wrapped = "wrapped"
 }
 
 /// One key in the store, as one keychain item holds it.
@@ -20,8 +22,13 @@ public struct StoredKey: Codable, Sendable, Equatable {
     public var source: String
     public var created: Date
     public var keyData: Data
+    /// The sealed private key of a wrapped key; nil for a Secure Enclave key.
+    public var wrapped: WrappedKey?
 
-    public init(name: String, kind: KeyKind, publicBlob: Data, comment: String, hosts: [String], source: String = "local", created: Date = Date(), keyData: Data) {
+    public init(
+        name: String, kind: KeyKind, publicBlob: Data, comment: String, hosts: [String], source: String = "local", created: Date = Date(),
+        keyData: Data, wrapped: WrappedKey? = nil
+    ) {
         self.name = name
         self.kind = kind
         self.publicBlob = publicBlob
@@ -30,6 +37,7 @@ public struct StoredKey: Codable, Sendable, Equatable {
         self.source = source
         self.created = created
         self.keyData = keyData
+        self.wrapped = wrapped
     }
 
     public var publicKey: PublicKey? { PublicKey(blob: publicBlob) }

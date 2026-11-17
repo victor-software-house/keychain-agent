@@ -25,6 +25,8 @@ public actor Agent {
     private var stored: [StoredKey] = []
     private var storeError: StoreError?
     private var open: [Data: Open] = [:]
+    /// Stored keys whose last open failed; they are not listed until the next reload.
+    private var failed: Set<Data> = []
     private var session: [(blob: Data, key: SessionKey)] = []
     private var sessionBinds = 0
 
@@ -33,17 +35,18 @@ public actor Agent {
 
     private let opener: Opener
 
-    public init(store: any KeyStore, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openSecureEnclave) {
+    public init(store: any KeyStore, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openStored) {
         self.store = store
         self.version = version
         self.lifetime = lifetime
         self.opener = opener
     }
 
-    /// Opens a key by its kind: a Secure Enclave key through its handle.
-    public static let openSecureEnclave: Opener = { key throws(SignError) in
+    /// Opens a key by its kind: a Secure Enclave key through its handle, a wrapped key by opening its seal into memory.
+    public static let openStored: Opener = { key throws(SignError) in
         switch key.kind {
         case .secureEnclave: try SecureEnclaveSigner(handle: key.keyData)
+        case .wrapped: try SoftwareSigner(opening: key)
         }
     }
 
@@ -52,11 +55,13 @@ public actor Agent {
         do {
             stored = try store.list()
             storeError = nil
+            failed = []
             let blobs = Set(stored.map(\.publicBlob))
             open = open.filter { blobs.contains($0.key) }
         } catch {
             stored = []
             open = [:]
+            failed = []
             if storeError != error { log.error("cannot read stored keys: \(error.description, privacy: .public)") }
             storeError = error
         }
@@ -65,9 +70,11 @@ public actor Agent {
     public func identities() -> [Identity] {
         if storeError != nil { reload() }
         dropExpired(now: Date())
-        return stored.map { Identity(blob: $0.publicBlob, comment: $0.displayComment) }
+        return listed.map { Identity(blob: $0.publicBlob, comment: $0.displayComment) }
             + session.map { Identity(blob: $0.blob, comment: $0.key.comment) }
     }
+
+    private var listed: [StoredKey] { stored.filter { !failed.contains($0.publicBlob) } }
 
     /// The signer for a key blob, opening a stored key on first use.
     public func signer(for blob: Data) -> (any Signer)? {
@@ -87,6 +94,7 @@ public actor Agent {
             return signer
         } catch {
             log.error("cannot open key \(key.name, privacy: .public): \(String(describing: error), privacy: .public)")
+            failed.insert(blob)
             return nil
         }
     }
@@ -136,7 +144,7 @@ public actor Agent {
         return AgentStatus(
             version: version,
             pid: getpid(),
-            keys: stored.map { .init(name: $0.name, inMemory: open[$0.publicBlob] != nil) },
+            keys: listed.map { .init(name: $0.name, inMemory: open[$0.publicBlob] != nil) },
             memoryOnlyKeys: session.count,
             sessionBinds: sessionBinds,
             storeError: storeError?.description

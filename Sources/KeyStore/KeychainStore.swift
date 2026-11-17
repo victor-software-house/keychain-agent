@@ -85,4 +85,22 @@ public struct KeychainStore: KeyStore {
             throw .secureEnclave("\(error)")
         }
     }
+
+    /// Seals `privateKey` to a new Secure Enclave key-agreement key, usable without a prompt after the first unlock.
+    public static func makeWrappedKey(name: String, privateKey: PrivateKey, comment: String, hosts: [String], source: String) throws(StoreError) -> StoredKey {
+        guard SecureEnclave.isAvailable else { throw .secureEnclave("not available on this Mac") }
+        guard let access = SecAccessControlCreateWithFlags(nil, kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly, .privateKeyUsage, nil) else {
+            throw .secureEnclave("access control refused")
+        }
+        do {
+            let agreement = try SecureEnclave.P256.KeyAgreement.PrivateKey(accessControl: access)
+            let wrapped = try Wrapping.seal(privateKey, comment: comment, to: agreement.publicKey)
+            return StoredKey(
+                name: name, kind: .wrapped, publicBlob: privateKey.publicKey.blob, comment: comment, hosts: hosts, source: source,
+                keyData: agreement.dataRepresentation, wrapped: wrapped
+            )
+        } catch {
+            throw .secureEnclave("\(error)")
+        }
+    }
 }
