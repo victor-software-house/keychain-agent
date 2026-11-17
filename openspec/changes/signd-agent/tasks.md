@@ -54,7 +54,9 @@
   2026-11-17 UTC: `brew upgrade --cask signd` replaced the 0.1.0 build with [v0.0.2][v0.0.2] on a locked Mac, and the 0.0.2 binary listed the key the 0.1.0 build made.  
   The agent then did not answer: the cask's `uninstall launchctl` step, which an upgrade runs, removed the job while the login item stayed enabled, and `service enable` reported `enabled`.  
   After `service disable` and `service enable` the key signed and verified with no prompt, so the requirement's "no command run" fails until the upgrade restores the agent by itself.  
-  The fix: `service enable` registers again when the agent does not answer, and the cask runs it after each install.
+  The fix: `service enable` registers again when the agent does not answer.  
+  2026-11-17 UTC: the upgrade to [v0.0.3][v0.0.3] ran `service enable` from the cask's `postflight_steps`, where Homebrew's step sandbox refused `SMAppService` with error 57, "Socket is not connected", and the agent stayed down.  
+  The same command run from root through `launchctl asuser` registered the agent, so the package's `postinstall` now runs it as the console user, and the cask runs nothing.
 
 ## Workflow follow-up
 
@@ -66,3 +68,4 @@
 [23d374c]: https://github.com/victor-software-house/signd/commit/23d374c1c67828f6dd3bb6cd93c32513686cb616
 [tap#10]: https://github.com/victor-software-house/homebrew-private/pull/10
 [v0.0.2]: https://github.com/victor-software-house/signd/releases/tag/v0.0.2
+[v0.0.3]: https://github.com/victor-software-house/signd/releases/tag/v0.0.3
