@@ -77,7 +77,7 @@ status=$("$work/probe")
 "$signd" config set key-lifetime 1s
 sign_and_verify "with a 1-second lifetime"
 sleep 3
-"$signd" status --json | grep -A1 "\"$name\"" | grep -q '"inMemory" : false' || fail "the key stayed in memory past its lifetime"
+"$signd" status --json | grep -B1 "\"name\" : \"$name\"" | grep -q '"inMemory" : false' || fail "the key stayed in memory past its lifetime"
 
 "$signd" key delete "$name"
 if ssh-add -L 2> /dev/null | grep -q "$(cut -d' ' -f2 "$work/key.pub")"; then fail "the deleted key is still listed"; fi
