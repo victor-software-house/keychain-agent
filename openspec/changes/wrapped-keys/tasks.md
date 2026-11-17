@@ -35,7 +35,10 @@ The command-line scenarios need signd's keychain access group, which an unsigned
 
 ## 4. Migration
 
-- [ ] 4.1 Import the keychain-agent RSA keys on each Mac, move their hosts to signd's socket, and remove keychain-agent; verify a login to each host through signd and that `security find-key` finds no keychain-agent item.
+- [x] 4.1 Import the keychain-agent RSA keys on each Mac, move their hosts to signd's socket, and remove keychain-agent; verify a login to each host through signd and that `security find-key` finds no keychain-agent item.
+  2026-11-17 UTC: on both Macs, the dotfiles imported the keychain-agent RSA key from 1Password with `signd key import NAME - --host ssh.dev.azure.com` and pointed that host at `~/.ssh/signd.sock`.  
+  With every proxy variable unset, `ssh -v -T` to the host had the key accepted through signd, and `git ls-remote` of a repository on it returned `HEAD`.  
+  keychain-agent and its LaunchAgent were removed; `security find-certificate` for its label exits 44 and `security find-identity` lists no keychain-agent item.
 
 ## Workflow follow-up
 
