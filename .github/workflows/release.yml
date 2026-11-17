@@ -1,0 +1,159 @@
+name: Release
+
+# Every push to main runs verctl's release workflow, which releases a merged Version PR's version
+# commit on GitHub (publisher none) and opens or updates the Version PR. The jobs after it build
+# keychain-agent.pkg (Developer ID, notarized, stapled) from that version's tag when its release lacks
+# the package, attach it, and point the private tap's cask at it. A manual run with publish off
+# builds the package from HEAD as a run artifact only.
+#
+# The 1Password connection that releases the signing set admits this workflow by its name,
+# Release, and the job's environment, release.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Release and attach keychain-agent.pkg; otherwise keep the package as a run artifact
+        type: boolean
+        default: true
+
+permissions: {}
+
+env:
+  GIT_CONFIG_COUNT: "1"
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+  # .miserc.toml loads the dev profile, the git hooks and their scanners, for local work only.
+  MISE_ENV: ci
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  verctl:
+    name: verctl
+    uses: victor-software-house/verctl/.github/workflows/release.yml@cef779a4ed2ce4705fd25c6ea17a5454d2522adc # v0.8.5
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    with:
+      publish: ${{ github.event_name == 'push' || inputs.publish }}
+      version-pr: ${{ github.event_name == 'push' }}
+      docs: false
+      runner: '["ubuntu-26.04"]'
+    secrets:
+      app-client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
+      app-private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
+      release-mirror-url: ${{ secrets.RELEASE_MIRROR_URL }}
+      release-mirror-ci-key: ${{ secrets.RELEASE_MIRROR_CI_KEY }}
+
+  plan:
+    name: Plan the package
+    needs: verctl
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      build: ${{ steps.plan.outputs.build }}
+      ref: ${{ steps.plan.outputs.ref }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          # mise.toml's min_version; the action otherwise takes the newest release older than 24 h.
+          version: 2026.11.6
+      - id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH: ${{ github.event_name == 'push' || inputs.publish }}
+        run: mise run release:plan
+
+  package:
+    name: keychain-agent.pkg (macOS)
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    # GitHub-hosted macOS 27 with Xcode 27, as CI builds the package.
+    runs-on: xcode-27
+    environment: release
+    timeout-minutes: 30
+    permissions:
+      contents: write # uploads keychain-agent.pkg to the release
+      id-token: write # the OIDC token 1Password checks before it releases the signing set, and Sigstore signs the attestation with
+      attestations: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.plan.outputs.ref }}
+      - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+        with:
+          version: 2026.11.6
+          # The job uploads a release asset, so no cache entry may reach it.
+          cache: false
+      - run: xcodebuild -version
+      - name: Import the Developer ID identities and the notary key
+        uses: victor-software-house/actions/macos-signing@cb43721495406000501e460309abc1cf9f899cf7 # main, 2026-11-16
+        with:
+          workload-id: ${{ vars.OP_WORKLOAD_ID }}
+          environment-id: ${{ vars.OP_ENVIRONMENT_ID }}
+          integration-key: ${{ secrets.OP_INTEGRATION_KEY }}
+          installer: true
+      - run: mise run package
+      - run: pkgutil --check-signature build/keychain-agent.pkg
+      - run: spctl --assess -vv --type install build/keychain-agent.pkg
+      - run: xcrun stapler validate build/keychain-agent.pkg
+      # Build provenance for the package, checkable with `gh attestation verify`.
+      - if: github.event_name == 'push' || inputs.publish
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: build/keychain-agent.pkg
+      - if: github.event_name == 'push' || inputs.publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ needs.plan.outputs.version }}
+        run: gh release upload "$TAG" build/keychain-agent.pkg
+      - if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: keychain-agent.pkg
+          path: build/keychain-agent.pkg
+          if-no-files-found: error
+      - if: always()
+        uses: victor-software-house/actions/macos-signing/delete@cb43721495406000501e460309abc1cf9f899cf7 # main, 2026-11-16
+
+  # Tells the Homebrew tap about the new package, and the tap's bump workflow points the
+  # keychain-agent cask at it. The tap is private, so its name is the secret TAP_REPOSITORY, which
+  # the logs mask. The workflow token cannot reach another repository, so the dispatch goes as
+  # the Version Packages App.
+  tap:
+    name: Homebrew tap
+    needs: [plan, package]
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Mint the dispatch token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
+          private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
+          repositories: ${{ secrets.TAP_REPOSITORY }}
+          permission-contents: write
+      - name: Dispatch the bump
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          TAG: v${{ needs.plan.outputs.version }}
+          TAP: ${{ secrets.TAP_REPOSITORY }}
+        run: >-
+          gh api "repos/${GITHUB_REPOSITORY_OWNER}/${TAP}/dispatches"
+          -f event_type=release -f "client_payload[cask]=keychain-agent" -f "client_payload[tag]=${TAG}"
+          -f "client_payload[repository]=${GITHUB_REPOSITORY}" -f "client_payload[asset]=keychain-agent.pkg"

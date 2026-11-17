@@ -1,0 +1,15 @@
+# keychain-agent's version is the VERSION file. verctl renders
+# Sources/keychain-agent/Version.swift from it through .ctl/templates/Version.swift.jinja,
+# which `keychain-agent --version` prints. publisher none releases it on GitHub only, and
+# the Release workflow attaches keychain-agent.pkg to that release.
+packages:
+  - name: keychain-agent
+    path: VERSION
+    publisher: none
+
+# Maintainers and Apps a changelog never credits.
+changelog:
+  internal_authors:
+    - any-victor
+    - "github-actions[bot]"
+    - "vsh-changeset-version[bot]"
