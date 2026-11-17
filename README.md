@@ -59,9 +59,10 @@ pbpaste | signd login                # read the token from stdin, check it again
 signd sync                           # check 1Password now, wait, and print what changed
 signd status                         # signed in or not, the interval and where it comes from, the last check and the next, and skipped items
 signd config set interval 10m        # this Mac's interval; the default is 5m
-signd logout                         # delete the token and every synced key; local keys stay
+signd logout                         # delete the token and every synced key, and stop a check in flight; local keys stay
 ```
 
+The interval runs from 1 minute to 24 hours, and `key-lifetime` from 1 second to 30 days; a value outside them is refused, and one in the note is reported and ignored.  
 The agent checks 1Password at a random point in each interval, and costs one request when nothing changed.  
 List and sign requests answer from the keys the Mac holds and never wait for 1Password.  
 After a failed check it retries with growing, randomized waits, and after a rate limit it waits at least an hour.
