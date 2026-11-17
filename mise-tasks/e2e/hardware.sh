@@ -11,7 +11,9 @@ name=e2e-hw-$$
 export SSH_AUTH_SOCK=$HOME/.ssh/signd.sock
 
 cleanup() {
-  "$signd" key delete "$name" 2> /dev/null || true
+  for suffix in "" -ed -rsa -imp -prot -bad -small; do
+    "$signd" key delete "$name$suffix" 2> /dev/null || true
+  done
   "$signd" config unset key-lifetime
   rm -rf "$work"
 }
@@ -88,4 +90,38 @@ sleep 3
 "$signd" key delete "$name"
 if ssh-add -L 2> /dev/null | grep -q "$(cut -d' ' -f2 "$work/key.pub")"; then fail "the deleted key is still listed"; fi
 
-echo "✔ Secure Enclave key created, listed, signed before and after an agent restart (screen locked: $locked), hidden from an ad-hoc probe (status $status), dropped from memory after its lifetime, and deleted"
+"$signd" config unset key-lifetime
+
+"$signd" key create "$name-ed" --type ed25519 > "$work/key.pub"
+[ "$(wc -l < "$work/key.pub" | tr -d ' ')" = 1 ] || fail "key create --type ed25519 printed other than one line"
+grep -q '^ssh-ed25519 ' "$work/key.pub" || fail "key create --type ed25519 printed no ssh-ed25519 public key"
+sign_and_verify "wrapped Ed25519 key"
+
+"$signd" key create "$name-rsa" --type rsa-3072 > "$work/key.pub"
+[ "$(wc -l < "$work/key.pub" | tr -d ' ')" = 1 ] || fail "key create --type rsa-3072 printed other than one line"
+grep -q '^ssh-rsa ' "$work/key.pub" || fail "key create --type rsa-3072 printed no ssh-rsa public key"
+sign_and_verify "wrapped RSA key"
+
+ssh-keygen -q -t ed25519 -N '' -f "$work/plain"
+"$signd" key import "$name-imp" - < "$work/plain" > /dev/null
+"$signd" key show "$name-imp" > "$work/key.pub"
+[ "$(cut -d' ' -f1,2 "$work/key.pub")" = "$(cut -d' ' -f1,2 "$work/plain.pub")" ] || fail "the imported key's public key differs from the file's"
+sign_and_verify "key imported from stdin"
+
+ssh-keygen -q -t ed25519 -N secret -f "$work/prot"
+printf '#!/bin/sh\necho secret\n' > "$work/askpass"
+chmod 700 "$work/askpass"
+SSH_ASKPASS="$work/askpass" SSH_ASKPASS_REQUIRE=force "$signd" key import "$name-prot" "$work/prot" > /dev/null
+"$signd" key list | grep -q "^$name-prot " || fail "key list does not show the key imported through ssh-add"
+"$signd" key show "$name-prot" > "$work/key.pub"
+[ "$(cut -d' ' -f1,2 "$work/key.pub")" = "$(cut -d' ' -f1,2 "$work/prot.pub")" ] || fail "the protected key's public key differs from the file's"
+sign_and_verify "protected key imported through ssh-add"
+if "$signd" key import "$name-bad" - < "$work/prot" > /dev/null 2> "$work/bad.err"; then fail "a protected key on stdin was imported"; fi
+grep -q 'file' "$work/bad.err" || fail "the refusal of a protected key on stdin does not mention a file"
+
+ssh-keygen -q -t rsa -b 1024 -N '' -f "$work/small"
+if "$signd" key import "$name-small" "$work/small" > /dev/null 2> "$work/small.err"; then fail "an RSA 1024 key was imported"; fi
+grep -q 'RSA 1024' "$work/small.err" || fail "the refusal of an RSA 1024 key does not name it"
+if "$signd" key list | grep -q "^$name-small "; then fail "the refused RSA 1024 key is listed"; fi
+
+echo "✔ Secure Enclave key created, listed, signed before and after an agent restart (screen locked: $locked), hidden from an ad-hoc probe (status $status), dropped from memory after its lifetime, and deleted; wrapped Ed25519 and RSA keys created, an Ed25519 key imported from stdin, a protected key imported through ssh-add, and an RSA 1024 key refused"
