@@ -10,7 +10,7 @@ The `signd-agent` and `wrapped-keys` changes give signd a store of Secure Enclav
 **Goals:**
 
 - A Mac needs only `signd login` with a token; keys and SSH hosts follow from 1Password.
-- A key change in 1Password reaches every Mac within one interval, 10 seconds by default: about 5 s on average and 12 s at most with jitter.
+- A key change in 1Password reaches every Mac within one interval, five minutes by default, through a best-effort check in the background.
 - List and sign requests answer from the keys the Mac already holds, and never wait for a 1Password call or for the client to start.
 - No 1Password CLI.
 
@@ -58,7 +58,7 @@ Unrelated edits then never change the vault's content version, and a leaked toke
 
 A Secure Note titled `signd` in a synced vault may set `interval` and `key-lifetime` for every Mac.
 A local `signd config` value wins over it.
-The 10 s default fits the account budget of research.md section 5 for up to 3 Macs; a larger fleet raises `interval` here.
+Fleets past 1,000 Macs raise `interval` here, as research.md section 5 shows.
 
 ### 5. The check
 
@@ -110,7 +110,6 @@ Local keys created with `--host` take part the same way.
 - [The Go SDK changes its public API] → The shim pins an exact SDK version; a new version is a binding release with its own tests.
 - [Go's runtime in the agent process] → It starts threads when the client opens at agent start, and the process then holds about 165 MiB of resident memory. That is the cost of a check taking one request instead of a 1.2 s start.
 - [One token on many Macs] → 1Password documents no per-device limit for a service account; the rollout watches for 429s.
-- [The account's daily limit is shared with every service account in the account] → The 10 s default uses about 35% of it on two Macs; `signd status` reports a rate-limit wait, and the note raises `interval`.
 - [A `hosts` value is a host pattern written into the SSH configuration] → signd accepts only letters, digits, `.`, `-`, `*`, `?` and `_`, and skips an item with any other character.
 
 ## Migration Plan
