@@ -116,9 +116,9 @@ The release checklist records its result as evidence under the release task.
 
 ## Risks / Trade-offs
 
-- [`SMAppService` may refuse a registration started from a shell over SSH] → Test it on a headless Mac first.
-  If it refuses, `service enable` writes the plist to `~/Library/LaunchAgents` and boots it with `launchctl`, and the decision is recorded here.
-- [The linked `signd` command may not resolve its bundle or entitlements] → Test `codesign -d --entitlements -` and one keychain call through the link before release.
+- [`SMAppService` may refuse a registration started from a shell over SSH] → Tested on a headless Mac with a locked screen: a Developer ID signed probe registered over SSH, reported `enabled`, and launchd ran its agent.
+- [The linked `signd` command may not resolve its bundle] → Tested: through a link, `register` still works, but `Bundle.main` is the link's directory and has no identifier.
+  signd therefore finds its bundle from the real path of its executable, never from `Bundle.main`.
 - [The `TEAM.*` wildcard in the profile lets any app of the same team claim the group] → Accepted: only the release team can sign such an app, and the team ships no other app that claims it.
 - [Before first unlock after boot, no key is readable] → The agent lists no identities and logs the reason; it never crashes on a locked keychain.
 - [The CLI and agent share one binary, so a CLI bug can crash the agent] → Each command runs in its own process and reaches the agent only through the keychain and the socket.

@@ -1,20 +1,35 @@
-# keychain-agent
+# signd
 
-An SSH agent for macOS that signs with keys the keychain will not export.  
-Each key lives in the login keychain as a non-extractable key (`security import -x`).  
-The agent signs through `SecKeyCreateSignature`, so the key is decrypted only inside `securityd`, never in the agent's memory.
+An SSH agent for macOS whose keys only signd can use.  
+Keys live in the Secure Enclave, in signd's own data-protection keychain access group, and no command exports them.  
+The agent answers from memory: listing keys reads no keychain, and a Secure Enclave signature takes about 5 ms.
 
-It serves RSA keys, for services that accept no other kind.  
-Keys the Secure Enclave can hold (P-256) belong there instead.
+## Use
+
+```sh
+signd service enable                         # run the agent at login, on ~/.ssh/signd.sock
+signd key create work --host github.com      # a Secure Enclave P-256 key; prints its public key
+signd key list
+signd status
+export SSH_AUTH_SOCK=~/.ssh/signd.sock       # or IdentityAgent ~/.ssh/signd.sock in ~/.ssh/config
+```
+
+Keys added with `ssh-add` stay in memory only, honour `ssh-add -t`, and leave with `ssh-add -D`; stored keys leave only with `signd key delete`.  
+Every command that prints data takes `--json`.
 
 ## Operation
 
-1. launchd starts it on the first connection to its socket, and it exits after two minutes with no connection.
-2. Its arguments are the keychain labels of the keys it serves.
-3. It answers the SSH agent requests "list identities" and "sign", and refuses every other request.
-4. Each key trusts only the agent's code signature, and its partition list names the team that signs the releases, so a new release keeps access with no change on the Mac.
+1. `signd service enable` registers the agent's LaunchAgent with `SMAppService`; launchd runs `signd serve` at login and restarts it if it exits.
+2. The agent serves the SSH agent protocol (RFC 9987): list, sign, add, remove and the `query` and `session-bind@openssh.com` extensions, and refuses lock, confirm and every other request.
+3. Keys are readable after the first unlock after boot, with no prompt, so a locked or headless Mac signs over SSH.
+4. A private key the agent opened leaves memory after `key-lifetime` without a signature, one hour by default: `signd config set key-lifetime 30m`.
 
 ## Install
 
-Each release attaches `keychain-agent.pkg`, signed with a Developer ID and notarized, which installs `/usr/local/bin/keychain-agent`.  
-A LaunchAgent with a `Sockets` entry named `Listeners` starts it; each key is imported with `security import -x -T /usr/local/bin/keychain-agent`.
+Each release attaches `signd.pkg`, signed with a Developer ID, notarized and stapled, which installs `/Applications/Signd.app`.  
+The app carries a Developer ID provisioning profile, which grants its keychain access group; the Homebrew cask links `signd` onto the PATH.
+
+## Development
+
+`openspec/` holds the requirements and the planned changes; `tasks.yaml` holds the queue.  
+CI builds and tests on GitHub-hosted runners, which have no Secure Enclave, so `mise run e2e:hardware` checks Secure Enclave keys on a Mac before each release.
