@@ -1,6 +1,7 @@
 import AgentProtocol
 @testable import AgentServer
 import CryptoKit
+import Darwin
 import Foundation
 import KeyStore
 import Synchronization
@@ -137,5 +138,133 @@ struct SlowSigner: Signer {
             #expect(ContinuousClock.now - start < .milliseconds(10))
             try await group.waitForAll()
         }
+    }
+}
+
+/// A wrapped Ed25519 key, sealed to `agreement` in place of a Secure Enclave key.
+func storedWrappedKey(_ name: String, to agreement: P256.KeyAgreement.PrivateKey) throws -> StoredKey {
+    let key = try KeyImport.generate(.ed25519)
+    let wrapped = try Wrapping.seal(key, comment: name, to: agreement.publicKey)
+    return StoredKey(name: name, kind: .wrapped, publicBlob: key.publicKey.blob, comment: name, hosts: [], source: "test", keyData: Data(), wrapped: wrapped)
+}
+
+/// Opens wrapped keys with `agreement`, as `Agent.openStored` does with the Secure Enclave key.
+func wrappedOpener(_ agreement: P256.KeyAgreement.PrivateKey) -> Agent.Opener {
+    { key throws(SignError) in
+        guard let wrapped = key.wrapped else { throw .invalidKey("no wrapped key") }
+        do {
+            return try SoftwareSigner(try Wrapping.open(wrapped, publicBlob: key.publicBlob, with: agreement).0)
+        } catch let error as SignError {
+            throw error
+        } catch {
+            throw .invalidKey("\(error)")
+        }
+    }
+}
+
+@Suite struct WrappedKeys {
+    @Test func aWrappedKeySigns() async throws {
+        let agreement = P256.KeyAgreement.PrivateKey()
+        let store = MemoryStore()
+        let stored = try storedWrappedKey("wrapped", to: agreement)
+        try store.add(stored)
+        let agent = Agent(store: store, version: "test", lifetime: { 3600 }, opener: wrappedOpener(agreement))
+        await agent.reload()
+        let signer = try #require(await agent.signer(for: stored.publicBlob))
+        guard case let .ed25519(publicKey)? = stored.publicKey else {
+            Issue.record("not Ed25519")
+            return
+        }
+        let signature = try signer.sign(Data("data".utf8), flags: [])
+        #expect(try Curve25519.Signing.PublicKey(rawRepresentation: publicKey).isValidSignature(signature.bytes, for: Data("data".utf8)))
+    }
+
+    @Test func aTamperedKeyFailsOnceThenLeavesTheList() async throws {
+        let agreement = P256.KeyAgreement.PrivateKey()
+        let store = MemoryStore()
+        var tampered = try storedWrappedKey("tampered", to: agreement)
+        let intact = try storedWrappedKey("intact", to: agreement)
+        tampered.wrapped?.ciphertext = try #require(intact.wrapped?.ciphertext)
+        try store.add(tampered)
+        try store.add(intact)
+        let agent = Agent(store: store, version: "test", lifetime: { 3600 }, opener: wrappedOpener(agreement))
+        await agent.reload()
+        #expect(await agent.identities().count == 2)
+
+        #expect(await agent.signer(for: tampered.publicBlob) == nil)
+        #expect(await agent.identities().map(\.comment) == ["intact"])
+        #expect(await agent.status().keys.map(\.name) == ["intact"])
+        #expect(await agent.signer(for: intact.publicBlob) != nil)
+
+        await agent.reload()
+        #expect(await agent.identities().count == 2)
+    }
+}
+
+/// Sends sign requests over a real Unix socket from one connection and times each reply.
+private func timeSignatures(socketPath: String, blob: Data, count: Int) -> [Duration] {
+    let fd = socket(AF_UNIX, SOCK_STREAM, 0)
+    defer { close(fd) }
+    var address = sockaddr_un()
+    address.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutableBytes(of: &address.sun_path) { $0.copyBytes(from: Array(socketPath.utf8)) }
+    let connected = withUnsafePointer(to: &address) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    guard connected == 0 else { return [] }
+
+    var body = Data([MessageType.signRequest.rawValue])
+    body.appendString(blob)
+    body.appendString(Data("data".utf8))
+    body.appendUInt32(0)
+    var request = Data()
+    request.appendString(body)
+
+    func readAll(_ count: Int) -> Data? {
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: count)
+        while data.count < count {
+            let n = read(fd, &buffer, count - data.count)
+            guard n > 0 else { return nil }
+            data.append(contentsOf: buffer[0..<n])
+        }
+        return data
+    }
+
+    var durations: [Duration] = []
+    for _ in 0..<count {
+        let start = ContinuousClock.now
+        guard request.withUnsafeBytes({ write(fd, $0.baseAddress, $0.count) }) == request.count,
+              let header = readAll(4), let reply = readAll(header.reduce(0) { $0 << 8 | Int($1) }),
+              reply.first == MessageType.signResponse.rawValue else { return durations }
+        durations.append(ContinuousClock.now - start)
+    }
+    return durations
+}
+
+@Suite struct WarmSignatures {
+    @Test func aWrappedKeySignsFastOnceOpen() async throws {
+        let agreement = P256.KeyAgreement.PrivateKey()
+        let store = MemoryStore()
+        let stored = try storedWrappedKey("warm", to: agreement)
+        try store.add(stored)
+        let agent = Agent(store: store, version: "test", lifetime: { 3600 }, opener: wrappedOpener(agreement))
+        let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("warm-\(UUID().uuidString.prefix(6))")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let path = directory.appendingPathComponent("agent").path
+        let server = Task { try await Server(agent: agent).run(socketPath: path) }
+        defer { server.cancel() }
+        for _ in 0..<100 where !FileManager.default.fileExists(atPath: path) { try await Task.sleep(for: .milliseconds(50)) }
+
+        let blob = stored.publicBlob
+        let durations = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { continuation.resume(returning: timeSignatures(socketPath: path, blob: blob, count: 1000)) }
+        }
+
+        #expect(durations.count == 1000)
+        let warm = durations.dropFirst().sorted()
+        let median = try #require(warm.isEmpty ? nil : warm[warm.count / 2])
+        print("WARM p50", median)
+        #expect(median < .milliseconds(1), "p50 was \(median)")
     }
 }
