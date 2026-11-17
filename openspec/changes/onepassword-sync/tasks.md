@@ -12,6 +12,7 @@
 - [ ] 2.1 Implement `signd login` and `signd logout`; verify the token scenarios with the live test account.
 - [ ] 2.2 Implement the check of design decision 5, with item selection and naming from decision 3; verify unit tests against a recorded 1Password fake for add, replace, delete, the `macs` field and the one-read case.
 - [ ] 2.3 Implement the schedule and failures of decisions 6 and 7, and `signd sync`; verify unit tests with an injected clock for phase, jitter, backoff and the rate-limit wait.
+- [ ] 2.6 Open the client in the background at agent start and keep it. Verify with a test that list and sign requests answer within the same p99 as with no token stored, both while the client starts and while a check runs.
 - [ ] 2.4 Read the `signd` note and merge it under local settings; verify the fleet-interval scenario against the fake.
 - [ ] 2.5 Show sync state in `signd status`; verify `--json` carries the last result, the next attempt and every skipped item.
 

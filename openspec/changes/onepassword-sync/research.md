@@ -50,9 +50,11 @@ Retries follow [exponential backoff with full jitter][aws-backoff]; serving the 
 One check per Mac per interval T costs one read; a changed key then costs about 3 reads per Mac.
 Budget: 60% of a Business account's 50,000 daily requests for checks, 20% for changed keys, 20% for other users.
 The shortest interval is then 2.88 s times the number of Macs.
+The daily limit counts every service account in the account, so other tools' reads come out of the same 20%.
 
 | Macs | Shortest T | T | Check reads per day | Reads per changed key |
 |:--|:--|:--|:--|:--|
+| 2 | 6 s | 10 s | 17,280 | 6 |
 | 10 | 29 s | 5 min | 2,880 | 30 |
 | 1,000 | 48 min | 60 min | 24,000 | 3,000 |
 | 5,000 | 4 h | 4 h | 30,000 | 15,000 |
