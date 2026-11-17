@@ -2,15 +2,18 @@ import AgentServer
 import ArgumentParser
 import Foundation
 import KeyStore
+import OnePassword
+import os
 import ServiceManagement
 import SSHWire
+import Sync
 
 @main
 struct Signd: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "An SSH agent for keys only its signed app can use.",
         version: signdVersion,
-        subcommands: [KeyCommand.self, Status.self, Config.self, Service.self, Serve.self]
+        subcommands: [KeyCommand.self, Login.self, Logout.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self]
     )
 }
 
@@ -217,11 +220,13 @@ struct Status: ParsableCommand {
         let socket: String
         let agentAnswers: Bool
         let agent: AgentStatus?
+        let sync: SyncStatus
     }
 
     func run() throws {
         let agent = AgentClient(path: socket).status()
-        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent)
+        let sync = SyncStatus(signedIn: TokenStore().isStored, state: SyncState.load())
+        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync)
         if output.json {
             try output.print(report)
         } else {
@@ -235,8 +240,78 @@ struct Status: ParsableCommand {
             } else {
                 print("agent   does not answer")
             }
+            print(sync.signedIn ? "1password  signed in" : "1password  not signed in; run signd login")
+            print("interval  \(sync.interval.value) (\(sync.interval.source.rawValue))")
+            if let at = sync.lastCheck, let result = sync.lastResult {
+                let detail = sync.lastMessage.map { ": \($0)" } ?? ""
+                print("last check  \(at.formatted(.iso8601)) \(result.rawValue)\(detail), \(sync.requests) requests, \(sync.fetched) items fetched")
+            }
+            if let next = sync.nextAttempt { print("next attempt  \(next.formatted(.iso8601))") }
+            for item in sync.skipped { print("skipped  \(item.item): \(item.reason)") }
         }
         if agent == nil { throw ExitCode.failure }
+    }
+}
+
+struct Login: AsyncParsableCommand {
+    static let configuration = CommandConfiguration(
+        abstract: "Store a 1Password service account token read from stdin, so signd syncs keys from 1Password.",
+        discussion: "The token is read from stdin only, never from an argument or the environment; a token stored before stays when 1Password refuses the new one."
+    )
+
+    func run() async throws {
+        guard isatty(STDIN_FILENO) == 0 else { throw Failure("pipe the token into stdin") }
+        let token = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { throw Failure("stdin holds no token") }
+        let vaults: [VaultOverview]
+        do throws(OnePasswordError) {
+            vaults = try await Client(token: token, integrationName: "signd", integrationVersion: signdVersion).vaults()
+        } catch {
+            throw Failure(error.kind == .authentication ? "1Password refused the token: \(error.message)" : "cannot read from 1Password: \(error.message)")
+        }
+        do { try TokenStore().write(token) } catch { throw Failure(error) }
+        SyncState.remove()
+        AgentClient(path: defaultSocketPath).reload()
+        print("signed in; the token reads \(vaults.count) vault\(vaults.count == 1 ? "" : "s")")
+    }
+}
+
+struct Logout: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Delete the stored token and every key synced from 1Password; local keys stay.")
+
+    func run() throws {
+        let store = KeychainStore()
+        let synced = try storedKeys().filter(\.isSynced)
+        do {
+            for key in synced { try store.delete(name: key.name) }
+            try TokenStore().delete()
+        } catch {
+            throw Failure(error)
+        }
+        SyncState.remove()
+        AgentClient(path: defaultSocketPath).reload()
+        print("signed out; removed \(synced.count) synced key\(synced.count == 1 ? "" : "s")")
+    }
+}
+
+struct SyncNow: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "sync", abstract: "Check 1Password now, wait for the result, and report what changed.")
+    @Option(help: "The agent socket.") var socket = defaultSocketPath
+    @OptionGroup var output: JSONOption
+
+    func run() throws {
+        guard let summary = AgentClient(path: socket).sync() else { throw Failure("the agent does not answer") }
+        if output.json {
+            try output.print(summary)
+        } else {
+            print("\(summary.outcome.rawValue): \(summary.requests) requests, \(summary.fetched) items fetched")
+            if let message = summary.message { print(message) }
+            for name in summary.added { print("added  \(name)") }
+            for name in summary.replaced { print("replaced  \(name)") }
+            for name in summary.removed { print("removed  \(name)") }
+            if summary.skipped > 0 { print("skipped  \(summary.skipped); see signd status") }
+        }
+        if summary.outcome != .ok { throw ExitCode.failure }
     }
 }
 
@@ -256,7 +331,7 @@ struct Config: ParsableCommand {
     struct Get: ParsableCommand {
         @Argument var name: SettingName
         func run() {
-            print(Settings().value(name.key) ?? name.key.defaultValue)
+            print(Settings().resolve(name.key, fleet: SyncState.load().fleet).value)
         }
     }
 
@@ -329,7 +404,27 @@ struct Serve: AsyncParsableCommand {
     func run() async throws {
         signal(SIGPIPE, SIG_IGN)
         let settings = Settings()
-        let agent = Agent(store: KeychainStore(), version: signdVersion, lifetime: { settings.resolve(.keyLifetime).seconds })
-        try await Server(agent: agent).run(socketPath: socket)
+        let store = KeychainStore()
+        let fleet = FleetSettings()
+        let socketPath = socket
+        let routingLog = Logger(subsystem: "com.victor-software-house.signd", category: "routing")
+        let agent = Agent(
+            store: store, version: signdVersion, lifetime: { settings.resolve(.keyLifetime, fleet: fleet.values).seconds },
+            keysRead: { keys in
+                do {
+                    try Routing.write(keys, socket: socketPath)
+                } catch {
+                    routingLog.error("cannot write the SSH routing files: \(String(describing: error), privacy: .public)")
+                }
+            }
+        )
+        let sync = SyncService(
+            SyncService.Dependencies(
+                token: { () throws(StoreError) -> String? in try TokenStore().read() }, makeSource: LiveSource.factory(version: signdVersion), store: store, wrap: LiveSource.wrapper,
+                interval: { settings.resolve(.interval, fleet: $0).seconds }, changed: { await agent.reload() }
+            ),
+            fleet: fleet
+        )
+        try await Server(agent: agent, sync: sync).run(socketPath: socket)
     }
 }
