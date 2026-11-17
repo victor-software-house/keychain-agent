@@ -14,21 +14,24 @@ The command-line scenarios need signd's keychain access group, which an unsigned
 
 ## 2. Wrapping
 
-- [ ] 2.1 Seal and open private keys with HPKE to a per-key key-agreement key, with the `info` and AAD of design decision 1. Verify the round trip and the tampered-item scenario in unit tests, and a Secure Enclave seal and open in `mise run e2e:hardware`.
-  2026-11-17 UTC: `WrappingRoundTrip` passed on a Mac with a software key-agreement key, and `aTamperedKeyFailsOnceThenLeavesTheList` passed. Left open: the Secure Enclave seal and open in `mise run e2e:hardware`, which `key create --type` and `key import` now exercise.
+- [x] 2.1 Seal and open private keys with HPKE to a per-key key-agreement key, with the `info` and AAD of design decision 1. Verify the round trip and the tampered-item scenario in unit tests, and a Secure Enclave seal and open in `mise run e2e:hardware`.
+  2026-11-17 UTC: `WrappingRoundTrip` passed on a Mac with a software key-agreement key, and `aTamperedKeyFailsOnceThenLeavesTheList` passed.  
+  2026-11-17 UTC: `mise run e2e:hardware` passed on a locked Mac against the [v0.0.3][v0.0.3] cask install: `key create --type` and `key import` sealed keys to Secure Enclave keys, and each opened on its first signature, which verified.
 - [x] 2.2 Add the wrapped kind to the keychain store and open keys on first signature into the key cache; verify the warm-signature scenario in a unit test through the socket.
   2026-11-17 UTC: `Agent.openStored` opens the wrapped kind; `aWrappedKeySignsFastOnceOpen` signed 1000 times over a real socket from one connection, p50 0.12 ms on a Mac.
 
 ## 3. Command line
 
-- [ ] 3.1 Implement `key import NAME FILE|-` for unencrypted keys; verify the stdin scenario in `mise run e2e:hardware`.
-  2026-11-17 UTC: implemented; the stdin scenario is added to `mise run e2e:hardware` and has not run.
-- [ ] 3.2 Implement the `ssh-add` path for passphrase-protected files on a private socket; verify it in a unit test with `SSH_ASKPASS` and `SSH_ASKPASS_REQUIRE=force`, and the protected-key scenarios in `mise run e2e:hardware`.
-  2026-11-17 UTC: `importsAProtectedFileAndLeavesNoFile` passed on a Mac with `SSH_ASKPASS` and `SSH_ASKPASS_REQUIRE=force`; the protected-key scenarios are added to `mise run e2e:hardware` and have not run.
-- [ ] 3.3 Add `--type ed25519|rsa-3072|rsa-4096` to `key create`; verify the generation scenario in `mise run e2e:hardware`.
-  2026-11-17 UTC: implemented; the generation scenario is added to `mise run e2e:hardware` and has not run.
-- [ ] 3.4 Document importing, generating and wrapping in README.md; verify each documented command runs as written.
-  2026-11-17 UTC: README.md documents the commands; running each needs the signed app, so it waits for the hardware run.
+- [x] 3.1 Implement `key import NAME FILE|-` for unencrypted keys; verify the stdin scenario in `mise run e2e:hardware`.
+  2026-11-17 UTC: `mise run e2e:hardware` passed on a locked Mac against the [v0.0.3][v0.0.3] cask install: an Ed25519 key piped into `key import NAME -` showed the file's public key, and a signature through the socket verified.
+- [x] 3.2 Implement the `ssh-add` path for passphrase-protected files on a private socket; verify it in a unit test with `SSH_ASKPASS` and `SSH_ASKPASS_REQUIRE=force`, and the protected-key scenarios in `mise run e2e:hardware`.
+  2026-11-17 UTC: `importsAProtectedFileAndLeavesNoFile` passed on a Mac with `SSH_ASKPASS` and `SSH_ASKPASS_REQUIRE=force`.  
+  2026-11-17 UTC: `mise run e2e:hardware` passed on a locked Mac against the [v0.0.3][v0.0.3] cask install: a protected Ed25519 file imported through `ssh-add` with `SSH_ASKPASS` was listed and signed.  
+  The same key on stdin was refused with a message naming a file, and an RSA 1024 key was refused by name.
+- [x] 3.3 Add `--type ed25519|rsa-3072|rsa-4096` to `key create`; verify the generation scenario in `mise run e2e:hardware`.
+  2026-11-17 UTC: `mise run e2e:hardware` passed on a locked Mac against the [v0.0.3][v0.0.3] cask install: `--type ed25519` and `--type rsa-3072` each printed one public key line, and each key signed.
+- [x] 3.4 Document importing, generating and wrapping in README.md; verify each documented command runs as written.
+  2026-11-17 UTC: on a Mac with the v0.0.3 cask install, each `key create`, `key import` and `key list` example in README.md ran as written with throwaway names, and the keys were deleted afterwards.
 
 ## 4. Migration
 
@@ -37,3 +40,5 @@ The command-line scenarios need signd's keychain access group, which an unsigned
 ## Workflow follow-up
 
 - Archive this change after the `signd-agent` change.
+
+[v0.0.3]: https://github.com/victor-software-house/signd/releases/tag/v0.0.3
