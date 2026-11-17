@@ -35,6 +35,44 @@ A passphrase-protected file must be given as a file, not on stdin.
 `signd key import` then runs the system `ssh-add` for the passphrase prompt and the decryption.  
 The key reaches signd over a private socket that only this user can reach, and no decrypted copy touches the disk.
 
+## Keys from 1Password
+
+With a 1Password service account token, a Mac needs no key imports: signd finds its keys in a vault, keeps them current, and tells SSH which key each host uses.  
+It needs neither the 1Password CLI nor a helper process.
+
+1. **The vault.** Make a vault that holds only SSH Key items and the `signd` note below, so edits to other items never change its content version.
+2. **The service account.** Make one that reads only that vault, and keep its token.  
+   Business accounts allow each token 10,000 reads an hour, and every service account of the account together 50,000 requests a day.
+3. **The items.** Each item of category SSH Key in every vault the token reads becomes a key.  
+   Its name is the title in lowercase, with every character other than ASCII letters, digits, `-` and `_` turned into `-`.  
+   Two optional text fields set the rest:
+   - `hosts`: SSH host patterns for the key, separated by commas, made of letters, digits, `.`, `-`, `_`, `*` and `?`.
+   - `macs`: the `LocalHostName` of each Mac that takes the key, separated by commas or spaces.  
+     Without it, every Mac takes the key.
+4. **The note.** A Secure Note titled `signd` in a synced vault sets fleet values in text fields named `interval` and `key-lifetime`, as `30s`, `5m`, `1h` or `2d`.  
+   A value set on a Mac with `signd config set` wins over the note.
+
+An item that signd cannot serve is skipped and reported by `signd status`: a name already taken by a local key, a `hosts` value with another character, or a key it cannot read, such as one with a passphrase.
+
+```sh
+pbpaste | signd login                # read the token from stdin, check it against 1Password, store it, and tell the agent
+signd sync                           # check 1Password now, wait, and print what changed
+signd status                         # signed in or not, the interval and where it comes from, the last check and the next, and skipped items
+signd config set interval 10m        # this Mac's interval; the default is 5m
+signd logout                         # delete the token and every synced key; local keys stay
+```
+
+The agent checks 1Password at a random point in each interval, and costs one request when nothing changed.  
+List and sign requests answer from the keys the Mac holds and never wait for 1Password.  
+After a failed check it retries with growing, randomized waits, and after a rate limit it waits at least an hour.
+
+For keys with hosts, local or synced, signd writes `~/.ssh/signd/config` and each key's public file beside it.  
+Add one line before any `Host` block in `~/.ssh/config`:
+
+```text
+Include ~/.ssh/signd/config
+```
+
 ## Operation
 
 1. `signd service enable` registers the agent's LaunchAgent with `SMAppService`; launchd runs `signd serve` at login and restarts it if it exits.
