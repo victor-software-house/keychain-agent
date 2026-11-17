@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.victor-software-house.signd</string>
+	<!-- SMAppService registers this agent from inside Signd.app; signd service enable does that. -->
+	<key>BundleProgram</key>
+	<string>Contents/MacOS/signd</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>signd</string>
+		<string>serve</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>KeepAlive</key>
+	<true/>
+	<!-- Signing answers a waiting ssh, so launchd does not throttle the agent. -->
+	<key>ProcessType</key>
+	<string>Interactive</string>
+</dict>
+</plist>

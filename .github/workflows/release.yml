@@ -2,7 +2,7 @@ name: Release
 
 # Every push to main runs verctl's release workflow, which releases a merged Version PR's version
 # commit on GitHub (publisher none) and opens or updates the Version PR. The jobs after it build
-# keychain-agent.pkg (Developer ID, notarized, stapled) from that version's tag when its release lacks
+# signd.pkg (Developer ID, notarized, stapled) from that version's tag when its release lacks
 # the package, attach it, and point the private tap's cask at it. A manual run with publish off
 # builds the package from HEAD as a run artifact only.
 #
@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Release and attach keychain-agent.pkg; otherwise keep the package as a run artifact
+        description: Release and attach signd.pkg; otherwise keep the package as a run artifact
         type: boolean
         default: true
 
@@ -76,7 +76,7 @@ jobs:
         run: mise run release:plan
 
   package:
-    name: keychain-agent.pkg (macOS)
+    name: signd.pkg (macOS)
     needs: plan
     if: needs.plan.outputs.build == 'true'
     # GitHub-hosted macOS 27 with Xcode 27, as CI builds the package.
@@ -84,7 +84,7 @@ jobs:
     environment: release
     timeout-minutes: 30
     permissions:
-      contents: write # uploads keychain-agent.pkg to the release
+      contents: write # uploads signd.pkg to the release
       id-token: write # the OIDC token 1Password checks before it releases the signing set, and Sigstore signs the attestation with
       attestations: write
     steps:
@@ -106,30 +106,32 @@ jobs:
           integration-key: ${{ secrets.OP_INTEGRATION_KEY }}
           installer: true
       - run: mise run package
-      - run: pkgutil --check-signature build/keychain-agent.pkg
-      - run: spctl --assess -vv --type install build/keychain-agent.pkg
-      - run: xcrun stapler validate build/keychain-agent.pkg
+        env:
+          SIGND_PROVISIONING_PROFILE: ${{ secrets.SIGND_PROVISIONING_PROFILE }}
+      - run: pkgutil --check-signature build/signd.pkg
+      - run: spctl --assess -vv --type install build/signd.pkg
+      - run: xcrun stapler validate build/signd.pkg
       # Build provenance for the package, checkable with `gh attestation verify`.
       - if: github.event_name == 'push' || inputs.publish
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
-          subject-path: build/keychain-agent.pkg
+          subject-path: build/signd.pkg
       - if: github.event_name == 'push' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.plan.outputs.version }}
-        run: gh release upload "$TAG" build/keychain-agent.pkg
+        run: gh release upload "$TAG" build/signd.pkg
       - if: github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: keychain-agent.pkg
-          path: build/keychain-agent.pkg
+          name: signd.pkg
+          path: build/signd.pkg
           if-no-files-found: error
       - if: always()
         uses: victor-software-house/actions/macos-signing/delete@cb43721495406000501e460309abc1cf9f899cf7 # main, 2026-11-16
 
   # Tells the Homebrew tap about the new package, and the tap's bump workflow points the
-  # keychain-agent cask at it. The tap is private, so its name is the secret TAP_REPOSITORY, which
+  # signd cask at it. The tap is private, so its name is the secret TAP_REPOSITORY, which
   # the logs mask. The workflow token cannot reach another repository, so the dispatch goes as
   # the Version Packages App.
   tap:
@@ -155,5 +157,5 @@ jobs:
           TAP: ${{ secrets.TAP_REPOSITORY }}
         run: >-
           gh api "repos/${GITHUB_REPOSITORY_OWNER}/${TAP}/dispatches"
-          -f event_type=release -f "client_payload[cask]=keychain-agent" -f "client_payload[tag]=${TAG}"
-          -f "client_payload[repository]=${GITHUB_REPOSITORY}" -f "client_payload[asset]=keychain-agent.pkg"
+          -f event_type=release -f "client_payload[cask]=signd" -f "client_payload[tag]=${TAG}"
+          -f "client_payload[repository]=${GITHUB_REPOSITORY}" -f "client_payload[asset]=signd.pkg"

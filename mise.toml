@@ -46,22 +46,3 @@ run = "swift test"
 description = "Run the repository checks, then build the package and run its tests, as CI does"
 depends = ["check:repo"]
 run = ["swift build", "swift test"]
-
-# The release package: the Release workflow runs it on the xcode-27 runner after macos-signing
-# has imported both Developer ID identities and the notary key, into a keychain that holds
-# only them, so each --sign names the identity by its certificate type. The hardened runtime and the
-# Developer ID team are what the keys' partition lists depend on.
-[tasks.package]
-description = "Build build/keychain-agent.pkg: the release binary signed with the Developer ID, in a signed package, notarized and stapled"
-run = [
-  "rm -rf build",
-  "swift build -c release",
-  "mkdir -p build/root/usr/local/bin",
-  "ditto \"$(swift build -c release --show-bin-path)/keychain-agent\" build/root/usr/local/bin/keychain-agent",
-  "codesign --force --options runtime --timestamp --identifier com.victor-software-house.keychain-agent --sign 'Developer ID Application' build/root/usr/local/bin/keychain-agent",
-  "codesign --verify --strict --verbose=2 build/root/usr/local/bin/keychain-agent",
-  "pkgbuild --root build/root --install-location / --identifier com.victor-software-house.keychain-agent.pkg --version \"$(cat VERSION)\" build/keychain-agent-component.pkg",
-  "productbuild --package build/keychain-agent-component.pkg --sign 'Developer ID Installer' build/keychain-agent.pkg",
-  "xcrun notarytool submit build/keychain-agent.pkg --key \"$NOTARY_KEY_PATH\" --key-id \"$NOTARY_KEY_ID\" --issuer \"$NOTARY_ISSUER_ID\" --wait",
-  "xcrun stapler staple build/keychain-agent.pkg",
-]
