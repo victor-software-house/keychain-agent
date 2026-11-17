@@ -1,7 +1,7 @@
 # signd
 
 An SSH agent for macOS whose keys only signd can use.  
-Keys live in the Secure Enclave, in signd's own data-protection keychain access group, and no command exports them.  
+Keys live in signd's own data-protection keychain access group, either inside the Secure Enclave or sealed to it, and no command exports them.  
 The agent answers from memory: listing keys reads no keychain, and a Secure Enclave signature takes about 5 ms.
 
 ## Use
@@ -9,6 +9,9 @@ The agent answers from memory: listing keys reads no keychain, and a Secure Encl
 ```sh
 signd service enable                         # run the agent at login, on ~/.ssh/signd.sock
 signd key create work --host github.com      # a Secure Enclave P-256 key; prints its public key
+signd key create ci --type ed25519           # an Ed25519 key, sealed to the Secure Enclave; also rsa-3072 and rsa-4096
+signd key import old ~/.ssh/id_rsa           # an existing OpenSSH, PKCS#1, PKCS#8 or SEC1 private key file
+signd key import ci - < ci_ed25519           # the same from stdin, for a key that has no passphrase
 signd key list
 signd status
 export SSH_AUTH_SOCK=~/.ssh/signd.sock       # or IdentityAgent ~/.ssh/signd.sock in ~/.ssh/config
@@ -16,6 +19,21 @@ export SSH_AUTH_SOCK=~/.ssh/signd.sock       # or IdentityAgent ~/.ssh/signd.soc
 
 Keys added with `ssh-add` stay in memory only, honour `ssh-add -t`, and leave with `ssh-add -D`; stored keys leave only with `signd key delete`.  
 Every command that prints data takes `--json`.
+
+## Keys beyond the Secure Enclave
+
+The Secure Enclave holds only P-256 keys, so signd keeps Ed25519, ECDSA and RSA keys as wrapped keys.  
+`signd key create NAME --type ed25519|rsa-3072|rsa-4096` generates one.  
+`signd key import NAME FILE` brings in an existing one: Ed25519, ECDSA on P-256, P-384 and P-521, or RSA of 2048 to 8192 bits.  
+A key that signd cannot serve, such as RSA under 2048 bits or a DSA key, is refused with a message naming the type.
+
+A wrapped key is sealed with HPKE to its own Secure Enclave key, so the keychain item holds only ciphertext.  
+The agent opens it into memory on its first signature and drops it after `key-lifetime`, as it does for every open key.  
+No command writes a private key out.
+
+A passphrase-protected file must be given as a file, not on stdin.  
+`signd key import` then runs the system `ssh-add` for the passphrase prompt and the decryption.  
+The key reaches signd over a private socket that only this user can reach, and no decrypted copy touches the disk.
 
 ## Operation
 
