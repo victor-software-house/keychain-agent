@@ -10,8 +10,9 @@ The `signd-agent` and `wrapped-keys` changes give signd a store of Secure Enclav
 **Goals:**
 
 - A Mac needs only `signd login` with a token; keys and SSH hosts follow from 1Password.
-- A key change in 1Password reaches every Mac within one interval, five minutes by default.
-- No 1Password call on the signing path, and no 1Password CLI.
+- A key change in 1Password reaches every Mac within one interval, 10 seconds by default: about 5 s on average and 12 s at most with jitter.
+- List and sign requests answer from the keys the Mac already holds, and never wait for a 1Password call or for the client to start.
+- No 1Password CLI.
 
 **Non-Goals:**
 
@@ -57,7 +58,7 @@ Unrelated edits then never change the vault's content version, and a leaked toke
 
 A Secure Note titled `signd` in a synced vault may set `interval` and `key-lifetime` for every Mac.
 A local `signd config` value wins over it.
-Fleets past 1,000 Macs raise `interval` here, as research.md section 5 shows.
+The 10 s default fits the account budget of research.md section 5 for up to 3 Macs; a larger fleet raises `interval` here.
 
 ### 5. The check
 
@@ -71,10 +72,13 @@ A failed step leaves the stored keys as they were; signd serves them until the n
 
 ### 6. When signd checks
 
+- The agent opens the 1Password client in the background as soon as it starts with a stored token, and keeps it for its whole run.  
+  The client takes about 1.2 s to start, nearly all of it compiling the WebAssembly core, so that time never falls on a check or a request.
 - At start, each Mac draws a random phase within the interval; each later wait is the interval times a random factor from 0.8 to 1.2.
 - A list or sign request on a Mac whose last success is older than the interval starts a check in the background, which covers a Mac that slept.
 - `signd sync` starts one now and waits for it.
 - One check runs at a time; a request during a check joins it.
+- Each timer allows 1 s of leeway, so macOS can group the wake-up with others.
 
 ### 7. Failures
 
@@ -104,8 +108,9 @@ Local keys created with `--host` take part the same way.
 
 - [The WebAssembly core adds size and start-up time] → Measure the binary size and the first client's start-up in the binding's CI; the client is created once per agent run and kept.
 - [The Go SDK changes its public API] → The shim pins an exact SDK version; a new version is a binding release with its own tests.
-- [Go's runtime in the agent process] → It starts threads only when the first client opens, which happens at the first check.
+- [Go's runtime in the agent process] → It starts threads when the client opens at agent start, and the process then holds about 165 MiB of resident memory. That is the cost of a check taking one request instead of a 1.2 s start.
 - [One token on many Macs] → 1Password documents no per-device limit for a service account; the rollout watches for 429s.
+- [The account's daily limit is shared with every service account in the account] → The 10 s default uses about 35% of it on two Macs; `signd status` reports a rate-limit wait, and the note raises `interval`.
 - [A `hosts` value is a host pattern written into the SSH configuration] → signd accepts only letters, digits, `.`, `-`, `*`, `?` and `_`, and skips an item with any other character.
 
 ## Migration Plan
