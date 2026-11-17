@@ -15,6 +15,17 @@ queue:
       - swift-onepassword is a public package whose release signd links.
       - A key replaced in 1Password reaches every Mac within one interval.
     plan: openspec/changes/onepassword-sync/tasks.md
+
+  - id: SGD-004
+    title: "Declarative configuration: file, MDM profile, watch"
+    scope: signd
+    outcome: >-
+      A Mac's signd settings and local keys follow from one file and an optional MDM
+      profile.
+    blocked_by: []
+    acceptance:
+      - Every task in openspec/changes/declarative-config/tasks.md is ticked with evidence.
+    plan: openspec/changes/declarative-config/tasks.md
 archive:
   - id: SGD-002
     title: Hold Ed25519, ECDSA and RSA keys wrapped by the Secure Enclave
