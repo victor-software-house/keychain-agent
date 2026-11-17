@@ -19,6 +19,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio.git", exact: "2.105.0"),
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
+        .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.4"),
     ],
     targets: [
         // The SSH encoding of keys and signatures, with no platform code.
@@ -28,7 +29,11 @@ let package = Package(
         // Keys: the keychain store, the Secure Enclave, and signing in memory.
         .target(
             name: "KeyStore",
-            dependencies: ["SSHWire", "AgentProtocol", .product(name: "CryptoExtras", package: "swift-crypto")],
+            dependencies: [
+                "SSHWire", "AgentProtocol",
+                .product(name: "CryptoExtras", package: "swift-crypto"),
+                .product(name: "SwiftASN1", package: "swift-asn1"),
+            ],
             swiftSettings: strict
         ),
         // The agent's state and the socket server.
