@@ -19,7 +19,7 @@ queue:
       - 2026-11-18, operator picked automatic sharing to new Macs, sharing by default with --local, and no per-Mac limit for now.
 
   - id: SGD-009
-    title: Install without Homebrew, as flowgate does
+    title: 'Install, run and update signd through each route: pkg, cask, MDM, Sparkle'
     scope: packaging
     outcome: "Opening signd.pkg is the whole install: the CLI is on the PATH and the agent runs, with no other step."
     blocked_by: []
@@ -29,10 +29,15 @@ queue:
       - The README Install section starts from the pkg, with Homebrew as the second route.
       - 'After the pkg, ssh uses signd with no other step: signd adds Include ~/.ssh/signd/config at the top of ~/.ssh/config when no line includes it, creating the file when it is missing, and signd status shows whether the line is there.'
       - An MDM profile in the repository installs signd and approves its login item by team identifier, and a Mac enrolled with it runs the agent after the pkg with no click.
+      - signd service status, restart and log report and control the agent as brew services does for a formula.
+      - The cask uninstalls the login item, the receipt and the app, and its zap removes the sync state and ~/.ssh/signd.
+      - A release publishes a notarized Signd.app zip with a signed appcast, and an installed signd updates itself from it with no prompt.
     notes:
       - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
       - 2026-11-18, operator wants every pkg script to be one line that runs a signd command, with the logic in Swift; postinstall already does.
       - '2026-11-18, operator asked that the install needs no UI step, and that MDM can provision signd with none: the pkg through MDM, and a managed login items profile (com.apple.servicemanagement, by team identifier) so the agent needs no approval.'
+      - '2026-11-18, lead recommendation, operator asked for it: no Homebrew formula. A formula would only repackage the signed app, start a second agent next to the login item, and show a bare Login Items row; signd service gives status, restart and log the way brew services does.'
+      - '2026-11-18, operator raised updates: Sparkle 2 updates the app in the background from a notarized Signd.app zip, an appcast and an EdDSA signature, which needs no admin prompt; the cask sets auto_updates true; an MDM setting can turn updates off.'
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
