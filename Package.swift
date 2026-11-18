@@ -60,7 +60,7 @@ let package = Package(
         .testTarget(
             name: "SigndTests",
             dependencies: [
-                "SSHWire", "AgentProtocol", "KeyStore", "AgentServer", "Sync",
+                "SSHWire", "AgentProtocol", "KeyStore", "AgentServer", "Sync", "signd",
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "NIOCore", package: "swift-nio"),
             ],

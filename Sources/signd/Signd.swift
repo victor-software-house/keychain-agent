@@ -267,13 +267,17 @@ struct Status: ParsableCommand {
         let agentAnswers: Bool
         let agent: AgentStatus?
         let sync: SyncStatus
+        let loginItem: LoginItemState
+        let sshInclude: Bool
     }
 
     func run() throws {
         let client = AgentClient(path: socket)
         let agent = client.status()
         let sync = SyncStatus(state: client.syncState() ?? SyncState.load())
-        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync)
+        let loginItem = Service.loginItem
+        let sshInclude = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
+        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, loginItem: loginItem, sshInclude: sshInclude)
         if output.json {
             try output.print(report)
         } else {
@@ -287,6 +291,8 @@ struct Status: ParsableCommand {
             } else {
                 print("agent   does not answer")
             }
+            print("login item  \(loginItem.text)\(loginItem == .enabled ? "" : "; run signd service enable")")
+            print("ssh config  \(sshInclude ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable")")
             print("icloud  \(sync.state)\(sync.lastMessage.map { ": \($0)" } ?? "")")
             print("interval  \(sync.interval.value) (\(sync.interval.source.rawValue))")
             if let at = sync.lastCheck, let result = sync.lastResult {
@@ -392,6 +398,7 @@ struct Config: ParsableCommand {
 struct Service: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Run the agent at login, or stop doing so.", subcommands: [Enable.self, Disable.self])
     static var agent: SMAppService { .agent(plistName: "com.victor-software-house.signd.plist") }
+    static var loginItem: LoginItemState { LoginItemState(agent.status) }
 
     struct Enable: ParsableCommand {
         func run() throws {
@@ -414,6 +421,7 @@ struct Service: ParsableCommand {
                 }
                 print("enabled")
             case .requiresApproval:
+                SMAppService.openSystemSettingsLoginItems()
                 throw Failure("approve signd in System Settings, General, Login Items")
             default:
                 do { try Service.agent.register() } catch { throw Failure("cannot register the agent: \(error)") }
@@ -436,6 +444,35 @@ struct Service: ParsableCommand {
             guard Service.agent.status != .notRegistered else { return print("not registered") }
             do { try Service.agent.unregister() } catch { throw Failure("cannot unregister the agent: \(error)") }
             print("disabled")
+        }
+    }
+}
+
+/// The login item's state, as `signd status` prints it and reports it in JSON.
+enum LoginItemState: String, Encodable {
+    case enabled
+    case requiresApproval
+    case notRegistered
+    case notFound
+    case unknown
+
+    init(_ status: SMAppService.Status) {
+        switch status {
+        case .enabled: self = .enabled
+        case .requiresApproval: self = .requiresApproval
+        case .notRegistered: self = .notRegistered
+        case .notFound: self = .notFound
+        @unknown default: self = .unknown
+        }
+    }
+
+    var text: String {
+        switch self {
+        case .enabled: "enabled"
+        case .requiresApproval: "requires approval"
+        case .notRegistered: "not registered"
+        case .notFound: "not found"
+        case .unknown: "unknown"
         }
     }
 }
