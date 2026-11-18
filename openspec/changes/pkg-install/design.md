@@ -37,8 +37,45 @@ Each line that is not in order names the command that fixes it, `signd service e
 
 When the login item needs approval, `signd service enable` calls `SMAppService.openSystemSettingsLoginItems()`, then fails with the same message as today.
 
+### 5. The package shows signd's own Installer pages
+
+`productbuild` builds the package from a distribution file, `Bundle/Installer/distribution.xml`, with its pages in `Bundle/Installer/` ([distribution definition]).
+
+| Page | What it shows |
+|:--|:--|
+| Background | The signd logo, one image for light mode and one for dark mode (`background` and `background-darkAqua`) |
+| Welcome | What signd is, in two lines |
+| License | The AGPL-3.0 text from `LICENSE`, which Installer asks the user to accept |
+| Conclusion | What is ready now: the agent running and `signd` on the PATH, and a first command, `signd key create` |
+
+The file also sets the title, `hostArchitectures="arm64"` and `allowed-os-versions` from the package's deployment target.
+Installer checks both when the package opens, so an Intel Mac or an older macOS gets a message before any password.
+`customize="never"` hides the custom install pane, since the package has one component.
+
+### 6. service status, restart and log
+
+`signd service` gains three commands beside `enable` and `disable`, as `brew services` gives a formula:
+
+| Command | What it does |
+|:--|:--|
+| `status` | Prints the login item's state, from `SMAppService.agent`, and whether the agent answers on its socket, with its version |
+| `restart` | Runs `launchctl kickstart -k` on the agent's label in the user's GUI domain, then waits until the agent answers |
+| `log` | Runs `/usr/bin/log` with the predicate `subsystem == "com.victor-software-house.signd"`: `show --last 1h` by default, `stream` with `--follow` |
+
+`restart` waits at most 5 seconds and exits non-zero when the agent does not answer.
+
+### 7. The cask uninstalls what the package installed
+
+The cask's `uninstall` runs `signd service disable` as the user before it deletes the app, so the login item goes with it.
+It then forgets the package receipt, and deletes the app and `/usr/local/bin/signd` when that is a link into the app.
+Its `zap` deletes `~/Library/Application Support/signd` and `~/.ssh/signd`.
+
+Neither touches the keys: they stay in the keychain and in iCloud, and `signd key delete` removes them.
+The `Include` line stays in `~/.ssh/config`; SSH skips an `Include` whose file is missing.
+
 ## Risks
 
 - A user's own `/usr/local/bin/signd` that is a link, such as one to a build of their own, is replaced. A regular file is never touched.
 
 [pkg-postinstall]: https://github.com/victor-software-house/signd/commit/5276a55
+[distribution definition]: https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/DistributionDefinitionRef/Chapters/Distribution_XML_Ref.html

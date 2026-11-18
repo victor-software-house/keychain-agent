@@ -19,6 +19,24 @@ Each linked command SHALL keep the bundle's entitlements.
 
 ## ADDED Requirements
 
+### Requirement: The package shows signd's Installer pages
+
+The package SHALL show a background for light and for dark mode, a welcome page, the AGPL-3.0 license and a conclusion page, and SHALL refuse a Mac that is not arm64 or runs an older macOS than the deployment target, before it asks for a password.
+
+#### Scenario: An older macOS
+
+- **WHEN** the package opens on a macOS older than the deployment target
+- **THEN** Installer shows that it cannot install, and asks for no password
+
+### Requirement: The cask removes what it installed
+
+The cask's `uninstall` SHALL unregister the login item before it deletes the app, and its `zap` SHALL delete `~/Library/Application Support/signd` and `~/.ssh/signd`; neither SHALL delete a key.
+
+#### Scenario: An uninstall
+
+- **WHEN** `brew uninstall --cask signd` runs
+- **THEN** Login Items lists no signd item, and `/Applications/Signd.app` is gone
+
 ### Requirement: The install points SSH at signd
 
 `signd service enable` SHALL add `Include ~/.ssh/signd/config` at the top of `~/.ssh/config` when no line there includes that file, creating the folder and the file when they are missing, and SHALL leave the file unchanged otherwise.

@@ -12,6 +12,9 @@ signd needs no privacy permission, only its login item, so the package can do th
 - `signd service enable`, which the package's postinstall runs as the console user, adds `Include ~/.ssh/signd/config` at the top of `~/.ssh/config` when no line includes it, creating the file when it is missing.
 - `signd status` shows the login item's state and whether `~/.ssh/config` includes signd's file.
 - When the login item needs approval, `signd service enable` opens System Settings at Login Items.
+- The package shows signd's own Installer pages: a background in light and dark, a welcome, the AGPL license and a conclusion, and it refuses an Intel Mac or an older macOS before it asks for a password (operator, 2026-11-18).
+- `signd service status`, `restart` and `log` report and control the agent, as `brew services` does for a formula; signd ships no formula (operator, 2026-11-18).
+- The Homebrew cask unregisters the login item on uninstall, and its `zap` deletes signd's state.
 - The README's Install section starts from the package, with the Homebrew cask second.
 
 ## Capabilities
