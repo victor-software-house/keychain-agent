@@ -416,10 +416,12 @@ struct Service: ParsableCommand {
 
     struct Enable: ParsableCommand {
         func run() throws {
+            // A config that cannot be written fails the command after the login item is in order, so the agent still starts.
+            var includeFailure: Failure?
             do {
                 if try SSHInclude.enable(home: FileManager.default.homeDirectoryForCurrentUser) { print("added \(SSHInclude.line) to ~/.ssh/config") }
             } catch {
-                throw Failure("cannot add the Include line to ~/.ssh/config: \(error)")
+                includeFailure = Failure("cannot add the Include line to ~/.ssh/config: \(error)")
             }
             switch Service.agent.status {
             case .enabled where Service.agentAnswers():
@@ -441,6 +443,7 @@ struct Service: ParsableCommand {
                 do { try Service.agent.register() } catch { throw Failure("cannot register the agent: \(error)") }
                 print(Service.agent.status == .enabled ? "enabled" : "registered; approve signd in System Settings, General, Login Items")
             }
+            if let includeFailure { throw includeFailure }
         }
     }
 
