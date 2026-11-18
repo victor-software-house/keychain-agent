@@ -395,6 +395,11 @@ struct Service: ParsableCommand {
 
     struct Enable: ParsableCommand {
         func run() throws {
+            do {
+                if try SSHInclude.enable(home: FileManager.default.homeDirectoryForCurrentUser) { print("added \(SSHInclude.line) to ~/.ssh/config") }
+            } catch {
+                throw Failure("cannot add the Include line to ~/.ssh/config: \(error)")
+            }
             switch Service.agent.status {
             case .enabled where Self.agentAnswers():
                 print("enabled")
