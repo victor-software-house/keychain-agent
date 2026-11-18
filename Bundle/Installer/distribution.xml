@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- allowed-os-versions is Package.swift's macOS deployment target; mise run package:check compares them. -->
+<installer-gui-script minSpecVersion="2">
+    <title>signd</title>
+    <welcome file="welcome.html" mime-type="text/html"/>
+    <license file="license.txt" mime-type="text/plain"/>
+    <conclusion file="conclusion.html" mime-type="text/html"/>
+    <options customize="never" require-scripts="false" hostArchitectures="arm64"/>
+    <allowed-os-versions>
+        <os-version min="26.0"/>
+    </allowed-os-versions>
+    <choices-outline>
+        <line choice="default">
+            <line choice="com.victor-software-house.signd.pkg"/>
+        </line>
+    </choices-outline>
+    <choice id="default"/>
+    <choice id="com.victor-software-house.signd.pkg" visible="false">
+        <pkg-ref id="com.victor-software-house.signd.pkg"/>
+    </choice>
+    <pkg-ref id="com.victor-software-house.signd.pkg" onConclusion="none">signd-component.pkg</pkg-ref>
+</installer-gui-script>

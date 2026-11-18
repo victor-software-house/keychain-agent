@@ -61,6 +61,11 @@ pkgbuild --analyze --root build/root build/components.plist
 plutil -replace 0.BundleIsRelocatable -bool NO build/components.plist
 pkgbuild --root build/root --component-plist build/components.plist --scripts Bundle/scripts --install-location / \
   --identifier com.victor-software-house.signd.pkg --version "$version" build/signd-component.pkg
-productbuild --package build/signd-component.pkg --sign 'Developer ID Installer' build/signd.pkg
+# The Installer pages are in Bundle/Installer. The license page is LICENSE.
+mkdir build/installer
+cp Bundle/Installer/welcome.html Bundle/Installer/conclusion.html build/installer/
+cp LICENSE build/installer/license.txt
+productbuild --distribution Bundle/Installer/distribution.xml --resources build/installer --package-path build \
+  --sign 'Developer ID Installer' build/signd.pkg
 xcrun notarytool submit build/signd.pkg --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
 xcrun stapler staple build/signd.pkg
