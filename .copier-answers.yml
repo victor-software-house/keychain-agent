@@ -7,7 +7,8 @@ ci_extra_tasks:
 ci_runner: github-hosted
 ci_secrets: []
 default_branch: main
-generated_paths: []
+generated_paths:
+- Sources/signd/Version.swift
 github_owner: victor-software-house
 linux_image: ubuntu-26.04
 macos_image: macos-27
