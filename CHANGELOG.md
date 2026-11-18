@@ -1,5 +1,11 @@
 # Changelog
 
+## signd 0.0.5
+
+- signd syncs SSH keys from 1Password with only a service account token.
+  `signd login` stores the token, `signd logout` removes it with the synced keys, `signd sync` checks now, and `signd status` shows the last check, the next and the skipped items.
+  Keys with hosts are routed through `~/.ssh/signd/config` ([`3752060`](https://github.com/victor-software-house/signd/commit/375206058e61ee2783b38fcfd06993a687f92881)).
+
 ## signd 0.0.4
 
 - The package starts the agent after it installs, so an upgrade through the cask no longer leaves the agent stopped ([`5276a55`](https://github.com/victor-software-house/signd/commit/5276a559370c9485e5bd885b2e1c5c5a5f912848)).
