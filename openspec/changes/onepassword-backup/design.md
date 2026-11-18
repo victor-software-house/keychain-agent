@@ -11,7 +11,9 @@ Each Mac's store mirrors the keys shared through iCloud, and holds its own Secur
 ### 1. Ownership and scope
 
 Every item the backup writes carries the tag `signd`, and a `signd` section with its `kind` and `scope`.  
-An item is signd's only when it has the tag and a well-formed section; any other item, tagged or not, is never changed or removed.
+An item is signd's only when it has the tag and a well-formed section; any other item, tagged or not, is never changed or removed.  
+A section is well-formed when its `kind` is one of the two below, its `scope` is `shared` or a device identifier, and a `key` section has a `SHA256:` fingerprint and a name.  
+The device identifier comes from the Mac's `Device` record, never from its editable name.
 
 | `kind` | What the item holds | `scope` |
 |:--|:--|:--|
@@ -43,7 +45,11 @@ A partial read counts as failed.
 A read that fails, or lists no keys while the vault holds shared items, removes nothing and records why in `signd status`, since an empty account and an unloaded one look alike.  
 No run removes an item whose fingerprint matches a key in this Mac's store, whatever its scope.  
 A Mac's `secure-enclave-list` item is updated with `put` and removed only when that Mac's `Device` record is gone from a completed read.  
-A run with no difference makes only the list call.  
+Two items with one fingerprint, as 1Password's Duplicate makes, both count: a run updates the oldest and leaves the others alone, and a removal removes every copy.  
+The list call returns overviews, which carry the tags and `updatedAt` but no section.  
+Each Mac keeps a local cache, with no secret in it, of each item's identifier, `updatedAt` and the change tag of the source it last wrote.  
+A run fetches full items with `getAll`, up to 50 a call, only for items that are new to the cache or whose `updatedAt` moved.  
+A run with no difference, on a Mac whose cache is current, makes only the list call.  
 The run happens in a task of its own, never on the event loop or inside the agent actor, so a slow 1Password call delays no SSH request.
 
 ### 4. Schedule
