@@ -202,9 +202,7 @@ public actor SyncService {
         if let current, !forced { return await current.value }
         let task = Task { await self.exclusive { service in await service.runCheck(forced: forced) } }
         current = task
-        let summary = await task.value
-        if current == task { current = nil }
-        return summary
+        return await task.value
     }
 
     /// The work for this device's account, or nil when no account is available. A new account removes the old one's shared keys.
@@ -227,6 +225,8 @@ public actor SyncService {
     }
 
     private func runCheck(forced: Bool) async -> CheckSummary {
+        // The check ends here, so a request after this point starts a new one instead of joining this one's result.
+        defer { current = nil }
         guard dependencies.cloud != nil else { return CheckSummary(outcome: .off, message: Self.offMessage) }
         if forced && state.stopped {
             state.stopped = false

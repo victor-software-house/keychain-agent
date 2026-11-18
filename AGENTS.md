@@ -22,4 +22,6 @@ It is a Swift 6.4 package. `SSHWire` and `AgentProtocol` hold the SSH encoding a
 3. Small work items go in the qctl queue, `tasks.yaml`.
 4. Builds and tests run in CI, on GitHub-hosted runners; Secure Enclave and keychain checks run with `mise run e2e:hardware` on a Mac, since the runners have no Secure Enclave.
 5. A pull request that changes behaviour adds a `.changeset` fragment; the Release workflow opens the Version PR and releases each merged version.
-6. The shared template owns the files `.copier-answers.yml` records; change them through `copier update`, not by hand.
+6. Installer scripts are one line that runs a `signd` command; their logic is Swift.
+7. The iCloud container is named only in the App ID; the profile carries it into the signature, and the code reads it from there. `cloudkit/schema.ckdb` declares the CloudKit schema, and `mise run cloudkit:schema` imports it into development.
+8. The shared template owns the files `.copier-answers.yml` records; change them through `copier update`, not by hand.

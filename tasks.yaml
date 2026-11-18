@@ -30,6 +30,7 @@ queue:
       - 'After the pkg, ssh uses signd with no other step: signd adds Include ~/.ssh/signd/config at the top of ~/.ssh/config when no line includes it, creating the file when it is missing, and signd status shows whether the line is there.'
     notes:
       - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
+      - 2026-11-18, operator wants every pkg script to be one line that runs a signd command, with the logic in Swift; postinstall already does.
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"

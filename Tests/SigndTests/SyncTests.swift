@@ -307,13 +307,16 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     rig.service.pushArrived()
     #expect(await eventually { cloud.calls.changes == 2 })
     #expect(await rig.service.snapshot().lastPush != nil)
+    // Joins the check the push started, so the failure below lands on a check of its own.
+    _ = await rig.service.checkNow()
 
     cloud.fail(with: CloudError(.network, "offline"))
     _ = await rig.service.checkNow()
     let calls = cloud.calls.changes
+    let failures = await rig.service.snapshot().failures
     rig.service.pushArrived()
     try await Task.sleep(for: .milliseconds(200))
-    #expect(cloud.calls.changes == calls)
+    #expect(cloud.calls.changes == calls, "calls \(calls) then \(cloud.calls.changes), failures \(failures), sleeps \(rig.clock.requestedSleeps)")
 }
 
 @Test(.timeLimit(.minutes(1))) func listAndSignKeepTheirP99WhileACheckWaitsOnASlowCloud() async throws {

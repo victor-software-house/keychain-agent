@@ -8,13 +8,14 @@ import os
 import ServiceManagement
 import SSHWire
 import Sync
+import SystemConfiguration
 
 @main
 struct Signd: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "An SSH agent for keys only its signed app can use, shared through iCloud.",
         version: signdVersion,
-        subcommands: [KeyCommand.self, DeviceCommand.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self]
+        subcommands: [KeyCommand.self, DeviceCommand.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self, Postinstall.self]
     )
 }
 
@@ -451,8 +452,8 @@ struct Serve: ParsableCommand {
                 }
             }
         )
-        // A build without signd's iCloud container never touches CloudKit, which would stop the process.
-        let cloud: (any CloudStore)? = CloudEntitlement.isPresent ? CloudKitStore() : nil
+        // A build without an iCloud container in its signature never touches CloudKit, which would stop the process.
+        let cloud: (any CloudStore)? = CloudContainer.signed.map { CloudKitStore(containerID: $0) }
         let sync = SyncService(
             SyncService.Dependencies(
                 cloud: cloud, store: store, device: { () throws(StoreError) -> DeviceKey in try DeviceKeyStore().readOrCreate() },
@@ -478,6 +479,29 @@ struct Serve: ParsableCommand {
             app.delegate = receiver
             NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: nil) { _ in sync.accountChanged() }
             withExtendedLifetime(receiver) { app.run() }
+        }
+    }
+}
+
+/// The package's postinstall step, which runs as root: starts the agent again as the user at the console.
+/// A cask upgrade first removes the agent's job from launchd, so `service enable` registers the login item again.
+/// With nobody logged in, the login item starts the agent at the next login. It never fails the install.
+struct Postinstall: ParsableCommand {
+    static let configuration = CommandConfiguration(abstract: "Start the agent as the console user after the package installs.", shouldDisplay: false)
+
+    func run() {
+        let log = Logger(subsystem: "com.victor-software-house.signd", category: "install")
+        var uid: uid_t = 0
+        guard let user = SCDynamicStoreCopyConsoleUser(nil, &uid, nil) as String?, uid != 0, user != "loginwindow" else { return }
+        let signd = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["asuser", String(uid), "/usr/bin/sudo", "-u", user, signd, "service", "enable"]
+        do {
+            try process.run()
+            process.waitUntilExit()
+        } catch {
+            log.error("cannot start the agent for \(user, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 }

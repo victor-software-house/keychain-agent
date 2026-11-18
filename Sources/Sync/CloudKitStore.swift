@@ -3,10 +3,9 @@ import Foundation
 
 /// signd's iCloud private database, through CloudKit.
 ///
-/// Create it only in a process whose signature carries signd's container, as `CloudEntitlement.isPresent` checks:
+/// Create it only with a container that the process's signature lists, as `CloudContainer.signed` reads it:
 /// CloudKit stops a process that asks for a container it is not entitled to.
 public struct CloudKitStore: CloudStore {
-    public static let containerID = "iCloud.com.victor-software-house.signd"
     static let zoneName = "signd"
     static let subscriptionID = "signd-changes"
     /// Each request gets 10 seconds, and a request with its retries 30, so a check never hangs on a lost connection.
@@ -17,8 +16,8 @@ public struct CloudKitStore: CloudStore {
     private let database: CKDatabase
     private let zoneID: CKRecordZone.ID
 
-    public init() {
-        container = CKContainer(identifier: Self.containerID)
+    public init(containerID: String) {
+        container = CKContainer(identifier: containerID)
         database = container.privateCloudDatabase
         zoneID = CKRecordZone.ID(zoneName: Self.zoneName, ownerName: CKCurrentUserDefaultName)
     }
@@ -224,13 +223,17 @@ public struct CloudKitStore: CloudStore {
     }
 }
 
-/// Whether this process may use signd's iCloud container.
-public enum CloudEntitlement {
-    /// True when the process's own signature lists signd's container, as only the release's provisioning profile grants.
-    public static var isPresent: Bool {
+/// The iCloud container this process may use.
+///
+/// The container is named once, in the App ID's iCloud settings; the provisioning profile carries it into the signature,
+/// so the code names none, and a fork with its own App ID and container needs no code change.
+public enum CloudContainer {
+    /// The one container the process's own signature lists, or nil in a build without the entitlement, such as one from source.
+    public static var signed: String? {
         guard let task = SecTaskCreateFromSelf(nil),
-              let value = SecTaskCopyValueForEntitlement(task, "com.apple.developer.icloud-container-identifiers" as CFString, nil)
-        else { return false }
-        return (value as? [String])?.contains(CloudKitStore.containerID) ?? false
+              let value = SecTaskCopyValueForEntitlement(task, "com.apple.developer.icloud-container-identifiers" as CFString, nil),
+              let containers = value as? [String], containers.count == 1
+        else { return nil }
+        return containers[0]
     }
 }

@@ -119,10 +119,12 @@ The stored keys stay as they are after every failure but the account change and 
 The socket server runs on its own task.
 A build without the iCloud entitlement runs no `NSApplication`.
 
-### 10. Builds without iCloud
+### 10. The container and builds without iCloud
 
-The agent reads `com.apple.developer.icloud-container-identifiers` from its own signature with `SecTaskCopyValueForEntitlement`.
-Without signd's container there, it never calls CloudKit, which stops a process that lacks the entitlement, and `signd status` shows sync as off in this build.
+The container is named once, in the App ID's iCloud settings, and the provisioning profile carries it into the signature (operator, 2026-11-18).
+The agent reads `com.apple.developer.icloud-container-identifiers` from its own signature with `SecTaskCopyValueForEntitlement` and uses the one container listed there, so the code names none.
+Without a container there, it never calls CloudKit, which stops a process that lacks the entitlement, and `signd status` shows sync as off in this build.
+`cloudkit/schema.ckdb` declares the schema; `mise run cloudkit:schema` imports it into development, and the CloudKit console deploys it to production.
 The command line never calls CloudKit: it asks the agent.
 
 ### 11. Commands and status

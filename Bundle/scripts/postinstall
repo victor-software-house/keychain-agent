@@ -1,11 +1,2 @@
 #!/bin/sh
-# Runs as root after the package installs. A cask upgrade first removes the agent's job from
-# launchd, so this starts it again as the user at the console: `service enable` registers the
-# login item, or registers it again when the agent does not answer. With nobody logged in, the
-# login item starts the agent at the next login.
-user=$(stat -f %Su /dev/console)
-if [ "$user" = root ] || [ "$user" = loginwindow ]; then
-  exit 0
-fi
-launchctl asuser "$(id -u "$user")" sudo -u "$user" /Applications/Signd.app/Contents/MacOS/signd service enable || true
-exit 0
+exec /Applications/Signd.app/Contents/MacOS/signd postinstall
