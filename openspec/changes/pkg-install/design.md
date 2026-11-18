@@ -10,7 +10,9 @@ The command reaches the PATH only through the Homebrew cask's `binary` link, and
 ### 1. The package links the command into /usr/local/bin
 
 The postinstall runs as root and makes `/usr/local/bin/signd` a symbolic link to `/Applications/Signd.app/Contents/MacOS/signd`.  
-It replaces a link already there and leaves a regular file alone, since that file belongs to someone else.
+It creates `/usr/local/bin` as `root:wheel` with mode 755 when it is missing, as on a Mac without Homebrew.  
+It replaces a link already there with `ln -sfn`, which does not follow a link to a folder.  
+It leaves a regular file alone, since that file belongs to someone else.
 
 `/usr/local/bin` is on the default PATH through `/etc/paths`, so every shell finds it.  
 A symbolic link keeps the bundle's entitlements, as the cask's link does.
@@ -19,8 +21,9 @@ A symbolic link keeps the bundle's entitlements, as the cask's link does.
 
 `signd service enable` adds `Include ~/.ssh/signd/config` and a blank line at the top of `~/.ssh/config`, when no line there includes signd's file.  
 The top matters: an `Include` below a `Host` line applies only to that host.  
-A line counts when its keyword is `Include`, in any case, with whitespace or `=` after it.  
-One of its arguments must be `~/.ssh/signd/config`, the same path under the home directory, or `signd/config`, which SSH reads from `~/.ssh`.
+A line counts when it comes before the first `Host` or `Match` line, and its keyword is `Include`, in any case, with whitespace or `=` after it.  
+One of its arguments must be `~/.ssh/signd/config`, the same path under the home directory, or `signd/config`, which SSH reads from `~/.ssh`.  
+A matching line inside a `Host` or `Match` block does not count, so `service enable` adds the line at the top.
 
 - A missing `~/.ssh` is created with mode 700, and a missing config with mode 600.
 - When `~/.ssh/config` is a symbolic link, signd writes its target, so the link stays.
