@@ -6,7 +6,7 @@
 - [ ] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`; verify unit tests that no file, argument or log holds it.
 - [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.  
   Verify unit tests of the plan for new, changed, removed and foreign items, and for each `backupRemoved` value.  
-  Verify unit tests for a tagged item with no section, a `--local` key, a Secure Enclave list per Mac, and a failed or empty CloudKit read, which removes nothing.  
+  Verify unit tests for a tagged item with no section, a `--local` key, a Secure Enclave list per Mac, a failed or partial CloudKit read, which removes nothing, and a completed empty one, which removes the last key's item.  
   Verify unit tests for duplicate items and for a current cache, where a run with no difference makes only the list call.
 - [ ] 1.4 Add the schedule and the lease by design decisions 4 and 5.  
   Verify unit tests with a fake clock for the delay, the interval, the daily run, a held lease, an expired one, and a renewal that fails mid-run.

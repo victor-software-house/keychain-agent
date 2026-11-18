@@ -40,9 +40,9 @@ It then applies the difference in as few calls as the SDK allows:
 | An item whose fields differ from its source | `put`, one call per changed item |
 | An item whose key is gone | `deleteAll` up to 50 a call, `archive` each, or nothing, by `backupRemoved` |
 
-Removals of shared items come only from a CloudKit read that completed in the same run: every page of the zone fetch returned, with no error and no more-coming flag left set.  
-A partial read counts as failed.  
-A read that fails, or lists no keys while the vault holds shared items, removes nothing and records why in `signd status`, since an empty account and an unloaded one look alike.  
+Removals of shared items come only from a full CloudKit zone fetch, started with no change token, that completed in the same run: every page returned, with no error and no more-coming flag left set.  
+A partial or failed read removes nothing and records why in `signd status`.  
+A completed full fetch is authoritative even when it lists no keys, so deleting the last shared key removes its item too.  
 No run removes an item whose fingerprint matches a key in this Mac's store, whatever its scope.  
 A Mac's `secure-enclave-list` item is updated with `put` and removed only when that Mac's `Device` record is gone from a completed read.  
 Two items with one fingerprint, as 1Password's Duplicate makes, both count: a run updates the oldest and leaves the others alone, and a removal removes every copy.  
