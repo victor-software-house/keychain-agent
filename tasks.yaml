@@ -16,7 +16,7 @@ queue:
       - A key replaced in 1Password reaches every Mac within one interval.
     plan: openspec/changes/onepassword-sync/tasks.md
     notes:
-      - '2026-11-18, left: PR 19 (second-review fixes, swift-onepassword 0.0.2), then migration tasks 5.1 and 5.2 on both Macs.'
+      - '2026-11-18, left: task 5.1 with a replaced key and a login through it, and task 5.2, a day of rate-limit samples started at 03:57 UTC.'
 
   - id: SGD-009
     title: Install without Homebrew, as flowgate does
