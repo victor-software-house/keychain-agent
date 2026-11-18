@@ -19,6 +19,7 @@ ditto "$(swift build -c release --show-bin-path)/signd" "$app/Contents/MacOS/sig
 printf '%s' "$SIGND_PROVISIONING_PROFILE" | base64 -d > "$app/Contents/embedded.provisionprofile"
 
 # The profile allows TEAM.*; signd claims one group, TEAM.com.victor-software-house.signd.
+# plutil reads a dot in a key path as a step into a dictionary, so each entitlement name escapes its dots.
 # It also grants iCloud with wildcards; signd claims CloudKit in production on the one
 # container the App ID names, which the agent reads back from its signature, and push for the
 # container's subscription, and none of the key-value or document stores.
@@ -26,14 +27,14 @@ security cms -D -i "$app/Contents/embedded.provisionprofile" > build/profile.pli
 plutil -extract Entitlements xml1 -o build/signd.entitlements build/profile.plist
 team=$(plutil -extract TeamIdentifier.0 raw build/profile.plist)
 plutil -replace keychain-access-groups -json "[\"$team.com.victor-software-house.signd\"]" build/signd.entitlements
-plutil -replace com.apple.developer.icloud-services -json '["CloudKit"]' build/signd.entitlements
-containers=$(plutil -extract com.apple.developer.icloud-container-identifiers json -o - build/signd.entitlements 2> /dev/null) || containers=none
-container=$(plutil -extract com.apple.developer.icloud-container-identifiers.0 raw -o - build/signd.entitlements 2> /dev/null) || container=
+plutil -replace 'com\.apple\.developer\.icloud-services' -json '["CloudKit"]' build/signd.entitlements
+containers=$(plutil -extract 'com\.apple\.developer\.icloud-container-identifiers' json -o - build/signd.entitlements 2> /dev/null) || containers=none
+container=$(plutil -extract 'com\.apple\.developer\.icloud-container-identifiers.0' raw -o - build/signd.entitlements 2> /dev/null) || container=
 if [ -z "$container" ]; then
   echo "✘ the profile must name exactly one iCloud container, not $containers" >&2
   exit 1
 fi
-if plutil -extract com.apple.developer.icloud-container-identifiers.1 raw -o - build/signd.entitlements > /dev/null 2>&1; then
+if plutil -extract 'com\.apple\.developer\.icloud-container-identifiers.1' raw -o - build/signd.entitlements > /dev/null 2>&1; then
   echo "✘ the profile must name exactly one iCloud container, not $containers" >&2
   exit 1
 fi
@@ -43,10 +44,10 @@ case "$container" in
     exit 1
     ;;
 esac
-plutil -replace com.apple.developer.icloud-container-environment -string Production build/signd.entitlements
-plutil -replace com.apple.developer.aps-environment -string production build/signd.entitlements
-plutil -remove com.apple.developer.ubiquity-container-identifiers build/signd.entitlements 2> /dev/null || true
-plutil -remove com.apple.developer.ubiquity-kvstore-identifier build/signd.entitlements 2> /dev/null || true
+plutil -replace 'com\.apple\.developer\.icloud-container-environment' -string Production build/signd.entitlements
+plutil -replace 'com\.apple\.developer\.aps-environment' -string production build/signd.entitlements
+plutil -remove 'com\.apple\.developer\.ubiquity-container-identifiers' build/signd.entitlements 2> /dev/null || true
+plutil -remove 'com\.apple\.developer\.ubiquity-kvstore-identifier' build/signd.entitlements 2> /dev/null || true
 
 codesign --force --options runtime --timestamp --entitlements build/signd.entitlements --sign 'Developer ID Application' "$app"
 codesign --verify --strict --deep --verbose=2 "$app"
