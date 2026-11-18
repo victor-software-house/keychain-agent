@@ -1,11 +1,10 @@
 # signd
 
-An SSH agent for macOS whose keys stay on the Mac.  
-It makes keys in the Secure Enclave, imports the Ed25519, ECDSA and RSA keys you already have, and can follow the SSH keys in a 1Password vault.  
-Every key sits in signd's own keychain access group, so only signd can use it, and no command exports it.
+An SSH agent for macOS that holds its keys in the Secure Enclave.  
+It makes new keys, imports the Ed25519, ECDSA and RSA keys you already have, and loads the SSH keys of a 1Password vault with a service account token.
 
-The agent answers from memory.  
-Listing keys takes well under a millisecond, and a Secure Enclave signature takes about 5 ms.
+The Secure Enclave holds only P-256 keys, so signd stores every other key encrypted to a Secure Enclave key, and no command writes a private key out.  
+Listing keys takes under a millisecond, and a Secure Enclave signature about 5 ms.
 
 ## Use
 
