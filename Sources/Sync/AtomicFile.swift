@@ -1,7 +1,8 @@
 import Darwin
 import Foundation
 
-/// Writes a file whole: to a temporary name in the same directory, then renamed over the target.
+/// Writes a file in one step.
+/// It writes a temporary file in the same directory, then renames it over the target.
 enum AtomicFile {
     static func write(_ data: Data, to url: URL, mode: mode_t) throws {
         let directory = url.deletingLastPathComponent()

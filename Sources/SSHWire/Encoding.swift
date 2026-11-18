@@ -19,8 +19,9 @@ extension Data {
         appendString(Data(value.utf8))
     }
 
-    /// Appends an unsigned big-endian magnitude as an SSH mpint: minimal, with a zero byte in
-    /// front when the top bit is set, so it does not read as negative.
+    /// Appends an unsigned big-endian magnitude as an SSH mpint.
+    /// The encoding is minimal.
+    /// A zero byte goes in front when the top bit is set, so the number is not negative.
     public mutating func appendMPInt(unsigned magnitude: some DataProtocol) {
         var bytes = Data(magnitude.drop { $0 == 0 })
         if let first = bytes.first, first & 0x80 != 0 {
@@ -62,7 +63,7 @@ public struct Reader: Sendable {
         return Data(data[offset..<offset + length])
     }
 
-    /// An SSH string that holds UTF-8 text.
+    /// An SSH string that contains UTF-8 text.
     public mutating func text() -> String? {
         string().flatMap { String(data: $0, encoding: .utf8) }
     }

@@ -77,7 +77,7 @@ public struct SoftwareSigner: Signer {
     }
 
     private static func ecdsa(_ curve: Curve, scalar: Data) throws -> Key {
-        // CryptoKit wants the scalar at the curve's full length.
+        // CryptoKit needs the scalar at the curve's full length.
         func padded(_ length: Int) -> Data { Data(repeating: 0, count: max(0, length - scalar.count)) + scalar }
         switch curve {
         case .p256: return .p256(try P256.Signing.PrivateKey(rawRepresentation: padded(32)))

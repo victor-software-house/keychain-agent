@@ -48,7 +48,7 @@ public actor Agent {
         self.keysRead = keysRead
     }
 
-    /// Opens a key by its kind: a Secure Enclave key through its handle, a wrapped key by opening its seal into memory.
+    /// Opens a key by its type: a Secure Enclave key through its handle, a wrapped key by opening its seal into memory.
     public static let openStored: Opener = { key throws(SignError) in
         switch key.kind {
         case .secureEnclave: try SecureEnclaveSigner(handle: key.keyData)

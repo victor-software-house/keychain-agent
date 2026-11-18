@@ -1,15 +1,16 @@
 import Foundation
 import SSHWire
 
-/// How a stored key holds its private part.
+/// How a stored key keeps its private part.
 public enum KeyKind: String, Codable, Sendable {
     /// A P-256 key inside the Secure Enclave; `keyData` is its opaque handle.
     case secureEnclave = "secure-enclave"
-    /// An Ed25519, ECDSA or RSA key sealed to a Secure Enclave key-agreement key; `keyData` is that key's opaque handle.
+    /// An Ed25519, Elliptic Curve Digital Signature Algorithm (ECDSA) or Rivest-Shamir-Adleman (RSA) key.
+    /// It is sealed to a Secure Enclave key-agreement key; `keyData` is that key's opaque handle.
     case wrapped = "wrapped"
 }
 
-/// One key in the store, as one keychain item holds it.
+/// One key in the store, as one keychain item stores it.
 public struct StoredKey: Codable, Sendable, Equatable {
     /// The item format, so a later release can read an older one.
     public var format = 1
@@ -58,7 +59,7 @@ public struct StoredKey: Codable, Sendable, Equatable {
     /// The comment ssh-add shows: the comment, or the name when the comment is empty.
     public var displayComment: String { comment.isEmpty ? name : comment }
 
-    /// Names are what commands use, so they stay plain: letters, digits, `-`, `_` and `.`.
+    /// Commands use names, so a valid name has only letters, digits, `-`, `_` and `.`.
     public static func isValidName(_ name: String) -> Bool {
         !name.isEmpty && name.count <= 64 && name.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "-_.".contains($0)) }
     }

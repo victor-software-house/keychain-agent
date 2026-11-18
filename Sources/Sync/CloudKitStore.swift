@@ -3,8 +3,8 @@ import Foundation
 
 /// signd's iCloud private database, through CloudKit.
 ///
-/// Create it only with a container that the process's signature lists, as `CloudContainer.signed` reads it:
-/// CloudKit stops a process that asks for a container it is not entitled to.
+/// Create it only with a container that the process's signature lists, as `CloudContainer.signed` reads it.
+/// CloudKit stops a process that requests a container it is not entitled to.
 public struct CloudKitStore: CloudStore {
     static let zoneName = "signd"
     static let subscriptionID = "signd-changes"
@@ -167,7 +167,7 @@ public struct CloudKitStore: CloudStore {
         }
     }
 
-    // MARK: Conversions
+    // Conversions
 
     static func record(_ record: CKRecord) -> CloudRecord? {
         guard let type = RecordType(rawValue: record.recordType) else { return nil }
@@ -225,8 +225,9 @@ public struct CloudKitStore: CloudStore {
 
 /// The iCloud container this process may use.
 ///
-/// The container is named once, in the App ID's iCloud settings; the provisioning profile carries it into the signature,
-/// so the code names none, and a fork with its own App ID and container needs no code change.
+/// The App ID's iCloud settings call the container once.
+/// The provisioning profile carries it into the signature, so the code contains no container name.
+/// A fork with its own App ID and container needs no code change.
 public enum CloudContainer {
     /// The one container the process's own signature lists, or nil in a build without the entitlement, such as one from source.
     public static var signed: String? {

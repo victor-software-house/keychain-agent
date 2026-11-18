@@ -22,7 +22,7 @@ public enum MessageType: UInt8, Sendable {
     case extensionResponse = 29
 }
 
-/// The flags of a sign request that pick the RSA signature hash.
+/// The flags of a sign request that pick the Rivest-Shamir-Adleman (RSA) signature hash.
 public struct SignFlags: OptionSet, Sendable, Equatable {
     public let rawValue: UInt32
     public init(rawValue: UInt32) { self.rawValue = rawValue }
@@ -37,7 +37,7 @@ public enum RSAAlgorithm: String, Sendable, Equatable {
     case sha256 = "rsa-sha2-256"
     case sha1 = "ssh-rsa"
 
-    /// The algorithm a sign request asks for; SHA-512 wins when both flags are set.
+    /// The algorithm a sign request selects; SHA-512 wins when both flags are set.
     public init(flags: SignFlags) {
         if flags.contains(.rsaSHA512) {
             self = .sha512
