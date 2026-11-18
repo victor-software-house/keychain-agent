@@ -59,7 +59,11 @@
   - 2026-11-18 00:50 UTC, signd 0.0.6: on both Macs, the dotfiles signed signd in with a service account token, and signd synced an RSA key item with a `hosts` field from the vault.  
     Each Mac routed that host to the synced key, and `git ls-remote` through it returned HEAD after the imported copy of the key was deleted.
   - 2026-11-18 00:51 UTC: a change to the item's `hosts` field reached the two Macs 2 min 48 s and 4 min 3 s later, inside the 5-minute interval.
-  - Not verified: replacing the key itself, with a login through the new key, because that host needs a new key registered by hand.
+  - 2026-11-18 04:04 UTC: a new SSH Key item routed to portable's tailnet address reached portable in 62 s, on its own check, and logged in through signd from there.  
+    This Mac got it from a `signd sync`.
+  - 2026-11-18 04:07 UTC: the item was replaced by a new key under the same title, and the old public key removed from `authorized_keys`.  
+    After a `signd sync` on each Mac, both logged in through the new key.
+  - Not verified: the replacement within one interval with no `signd sync`.
   - 2026-11-18 UTC: dropped; the operator replaced the 1Password sync with the `icloud-sync` change, which removes this capability.
 - [ ] 5.2 Run one Mac for a day and read its request count with the account's rate-limit report; verify it stays within one read per interval plus the fetches for changed items.
   - 2026-11-18 UTC: dropped with 5.1, for the same reason.
