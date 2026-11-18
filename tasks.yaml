@@ -15,6 +15,8 @@ queue:
       - swift-onepassword is a public package whose release signd links.
       - A key replaced in 1Password reaches every Mac within one interval.
     plan: openspec/changes/onepassword-sync/tasks.md
+    notes:
+      - '2026-11-18, left: PR 19 (second-review fixes, swift-onepassword 0.0.2), then migration tasks 5.1 and 5.2 on both Macs.'
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
@@ -26,6 +28,67 @@ queue:
     acceptance:
       - Every task in openspec/changes/declarative-config/tasks.md is ticked with evidence.
     plan: openspec/changes/declarative-config/tasks.md
+
+  - id: SGD-005
+    title: Register keys with GitHub and other services on demand
+    scope: registration
+    outcome: >-
+      A key declared for a service is made on each Mac and registered there, so no
+      Mac needs the 1Password SSH agent.
+    blocked_by:
+      - SGD-004
+    acceptance:
+      - A Secure Enclave key declared for github.com is registered on the account as an authentication and a signing key, from the dotfiles, with no browser step.
+      - Removing the declaration removes the key from the account.
+      - The change records, per service, whether signd registers keys there and how.
+    notes:
+      - '2026-11-18, research: GitHub /user/keys and /user/ssh_signing_keys (write:public_key, admin:ssh_signing_key); GitLab /user/keys with usage_type; Bitbucket /2.0/users/{u}/ssh-keys.'
+      - '2026-11-18, research: Azure DevOps has no supported key API; Hostinger has a per-VM key API; instabox uses certificates, so no registration.'
+      - Service-issued keys (Azure DevOps, IVM) stay in the signd vault through SGD-003.
+
+  - id: SGD-006
+    title: "Guided first sign-in: signd setup"
+    scope: onepassword-sync
+    outcome: >-
+      The first Mac of a fleet goes from no vault to synced keys with one Touch ID
+      and one Copy in the service account wizard.
+    blocked_by:
+      - SGD-003
+    acceptance:
+      - signd setup creates the signd vault through the 1Password app when it is missing.
+      - signd setup opens the service account wizard, takes the ops_ token from the clipboard and clears the clipboard.
+      - signd login and signd setup print the names of the vaults the token reads.
+    notes:
+      - 2026-11-18, operator picked the app plus browser flow; 1Password documents no callback, so the clipboard is the handoff.
+      - The Go SDK signs in through the app with WithDesktopAppIntegration; swift-onepassword needs that open path and vault list and create.
+      - 'Wizard: https://start.1password.com/developer-tools/infrastructure-secrets/serviceaccount/'
+
+  - id: SGD-007
+    title: Build Signd.app with XcodeGen and the template build settings
+    scope: packaging
+    outcome: >-
+      Xcode builds the app bundle from a project spec, so no script assembles it
+      around swift build.
+    blocked_by: []
+    acceptance:
+      - Signd.app comes from xcodebuild on a project.yml that includes xcodegen/settings.yml from the template.
+      - The released pkg keeps its signature, entitlements, provisioning profile and notarization, and the agent upgrades in place.
+    notes:
+      - 'Starts when the templates tag with the Swift ci piece and xcode_settings defaults exists (templates #242).'
+
+  - id: SGD-008
+    title: Terminal output with Noora
+    scope: cli
+    outcome: >-
+      signd marks results with colour and symbols on a terminal and stays plain
+      everywhere else.
+    blocked_by: []
+    acceptance:
+      - On a terminal signd prints colour and the ✔ ✘ ▲ symbols; piped, under NO_COLOR or with --color never it prints plain text.
+      - CLICOLOR_FORCE and --color always force colour, and --json output is never coloured.
+      - The PR records the binary size before and after Noora.
+    notes:
+      - 2026-11-18, operator picked Noora 0.57.7 to match qctl and verctl.
 archive:
   - id: SGD-002
     title: Hold Ed25519, ECDSA and RSA keys wrapped by the Secure Enclave
