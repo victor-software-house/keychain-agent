@@ -2,10 +2,19 @@
 
 ## 1. The binding
 
-- [ ] 1.1 Create the public `swift-onepassword` repository with a README, an AGENTS.md and VERSION 0.0.0 in its first commit, on the shared Swift template; verify its CI runs on GitHub-hosted runners.
-- [ ] 1.2 Write the Go shim of design decision 1 against an exact onepassword-sdk-go version, and its Swift `OnePassword` module; verify tests that open a client with a malformed token and get a typed error.
-- [ ] 1.3 Build the XCFramework in the release job and publish it with its checksum, and point `binaryTarget` at it. Verify that a sample package resolves and links it on a GitHub-hosted runner, and record the binary size and first-client start-up time in the release notes.
-- [ ] 1.4 Add a live test that lists vaults, items and one SSH Key item with a test service account from the repository's secrets; verify it passes in the release job.
+- [x] 1.1 Create the public `swift-onepassword` repository with a README, an AGENTS.md and VERSION 0.0.0 in its first commit, on the shared Swift template; verify its CI runs on GitHub-hosted runners.
+  - 2026-11-18 UTC: [swift-onepassword] is public, and its first commit, with README.md, AGENTS.md and VERSION 0.0.0, is [99c5a8c][so-first], and it renders CI from templates v0.0.120 ([swift-onepassword#7]).  
+    Its Build and test job runs on GitHub's `xcode-27` image and passed on [swift-onepassword#8].
+- [x] 1.2 Write the Go shim of design decision 1 against an exact onepassword-sdk-go version, and its Swift `OnePassword` module; verify tests that open a client with a malformed token and get a typed error.
+  - 2026-11-18 UTC: `core/go.mod` requires onepassword-sdk-go v0.4.1 exactly.  
+    [`malformedTokenIsAnAuthenticationError`][so-client-tests] opens a client with a malformed token and gets `OnePasswordError` of kind `authentication`; it passed in the check step of [swift-onepassword#8].
+- [x] 1.3 Build the XCFramework in the release job and publish it with its checksum, and point `binaryTarget` at it. Verify that a sample package resolves and links it on a GitHub-hosted runner, and record the binary size and first-client start-up time in the release notes.
+  - 2026-11-18 UTC: the Core workflow publishes `COnePassword.xcframework.zip` to release [core-92966556d452][so-core], and `Package.swift` points its `binaryTarget` there with the zip's checksum.  
+    The release workflow's Consumer package job resolves and links a released version in a sample package on `xcode-27`.
+  - The [0.0.2 release notes][so-0.0.2] record the zip, 26.1 MB, and a cold first client, 2,265 ms and a 170 MB resident peak, from one benchmark sample.
+- [x] 1.4 Add a live test that lists vaults, items and one SSH Key item with a test service account from the repository's secrets; verify it passes in the release job.
+  - 2026-11-18 UTC: `LiveTests` lists the test vault, its items and the `test-key` SSH Key item with `OP_TEST_SERVICE_ACCOUNT_TOKEN`.  
+    The Live 1Password job of [release run 44232571722][so-release-run] passed.
 
 ## 2. Token and sync
 
@@ -58,4 +67,12 @@
 - Archive this change after the `wrapped-keys` change.
 
 [signd#16]: https://github.com/victor-software-house/signd/pull/16
+[swift-onepassword]: https://github.com/victor-software-house/swift-onepassword
+[so-first]: https://github.com/victor-software-house/swift-onepassword/commit/99c5a8c073ad83769efb6b1b64fe11e2bb36d443
+[swift-onepassword#7]: https://github.com/victor-software-house/swift-onepassword/pull/7
+[swift-onepassword#8]: https://github.com/victor-software-house/swift-onepassword/pull/8
+[so-client-tests]: https://github.com/victor-software-house/swift-onepassword/blob/a2e3d08281d1d57e79cb133a1be513268a31c967/Tests/OnePasswordTests/ClientTests.swift
+[so-core]: https://github.com/victor-software-house/swift-onepassword/releases/tag/core-92966556d452
+[so-0.0.2]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.2
+[so-release-run]: https://github.com/victor-software-house/swift-onepassword/actions/runs/44232571722
 [sync-tests]: ../../../Tests/SigndTests/SyncTests.swift
