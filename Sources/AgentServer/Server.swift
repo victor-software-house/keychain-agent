@@ -14,15 +14,21 @@ import Synchronization
 public enum PrivateExtension {
     public static let status = "signd-status@victor-software-house.com"
     public static let reload = "signd-reload@victor-software-house.com"
-    /// Runs a check of 1Password now and answers with its `CheckSummary` as JSON.
+    /// Runs a check of iCloud now and answers with its `CheckSummary` as JSON.
     public static let sync = "signd-sync@victor-software-house.com"
-    /// Starts syncing again from the stored token, as after `signd login`.
-    public static let login = "signd-login@victor-software-house.com"
-    /// Signs out, and answers with a `LogoutResult` as JSON.
-    public static let logout = "signd-logout@victor-software-house.com"
+    /// Answers with the sync state as JSON.
+    public static let syncState = "signd-sync-state@victor-software-house.com"
+    /// Shares the key its contents name, and answers with a `SyncResult` as JSON.
+    public static let share = "signd-share@victor-software-house.com"
+    /// Deletes the shared key its contents name on every device, and answers with a `SyncResult` as JSON.
+    public static let deleteShared = "signd-delete-shared@victor-software-house.com"
+    /// Answers with the devices of the account as JSON.
+    public static let devices = "signd-devices@victor-software-house.com"
+    /// Removes the device its contents name, and answers with a `SyncResult` as JSON.
+    public static let removeDevice = "signd-remove-device@victor-software-house.com"
 
     /// Every extension of signd's command line; a connection that the SSH client forwarded may use none of them.
-    static let all: Set<String> = [status, reload, sync, login, logout]
+    static let all: Set<String> = [status, reload, sync, syncState, share, deleteShared, devices, removeDevice]
 }
 
 /// A file by its device and inode, so two paths to one file match.
@@ -162,10 +168,8 @@ public struct Server: Sendable {
     func respond(to request: Request, on connection: Connection = Connection(peerPID: nil)) async -> Response {
         switch request {
         case .identities:
-            sync?.noteRequest()
             return .identities(await agent.identities())
         case let .sign(blob, data, flags):
-            sync?.noteRequest()
             guard let signer = await agent.signer(for: blob) else { return .failure }
             do {
                 // Signing runs on the thread pool, so a slow Secure Enclave call holds no event loop or actor.
@@ -200,18 +204,26 @@ public struct Server: Sendable {
             return .success
         case PrivateExtension.reload:
             await agent.reload()
-            await sync?.reconfigure()
+            await sync?.reloaded()
             return .success
-        case PrivateExtension.login:
-            guard let sync else { return .failure }
-            await sync.login()
-            return .success
-        case PrivateExtension.logout:
-            guard let sync else { return .failure }
-            return Self.json(await sync.logout(), name: name)
         case PrivateExtension.sync:
             guard let sync else { return .failure }
             return Self.json(await sync.syncRequested(), name: name)
+        case PrivateExtension.syncState:
+            guard let sync else { return .failure }
+            return Self.json(await sync.snapshot(), name: name)
+        case PrivateExtension.share:
+            guard let sync, let key = Self.argument(contents) else { return .failure }
+            return Self.json(await sync.share(key), name: name)
+        case PrivateExtension.deleteShared:
+            guard let sync, let key = Self.argument(contents) else { return .failure }
+            return Self.json(await sync.deleteShared(key), name: name)
+        case PrivateExtension.devices:
+            guard let sync else { return .failure }
+            return Self.json(await sync.devices(), name: name)
+        case PrivateExtension.removeDevice:
+            guard let sync, let id = Self.argument(contents) else { return .failure }
+            return Self.json(await sync.removeDevice(id), name: name)
         case PrivateExtension.status:
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -228,6 +240,13 @@ public struct Server: Sendable {
     private func isSigndCommand(_ connection: Connection) -> Bool {
         guard let executable, let pid = connection.peerPID, let peer = FileIdentity(executableOf: pid) else { return false }
         return peer == executable
+    }
+
+    /// The one string argument of a private extension.
+    private static func argument(_ contents: Data) -> String? {
+        var reader = Reader(contents)
+        guard let text = reader.text(), reader.isAtEnd else { return nil }
+        return text
     }
 
     private static func json(_ value: some Encodable, name: String) -> Response {

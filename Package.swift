@@ -20,7 +20,6 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
         .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.4"),
-        .package(url: "https://github.com/victor-software-house/swift-onepassword", exact: "0.0.2"),
     ],
     targets: [
         // The SSH encoding of keys and signatures, with no platform code.
@@ -37,15 +36,8 @@ let package = Package(
             ],
             swiftSettings: strict
         ),
-        // Syncing keys from 1Password, and the SSH routing files for their hosts.
-        .target(
-            name: "Sync",
-            dependencies: [
-                "KeyStore", "SSHWire",
-                .product(name: "OnePassword", package: "swift-onepassword"),
-            ],
-            swiftSettings: strict
-        ),
+        // Sharing keys between devices through iCloud, and the SSH routing files for their hosts.
+        .target(name: "Sync", dependencies: ["KeyStore", "SSHWire"], swiftSettings: strict),
         // The agent's state and the socket server.
         .target(
             name: "AgentServer",
@@ -61,7 +53,6 @@ let package = Package(
             name: "signd",
             dependencies: [
                 "AgentServer", "AgentProtocol", "KeyStore", "SSHWire", "Sync",
-                .product(name: "OnePassword", package: "swift-onepassword"),
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             swiftSettings: strict
@@ -70,7 +61,6 @@ let package = Package(
             name: "SigndTests",
             dependencies: [
                 "SSHWire", "AgentProtocol", "KeyStore", "AgentServer", "Sync",
-                .product(name: "OnePassword", package: "swift-onepassword"),
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "NIOCore", package: "swift-nio"),
             ],

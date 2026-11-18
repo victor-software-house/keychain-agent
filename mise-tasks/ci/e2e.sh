@@ -80,6 +80,8 @@ ssh-add -l > /dev/null 2>&1 || [ $? -eq 1 ] || fail "the agent did not restart o
 
 "$bin" status --socket "$socket" --json > "$work/status.json" || fail "signd status did not reach the agent"
 grep -q '"agentAnswers" : true' "$work/status.json" || fail "signd status reports no agent"
+# The unsigned build has no iCloud entitlement, so the agent never calls CloudKit and reports sync as off.
+grep -q '"state" : "off in this build"' "$work/status.json" || fail "signd status does not report sync as off in an unsigned build"
 
 # SSH routing. The unsigned agent has no keychain, so it holds no key with hosts; a test writes the
 # files into a temporary home, once with every key and once with one key's last host removed.
@@ -123,4 +125,4 @@ if grep -q 'deploy.pub' "$work/g4"; then fail "a key whose last host was removed
 [ ! -e "$home/.ssh/signd/deploy.pub" ] || fail "the public file of a key with no hosts remains"
 grep -q '^identityfile .*/.ssh/signd/other.pub$' "$work/g4" || fail "the remaining key stopped routing"
 
-echo "✔ the agent served ed25519, ecdsa and rsa keys added by ssh-add, refused lock and confirm, honoured lifetimes and ssh-add -D, and survived an oversized message and a restart; the routing files give ssh -G the socket and key of each host, keep to modes 700, 600 and 644, drop a bad host pattern, and follow a removed host"
+echo "✔ the agent served ed25519, ecdsa and rsa keys added by ssh-add, refused lock and confirm, honoured lifetimes and ssh-add -D, survived an oversized message and a restart, and reported sync as off without the iCloud entitlement; the routing files give ssh -G the socket and key of each host, keep to modes 700, 600 and 644, drop a bad host pattern, and follow a removed host"

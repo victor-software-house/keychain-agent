@@ -3,7 +3,6 @@
 ## Context
 
 signd keeps settings in the user defaults domain `com.victor-software-house.signd` through CFPreferences, and keys in its keychain access group.  
-The `onepassword-sync` change adds fleet values from a `signd` note in 1Password.  
 flowgate already follows its TOML file with a kqueue watch on the file and its directory, two descriptors and a 50 ms debounce, and nothing runs between changes; signd takes the same pattern.
 
 ## Goals / Non-Goals
@@ -16,7 +15,6 @@ flowgate already follows its TOML file with a kqueue watch on the file and its d
 
 **Non-Goals:**
 
-- The 1Password token in a file or profile. It stays in signd's access group, given through `signd login`.
 - Registering keys with services such as GitHub; a later change adds that to the key entries.
 - Configuration for other users of the Mac.
 
@@ -28,8 +26,7 @@ flowgate already follows its TOML file with a kqueue watch on the file and its d
 |:--|:--|:--|
 | 1 | Managed preferences of the domain, from an MDM profile | the MDM server |
 | 2 | `~/.config/signd/config.toml` | a dotfiles tool, or `signd config set` |
-| 3 | The `signd` note in a synced vault | the 1Password vault's owner |
-| 4 | The built-in default | signd |
+| 3 | The built-in default | signd |
 
 A value from a higher source wins over every lower one.  
 `signd status` names the source of each value.  
@@ -41,7 +38,7 @@ A value an older release left in the user's own domain is therefore not read as 
 
 ```toml
 [settings]
-interval = "5m"
+interval = "2s"
 key-lifetime = "1h"
 
 [[keys]]
@@ -60,7 +57,7 @@ The profile carries the same names as preference keys: `interval`, `key-lifetime
 - An entry whose name has no key is created, and the key's source is recorded as `config`.
 - An entry whose key has source `config` and other hosts or comment is updated in place; a changed `type` is reported and not applied, because it would replace the private key.
 - A key with source `config` and no entry is deleted.
-- A key made by command (`local`) or synced (`1password`) is never changed by an apply. An entry that names one is reported as a conflict.
+- A key made by command (`local`) or shared from another Mac (`icloud`) is never changed by an apply. An entry that names one is reported as a conflict.
 
 `signd plan` prints these steps without making them, and exits non-zero when any step would run, so a dotfiles tool can show the plan before an apply.
 
@@ -82,18 +79,13 @@ Nothing polls.
 The agent also watches `~/.ssh/signd/`, which it writes for keys with hosts.  
 A change there that the agent did not make is replaced within a second by the text the agent would write, so a hand edit never lasts.
 
-The file starts with a comment that names signd as its writer, and the config file and 1Password as the places to change hosts.  
+The file starts with a comment that names signd as its writer, and the config file and `signd key` as the places to change hosts.  
 `signd status` reports the last edit the agent replaced.
 
 ### 5. `signd config set`
 
 It rewrites the file in one rename, and only when the new text loads; comments and order of the other lines stay as they were.  
 It refuses a key the profile manages, and names the profile as the reason.
-
-### 6. The token
-
-The token is never configuration.  
-A dotfiles tool can keep it current by running `signd login` when the token's 1Password item changes, keyed on the item's update time rather than its value.
 
 ## Risks / Trade-offs
 

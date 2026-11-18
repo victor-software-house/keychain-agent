@@ -54,7 +54,7 @@ jobs:
           workflow=${WORKFLOW%@*}
           gh workflow run "${workflow##*/}" --repo "$REPOSITORY" --ref main
 
-# Whether a pull request changes anything the build reads. Documentation is
+  # Whether a pull request changes anything the build reads. Documentation is
   # the root's Markdown files, docs/, and openspec/. A documentation file
   # still counts as a build input when a Swift source names its path.
   changes:
@@ -173,13 +173,11 @@ jobs:
         timeout-minutes: 15
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OP_TEST_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TEST_SERVICE_ACCOUNT_TOKEN }}
         run: mise run check
       - name: Run ci:e2e
         timeout-minutes: 15
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OP_TEST_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TEST_SERVICE_ACCOUNT_TOKEN }}
         run: mise run ci:e2e
       # Only a run on the default branch saves: a pull request, a merge group
       # and a run on another branch restore and never write, so no entry

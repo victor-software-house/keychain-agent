@@ -60,11 +60,9 @@
     Each Mac routed that host to the synced key, and `git ls-remote` through it returned HEAD after the imported copy of the key was deleted.
   - 2026-11-18 00:51 UTC: a change to the item's `hosts` field reached the two Macs 2 min 48 s and 4 min 3 s later, inside the 5-minute interval.
   - Not verified: replacing the key itself, with a login through the new key, because that host needs a new key registered by hand.
+  - 2026-11-18 UTC: dropped; the operator replaced the 1Password sync with the `icloud-sync` change, which removes this capability.
 - [ ] 5.2 Run one Mac for a day and read its request count with the account's rate-limit report; verify it stays within one read per interval plus the fetches for changed items.
-
-## Workflow follow-up
-
-- Archive this change after the `wrapped-keys` change.
+  - 2026-11-18 UTC: dropped with 5.1, for the same reason.
 
 [signd#16]: https://github.com/victor-software-house/signd/pull/16
 [swift-onepassword]: https://github.com/victor-software-house/swift-onepassword
@@ -75,4 +73,4 @@
 [so-core]: https://github.com/victor-software-house/swift-onepassword/releases/tag/core-92966556d452
 [so-0.0.2]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.2
 [so-release-run]: https://github.com/victor-software-house/swift-onepassword/actions/runs/44232571722
-[sync-tests]: ../../../Tests/SigndTests/SyncTests.swift
+[sync-tests]: https://github.com/victor-software-house/signd/blob/97160f1caa78f6425af9ea5f455179a31001d79f/Tests/SigndTests/SyncTests.swift

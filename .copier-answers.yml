@@ -1,12 +1,11 @@
 # Changes here will be overwritten by Copier; edit with `copier update --data`.
-_commit: v0.0.120
+_commit: v0.0.121
 _src_path: https://github.com/victor-software-house/templates.git
 build_os: macos
 ci_extra_tasks:
 - ci:e2e
 ci_runner: github-hosted
-ci_secrets:
-- OP_TEST_SERVICE_ACCOUNT_TOKEN
+ci_secrets: []
 default_branch: main
 generated_paths: []
 github_owner: victor-software-house

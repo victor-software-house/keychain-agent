@@ -47,9 +47,10 @@ struct AgentClient {
         return data
     }
 
-    private func callExtension(_ name: String, timeout: Int = 5) -> Data? {
+    private func callExtension(_ name: String, argument: String? = nil, timeout: Int = 5) -> Data? {
         var body = Data([MessageType.extension.rawValue])
         body.appendString(name)
+        if let argument { body.appendString(Data(argument.utf8)) }
         return call(body, timeout: timeout)
     }
 
@@ -61,25 +62,39 @@ struct AgentClient {
         return try? JSONDecoder().decode(AgentStatus.self, from: json)
     }
 
-    /// Asks the agent to check 1Password now and returns the check's result, or nil when no agent answers.
+    /// Asks the agent to check iCloud now and returns the check's result, or nil when no agent answers.
     func sync() -> CheckSummary? {
-        // A check makes several requests to 1Password, so it may take longer than a status call.
-        decoded(PrivateExtension.sync, timeout: 300)
+        // A check waits for any share in flight and can retry, so it may take longer than a status call.
+        decoded(PrivateExtension.sync, timeout: 120)
     }
 
-    /// Asks the agent to sign out, and returns what it did, or nil when no agent that knows the request answers.
-    func logout() -> LogoutResult? {
-        decoded(PrivateExtension.logout, timeout: 60)
+    /// The agent's sync state, or nil when no agent answers.
+    func syncState() -> SyncState? {
+        decoded(PrivateExtension.syncState, timeout: 5)
     }
 
-    /// Tells the agent that a new token is stored, so it forgets the old state and starts syncing from the token.
-    /// Returns whether an agent that knows the request answered; one that does not leaves the state to the caller.
-    func login() -> Bool {
-        callExtension(PrivateExtension.login)?.first == MessageType.success.rawValue
+    /// Asks the agent to share a stored key, or nil when no agent answers.
+    func share(_ key: String) -> SyncResult? {
+        decoded(PrivateExtension.share, argument: key, timeout: 120)
     }
 
-    private func decoded<Value: Decodable>(_ name: String, timeout: Int) -> Value? {
-        guard let reply = callExtension(name, timeout: timeout), reply.first == MessageType.extensionResponse.rawValue else { return nil }
+    /// Asks the agent to delete a shared key on every device, or nil when no agent answers.
+    func deleteShared(_ key: String) -> SyncResult? {
+        decoded(PrivateExtension.deleteShared, argument: key, timeout: 120)
+    }
+
+    /// The devices of the account, or nil when no agent answers.
+    func devices() -> [DeviceSummary]? {
+        decoded(PrivateExtension.devices, timeout: 5)
+    }
+
+    /// Asks the agent to remove a device, or nil when no agent answers.
+    func removeDevice(_ id: String) -> SyncResult? {
+        decoded(PrivateExtension.removeDevice, argument: id, timeout: 120)
+    }
+
+    private func decoded<Value: Decodable>(_ name: String, argument: String? = nil, timeout: Int) -> Value? {
+        guard let reply = callExtension(name, argument: argument, timeout: timeout), reply.first == MessageType.extensionResponse.rawValue else { return nil }
         var reader = Reader(reply.dropFirst())
         guard reader.text() == name, let json = reader.string() else { return nil }
         return try? JSONDecoder().decode(Value.self, from: json)
