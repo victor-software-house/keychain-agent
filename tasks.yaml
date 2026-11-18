@@ -27,6 +27,7 @@ queue:
       - signd.pkg links /usr/local/bin/signd to the app binary, unless a file that is not a link is there.
       - After the pkg, signd status shows the agent answering; when Login Items needs approval, signd status says so and signd service enable opens that pane.
       - The README Install section starts from the pkg, with Homebrew as the second route.
+      - 'After the pkg, ssh uses signd with no other step: signd adds Include ~/.ssh/signd/config at the top of ~/.ssh/config when no line includes it, creating the file when it is missing, and signd status shows whether the line is there.'
     notes:
       - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
 
@@ -55,8 +56,8 @@ queue:
       - The change records, per service, whether signd registers keys there and how.
     notes:
       - '2026-11-18, research: GitHub /user/keys and /user/ssh_signing_keys (write:public_key, admin:ssh_signing_key); GitLab /user/keys with usage_type; Bitbucket /2.0/users/{u}/ssh-keys.'
-      - '2026-11-18, research: Azure DevOps has no supported key API; Hostinger has a per-VM key API; instabox uses certificates, so no registration.'
-      - Service-issued keys (Azure DevOps, IVM) stay in the signd vault through SGD-003.
+      - '2026-11-18, research: some Git hosts and VM providers have no supported key API, and a host that uses certificates needs no registration.'
+      - Keys that a service issues stay in the synced vault through SGD-003.
 
   - id: SGD-006
     title: "Guided first sign-in: signd setup"

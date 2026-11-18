@@ -47,6 +47,10 @@
 ## 5. Integration
 
 - [ ] 5.1 Migrate each Mac by the design's migration plan; verify that replacing a key in 1Password reaches both Macs within one interval, with a login through the new key.
+  - 2026-11-18 00:50 UTC, signd 0.0.6: on both Macs, the dotfiles signed signd in with a service account token, and signd synced an RSA key item with a `hosts` field from the vault.  
+    Each Mac routed that host to the synced key, and `git ls-remote` through it returned HEAD after the imported copy of the key was deleted.
+  - 2026-11-18 00:51 UTC: a change to the item's `hosts` field reached the two Macs 2 min 48 s and 4 min 3 s later, inside the 5-minute interval.
+  - Not verified: replacing the key itself, with a login through the new key, because that host needs a new key registered by hand.
 - [ ] 5.2 Run one Mac for a day and read its request count with the account's rate-limit report; verify it stays within one read per interval plus the fetches for changed items.
 
 ## Workflow follow-up

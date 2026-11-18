@@ -79,6 +79,12 @@ Each event also schedules one reload 50 ms later, and a burst of events gives on
 A path that does not exist yet is watched through its nearest existing parent until it appears.  
 Nothing polls.
 
+The agent also watches `~/.ssh/signd/`, which it writes for keys with hosts.  
+A change there that the agent did not make is replaced within a second by the text the agent would write, so a hand edit never lasts.
+
+The file starts with a comment that names signd as its writer, and the config file and 1Password as the places to change hosts.  
+`signd status` reports the last edit the agent replaced.
+
 ### 5. `signd config set`
 
 It rewrites the file in one rename, and only when the new text loads; comments and order of the other lines stay as they were.  

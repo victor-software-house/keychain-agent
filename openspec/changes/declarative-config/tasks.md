@@ -16,6 +16,8 @@
 - [ ] 3.1 Watch the file, the managed preferences file and their directories with kqueue by design decision 4.  
   Verify a test that replaces the file by rename and sees one reload within one second.  
   Verify on a Mac that the idle agent shows no wake-ups from the watch.
+- [ ] 3.2 Watch `~/.ssh/signd/` by design decision 4, and replace any file there that differs from what the agent writes.  
+  Verify a test that edits the config by hand and sees it replaced within one second, with the header comment and a `signd status` report.
 
 ## 4. Documentation and integration
 
