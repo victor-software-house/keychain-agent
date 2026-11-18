@@ -97,20 +97,20 @@ queue:
       - The PR records the binary size before and after Noora.
     notes:
       - 2026-11-18, operator picked Noora 0.57.7 to match qctl and verctl.
-
+archive:
   - id: SGD-012
     title: Stop the slow signatures once the list request is measured
     scope: tests
     outcome: >-
       The test suite finishes in about the time of its slowest test that needs it, on
       the 3-core CI runner.
-    blocked_by: []
-    acceptance:
-      - slowSignaturesDoNotDelayAListRequest cancels its signing tasks after it measures the list request, and still measures it while every task is signing.
-      - On the CI runner, aWrappedKeySignsFastOnceOpen and slowSignaturesDoNotDelayAListRequest each pass in under 3 seconds.
     notes:
       - 2026-11-18, on portable aWrappedKeySignsFastOnceOpen took 0.18 s alone and 1.99 s beside slowSignaturesDoNotDelayAListRequest, whose 3,200 queued 5 ms signatures held the thread pool; on the 3-core runner both took 21 s.
-archive:
+    completed: 2026-11-18T14:35:44
+    evidence:
+      - '#38 merged: on the CI runner the test run took 4.35 s, down from 21.3 s (run 44318137485 against 44315790198); aWrappedKeySignsFastOnceOpen took 3.8 s beside the RSA test, and slowSignaturesDoNotDelayAListRequest no longer appears among the five slowest. On portable, three runs: 0.17 to 0.18 s and 0.06 to 0.07 s.'
+    disposition: completed
+
   - id: SGD-006
     title: "Guided first sign-in: signd setup"
     scope: onepassword-sync
@@ -175,7 +175,7 @@ horizon:
     notes:
       - 2026-11-18, operator deferred the 1Password macs field to a later change with tags or profiles.
 
-  - id: SGD-012
+  - id: SGD-013
     title: Back up keys to 1Password, apart from the iCloud sync
     scope: backup
     outcome: A key can be restored from a backup the user keeps outside iCloud.
