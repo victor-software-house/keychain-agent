@@ -1,23 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/victor-software-house/qctl/main/schema/tasks.schema.json
 schema_version: 6
 prefix: SGD
-active: SGD-010
+active: SGD-009
 queue:
-  - id: SGD-010
-    title: Sync shared keys through iCloud
-    scope: icloud-sync
-    outcome: >-
-      A key created or imported on one Mac reaches every Mac on the Apple account
-      within a few seconds, with no account beyond iCloud.
-    blocked_by: []
-    acceptance:
-      - Every task in openspec/changes/icloud-sync/tasks.md is ticked with evidence.
-      - signd has no 1Password code, command or dependency.
-    plan: openspec/changes/icloud-sync/proposal.md
-    notes:
-      - 2026-11-18, operator replaced the 1Password sync with CloudKit after a two-Mac trial; a 2-second check, a push as a hint.
-      - 2026-11-18, operator picked automatic sharing to new Macs, sharing by default with --local, and no per-Mac limit for now.
-
   - id: SGD-009
     title: 'Install, run and update signd through each route: pkg, cask, MDM, self-update'
     scope: packaging
@@ -134,6 +119,21 @@ queue:
       - No SSH request waits on 1Password or on the lease.
     plan: openspec/changes/onepassword-backup/proposal.md
 archive:
+  - id: SGD-010
+    title: Sync shared keys through iCloud
+    scope: icloud-sync
+    outcome: >-
+      A key created or imported on one Mac reaches every Mac on the Apple account
+      within a few seconds, with no account beyond iCloud.
+    plan: openspec/changes/archive/2026-11-18-icloud-sync/proposal.md
+    notes:
+      - 2026-11-18, operator replaced the 1Password sync with CloudKit after a two-Mac trial; a 2-second check, a push as a hint.
+      - 2026-11-18, operator picked automatic sharing to new Macs, sharing by default with --local, and no per-Mac limit for now.
+    completed: 2026-11-18T22:53:43
+    evidence:
+      - 'Shipped in 0.0.8 and proven on both Macs: shares reach the other Mac in 0.8 to 3.2 s, and an hour of changes ran with no throttle.'
+    disposition: completed
+
   - id: SGD-012
     title: Stop the slow signatures once the list request is measured
     scope: tests

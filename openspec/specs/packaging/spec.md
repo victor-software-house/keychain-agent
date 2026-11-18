@@ -12,12 +12,22 @@ The cask links the command onto the program search path (PATH).
 
 The release SHALL be `Signd.app`, identifier `com.victor-software-house.signd`.
 It SHALL be signed with a Developer ID Application identity and the hardened runtime.
-It SHALL embed a Developer ID provisioning profile that authorizes its keychain access group.
+Its embedded Developer ID provisioning profile SHALL authorize three things:
+
+- its keychain access group;
+- signd's iCloud container, with CloudKit in the production environment;
+- push notifications.
 
 #### Scenario: The bundle passes Gatekeeper
 
 - **WHEN** the release package is installed
-- **THEN** `spctl --assess --type execute /Applications/Signd.app` accepts it, and `codesign -d --entitlements -` on its binary lists the keychain access group
+- **THEN** `spctl --assess --type execute /Applications/Signd.app` accepts it
+- **AND** `codesign -d --entitlements -` on its binary lists these values:
+  - the keychain access group
+  - the iCloud container
+  - `CloudKit`
+  - the `Production` container environment
+  - the push environment
 
 ### Requirement: A notarized package
 
