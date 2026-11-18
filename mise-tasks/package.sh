@@ -34,7 +34,7 @@ for key in keychain-access-groups com.apple.developer.icloud-services com.apple.
 done
 entitlements -c 'Add :keychain-access-groups array' -c "Add :keychain-access-groups:0 string $team.com.victor-software-house.signd"
 entitlements -c 'Add :com.apple.developer.icloud-services array' -c 'Add :com.apple.developer.icloud-services:0 string CloudKit'
-containers=$(entitlements -c 'Print :com.apple.developer.icloud-container-identifiers' 2> /dev/null | tr -s ' \n' ' ') || containers=none
+containers=$(entitlements -c 'Print :com.apple.developer.icloud-container-identifiers' 2> /dev/null) || containers=none
 container=$(entitlements -c 'Print :com.apple.developer.icloud-container-identifiers:0' 2> /dev/null) || container=
 if [ -z "$container" ] || entitlements -c 'Print :com.apple.developer.icloud-container-identifiers:1' > /dev/null 2>&1; then
   echo "✘ the profile must name exactly one iCloud container, not $containers" >&2
