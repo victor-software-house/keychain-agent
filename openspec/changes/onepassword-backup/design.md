@@ -21,7 +21,8 @@ The Secure Enclave keys go in one Secure Note, `signd Secure Enclave keys`, with
 
 ### 3. A run
 
-A run reads the store and the tagged items, then applies the difference in as few calls as the SDK allows:
+A run reads the `Key` records from CloudKit, the source of truth, and the tagged items, then applies the difference in as few calls as the SDK allows.  
+It never plans from the local store, which a new Mac fills only after its first fetch.
 
 | Difference | Call |
 |:--|:--|
@@ -29,6 +30,8 @@ A run reads the store and the tagged items, then applies the difference in as fe
 | An item whose fields differ from its key | `put`, one call per changed item |
 | An item whose key is gone | `deleteAll` up to 50 a call, `archive` each, or nothing, by `backupRemoved` |
 
+Removals come only from a CloudKit read that completed in the same run.  
+A read that fails, or lists no keys while the vault holds tagged items, removes nothing and records why in `signd status`, since an empty account and an unloaded one look alike.  
 A run with no difference makes only the list call.  
 The run happens in a task of its own, never on the event loop or inside the agent actor, so a slow 1Password call delays no SSH request.
 

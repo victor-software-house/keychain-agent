@@ -23,12 +23,17 @@ signd SHALL read, change and remove only items tagged `signd` in the backup vaul
 
 ### Requirement: A removed key's item follows the setting
 
-When a key is gone from the store, signd SHALL delete its item by default, archive it when `backupRemoved` is `archive`, and leave it when `backupRemoved` is `keep`.
+When a completed CloudKit read in the same run no longer lists a key, signd SHALL delete its item by default, archive it when `backupRemoved` is `archive`, and leave it when `backupRemoved` is `keep`.
 
 #### Scenario: A deleted key with the default
 
 - **WHEN** a shared key is deleted and the backup runs
 - **THEN** its item is in the vault's Recently Deleted, and no other item changed
+
+#### Scenario: A Mac whose keys have not loaded
+
+- **WHEN** the CloudKit read fails, or lists no keys while the vault holds tagged items, and the backup runs
+- **THEN** no item is removed, and `signd status` shows why
 
 ### Requirement: Runs follow the schedule and one Mac runs at a time
 
