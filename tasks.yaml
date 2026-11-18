@@ -36,10 +36,9 @@ queue:
       - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
       - 2026-11-18, operator wants every pkg script to be one line that runs a signd command, with the logic in Swift; postinstall already does.
       - '2026-11-18, operator asked that the install needs no UI step, and that MDM can provision signd with none: the pkg through MDM, and a managed login items profile (com.apple.servicemanagement, by team identifier) so the agent needs no approval.'
-      - '2026-11-18, lead recommendation, operator asked for it: no Homebrew formula. A formula would only repackage the signed app, start a second agent next to the login item, and show a bare Login Items row; signd service gives status, restart and log the way brew services does.'
-      - '2026-11-18, operator raised updates: Sparkle 2 updates the app in the background from a notarized Signd.app zip, an appcast and an EdDSA signature, which needs no admin prompt; the cask sets auto_updates true; an MDM setting can turn updates off.'
-      - '2026-11-18, correction: the pkg installs Signd.app as root:wheel 755, so Sparkle cannot replace it without an admin password. The pkg postinstall hands the app to the console user, as a drag install would, so Sparkle updates silently; under MDM the app stays root-owned and MDM ships updates. To test on portable before release.'
-      - 'signd needs no permission grant: no TCC prompt, system extension or approval. The pkg exists for /usr/local/bin, the postinstall start and MDM.'
+      - '2026-11-18, lead recommendation, open until the operator decides: no Homebrew formula, since it would only repackage the signed app, start a second agent beside the login item and show a bare Login Items row; signd service status, restart and log cover what brew services gives.'
+      - 2026-11-18, operator decided the pkg is needed only for the first install and for MDM, and Sparkle updates the app after that. The pkg postinstall hands Signd.app to the console user, as a drag install would, so Sparkle swaps it from a notarized zip with no prompt; under MDM the app stays root-owned and MDM ships updates.
+      - An update keeps the login item, the keychain items and the iCloud container because each is tied to the team identifier and the bundle identifier, which every release keeps; signd needs no TCC grant.
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
