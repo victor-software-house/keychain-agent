@@ -42,6 +42,7 @@ queue:
       - '2026-11-18, operator decided the pkg gets a full Installer experience through a productbuild distribution file: the signd background in light and dark, a two-line welcome, the AGPL license, a conclusion page with what is ready and a first command, and checks that refuse an Intel Mac or an older macOS before the admin password.'
       - '2026-11-18, operator decided signd updates itself with its own updater, not Sparkle: Sparkle finds the running app through NSRunningApplication, which does not list a launchd agent, so it would install under the agent and never restart it; it prompts a standard user because /Applications is root:admin 775; and its framework links AppKit and WebKit into the agent. The cask sets auto_updates true, so brew upgrade leaves the app to the updater.'
       - 2026-11-18, operator decided the pkg is needed only for the first install and for MDM, and signd updates itself after that. The pkg postinstall hands Signd.app to the console user, as a drag install would, so the updater can swap it with no prompt. Under MDM the app stays root-owned, the updater stays off because it cannot swap a root-owned app, and MDM ships updates.
+    plan: openspec/changes/pkg-install/tasks.md
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
