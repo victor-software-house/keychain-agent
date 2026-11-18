@@ -19,7 +19,8 @@ A symbolic link keeps the bundle's entitlements, as the cask's link does.
 
 `signd service enable` adds `Include ~/.ssh/signd/config` and a blank line at the top of `~/.ssh/config`, when no line there includes signd's file.  
 The top matters: an `Include` below a `Host` line applies only to that host.  
-A line counts when its keyword is `Include`, in any case, with whitespace or `=` after it, and one of its arguments is `~/.ssh/signd/config`, the same path under the home directory, or `signd/config`, which SSH reads from `~/.ssh`.
+A line counts when its keyword is `Include`, in any case, with whitespace or `=` after it.  
+One of its arguments must be `~/.ssh/signd/config`, the same path under the home directory, or `signd/config`, which SSH reads from `~/.ssh`.
 
 - A missing `~/.ssh` is created with mode 700, and a missing config with mode 600.
 - When `~/.ssh/config` is a symbolic link, signd writes its target, so the link stays.
@@ -45,7 +46,7 @@ When the login item needs approval, `signd service enable` calls `SMAppService.o
 |:--|:--|
 | Background | The signd logo, one image for light mode and one for dark mode (`background` and `background-darkAqua`) |
 | Welcome | What signd is, in two lines |
-| License | The AGPL-3.0 text from `LICENSE`, which Installer asks the user to accept |
+| License | The AGPL-3.0 text from `LICENSE`, which the user must accept in Installer before it continues |
 | Conclusion | What is ready now: the agent running and `signd` on the PATH, and a first command, `signd key create` |
 
 The file also sets the title, `hostArchitectures="arm64"` and `allowed-os-versions` from the package's deployment target.

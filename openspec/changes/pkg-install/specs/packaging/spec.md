@@ -21,12 +21,13 @@ Each linked command SHALL keep the bundle's entitlements.
 
 ### Requirement: The package shows signd's Installer pages
 
-The package SHALL show a background for light and for dark mode, a welcome page, the AGPL-3.0 license and a conclusion page, and SHALL refuse a Mac that is not arm64 or runs an older macOS than the deployment target, before it asks for a password.
+The package SHALL show a background for light and for dark mode, a welcome page, the AGPL-3.0 license and a conclusion page.  
+It SHALL refuse a Mac that is not arm64 or runs an older macOS than the deployment target, before the password prompt.
 
 #### Scenario: An older macOS
 
 - **WHEN** the package opens on a macOS older than the deployment target
-- **THEN** Installer shows that it cannot install, and asks for no password
+- **THEN** Installer shows that it cannot install, and shows no password prompt
 
 ### Requirement: The cask removes what it installed
 
