@@ -2,4 +2,4 @@
 signd: patch
 ---
 
-The release builds signd.pkg again: the runner's plutil found no entitlement under an escaped key path, so the entitlements are now edited with PlistBuddy.
+The release edits Signd.app's entitlements with PlistBuddy. PlistBuddy reads the dots in an entitlement name as part of the name, so no key path needs escaping.
