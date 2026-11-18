@@ -125,5 +125,5 @@ It SHALL keep every key local.
 
 #### Scenario: Remove a device
 
-- **WHEN** `signd device remove` runs for a Mac that no longer runs signd
+- **WHEN** `signd device remove` runs for a Mac that has stopped running signd
 - **THEN** `signd device list` no longer shows it and no record has a copy for it

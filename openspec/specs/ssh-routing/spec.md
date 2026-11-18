@@ -8,13 +8,13 @@ The SSH configuration signd writes so that each host uses the key meant for it, 
 
 ### Requirement: signd writes a host block per key
 
-For every key with hosts, local or synced, signd SHALL write the key's public half to `~/.ssh/signd/<name>.pub`.
+For every key with hosts, local or shared, signd SHALL write the key's public half to `~/.ssh/signd/<name>.pub`.
 It SHALL also write a `Host` block in `~/.ssh/signd/config` that points to signd's socket and that file and sets `IdentitiesOnly yes`.
 
 #### Scenario: A synced key with a host
 
-- **WHEN** an item's `hosts` field is `git.example.com` and signd has synced it
-- **THEN** `ssh -G git.example.com` shows `identityagent` as signd's socket and `identityfile` as that key's public file
+- **WHEN** another Mac shares a key created with `--host git.example.com`
+- **THEN** `ssh -G git.example.com` on this Mac shows `identityagent` as signd's socket and `identityfile` as that key's public file
 
 ### Requirement: The files follow the keys
 
@@ -29,9 +29,10 @@ It SHALL delete the public file of a removed key.
 
 ### Requirement: Host patterns are checked
 
-signd SHALL write only host patterns made of letters, digits, `.`, `-`, `_`, `*` and `?`, and SHALL skip and report a key whose hosts contain any other character.
+signd SHALL write only host patterns made of letters, digits, `.`, `-`, `_`, `*` and `?`.
+It SHALL skip and report a shared key whose record contains any other character in its hosts.
 
 #### Scenario: A pattern with a space
 
-- **WHEN** an item's `hosts` field is `example.com ProxyCommand x`
-- **THEN** `~/.ssh/signd/config` has no block for that key, and `signd status` shows the item and the rejected value
+- **WHEN** a `Key` record's hosts contain `example.com ProxyCommand x`
+- **THEN** `~/.ssh/signd/config` has no block for that key, and `signd status` shows the key and the rejected value
