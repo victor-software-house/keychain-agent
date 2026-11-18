@@ -92,7 +92,7 @@ jobs:
       ${{ !cancelled() && !github.event.pull_request.draft
       && needs.changes.outputs.build != 'false' }}
     runs-on: xcode-27
-    timeout-minutes: 30
+    timeout-minutes: 45
     permissions:
       contents: read
       # A check:versions task reads a pull request that changes a manifest
@@ -146,7 +146,14 @@ jobs:
         timeout-minutes: 15
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          OP_TEST_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TEST_SERVICE_ACCOUNT_TOKEN }}
         run: mise run check
+      - name: Run ci:e2e
+        timeout-minutes: 15
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          OP_TEST_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TEST_SERVICE_ACCOUNT_TOKEN }}
+        run: mise run ci:e2e
       # Only a run on the default branch saves: a pull request, a merge group
       # and a run on another branch restore and never write, so no entry
       # another run restores comes from unreviewed code. A merge group's
