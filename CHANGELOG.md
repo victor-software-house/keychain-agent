@@ -1,5 +1,10 @@
 # Changelog
 
+## signd 0.0.8
+
+- The release signs Signd.app with the iCloud and push entitlements that the iCloud sync needs; 0.0.7 built no package ([`71c9abd`](https://github.com/victor-software-house/signd/commit/71c9abd011b9806c32f5fb5925ea1e11bf39247d)).
+- The release edits Signd.app's entitlements with PlistBuddy. PlistBuddy reads the dots in an entitlement name as part of the name, so no key path needs escaping ([`f9f51c8`](https://github.com/victor-software-house/signd/commit/f9f51c8fbe1fdaf1d5752922c870eeabe384fa60)).
+
 ## signd 0.0.7
 
 - signd shares keys between the Macs of one Apple account through iCloud, in place of 1Password. A key created or imported on one Mac is sealed to every Mac's Secure Enclave key and reaches the others within a few seconds; `--local` keeps a key on its Mac. New commands: `signd key share`, `signd device list` and `signd device remove`. `signd login` and `signd logout` are gone, and the `interval` setting now defaults to 2 seconds ([`46fa782`](https://github.com/victor-software-house/signd/commit/46fa7820fc09a101894be29077f17b690e82c4c6)).
