@@ -49,7 +49,7 @@ It SHALL use SHA-1 only when the flags carry neither.
 ### Requirement: signd accepts memory-only keys
 
 signd SHALL accept "add identity" and "add identity constrained" as keys in memory only.
-It SHALL drop a key when its lifetime constraint ends and SHALL refuse a confirm constraint.
+It SHALL drop a key when its lifetime constraint ends and SHALL reject a confirm constraint.
 
 #### Scenario: ssh-add adds a key for a while
 

@@ -108,7 +108,7 @@ Commands and flags come from swift-argument-parser.
 |:--|:--|
 | request identities (11) | every key's blob and comment, from memory |
 | sign (13) | the signature, with the hash the flags select for RSA |
-| add identity (17, 25) | a memory-only key, as `ssh-add` expects; lifetime honoured, confirm refused |
+| add identity (17, 25) | a memory-only key, as `ssh-add` expects; lifetime honoured, confirm rejected |
 | remove identity (18), remove all (19) | memory-only keys only; stored keys are removed with `signd key delete` |
 | lock (22), unlock (23) | failure |
 | extension (27) | `query` lists the supported extensions; `session-bind@openssh.com` is accepted and recorded |
@@ -133,7 +133,7 @@ The release checklist records its result as evidence under the release task.
 
 ## Risks / Trade-offs
 
-- [`SMAppService` may refuse a registration that a shell starts over SSH] → Tested on a headless Mac with a locked screen.
+- [`SMAppService` may reject a registration that a shell starts over SSH] → Tested on a headless Mac with a locked screen.
   A Developer ID signed probe registered over SSH and reported `enabled`, and launchd ran its agent.
 - [The linked `signd` command may not resolve its bundle] → Tested: through a link, `register` still works, but `Bundle.main` is the link's directory and has no identifier.
   signd therefore finds its bundle from the real path of its executable, never from `Bundle.main`.
