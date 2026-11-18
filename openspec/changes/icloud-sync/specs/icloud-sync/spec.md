@@ -2,22 +2,29 @@
 
 ## Purpose
 
-How signd keeps shared SSH keys in step across the Macs of one Apple account through the user's iCloud private database, without letting Apple or the signd team read them.
+How signd keeps shared SSH keys the same on every Mac of one Apple account.
+It uses the user's iCloud private database, and neither Apple nor the signd team can read the keys.
 
 ## ADDED Requirements
 
 ### Requirement: Shared keys are sealed to each device
 
-signd SHALL store a shared key in the `signd` zone of the user's private database as a `Key` record. Its encrypted payload SHALL hold the public key and one HPKE copy of the private key per device, sealed to that device's Secure Enclave key-agreement key. signd SHALL NOT store a private key in the clear anywhere outside the device.
+signd SHALL store a shared key in the `signd` zone of the user's private database as a `Key` record.
+Its encrypted payload SHALL contain the public key and one copy of the private key per device.
 
-#### Scenario: A record holds only sealed copies
+Each copy SHALL be sealed with Hybrid Public Key Encryption (HPKE) to that device's Secure Enclave key-agreement key.
+signd SHALL NOT store a private key in the clear anywhere outside the device.
+
+#### Scenario: A record contains only sealed copies
 
 - **WHEN** a key is shared on an account with two Macs
-- **THEN** its record's payload holds two sealed copies, and neither the payload nor `sync.json` holds the private key
+- **THEN** its record's payload contains two sealed copies, and neither the payload nor `sync.json` contains the private key
 
 ### Requirement: Keys are shared by default
 
-`signd key create` with a wrapped key type and `signd key import` SHALL share the new key unless `--local` is given, a Secure Enclave key SHALL stay on its Mac, and `signd key share NAME` SHALL share an existing wrapped key.
+`signd key create` with a wrapped key type and `signd key import` SHALL share the new key unless `--local` is given.
+A Secure Enclave key SHALL stay on its Mac.
+`signd key share NAME` SHALL share an existing wrapped key.
 
 #### Scenario: A new key reaches the other Mac
 
@@ -32,20 +39,22 @@ signd SHALL store a shared key in the `signd` zone of the user's private databas
 #### Scenario: A Secure Enclave key stays
 
 - **WHEN** `signd key share build` runs for a Secure Enclave key
-- **THEN** the command fails and says the key cannot leave this Mac
+- **THEN** the command fails with an error that the key cannot leave this Mac
 
 ### Requirement: A new device gets every shared key
 
-A device that holds a shared key SHALL seal it to each device record that has no copy, with no command on either device.
+A device that has a shared key SHALL seal it to each device record that has no copy, with no command on either device.
 
 #### Scenario: A device joins
 
 - **WHEN** signd starts on a Mac signed in to the same Apple account
-- **THEN** within a few checks of the Macs that hold keys, its `signd key list` shows every shared key
+- **THEN** within a few checks of the Macs that have keys, its `signd key list` shows every shared key
 
 ### Requirement: Changes reach every Mac within seconds
 
-signd SHALL check for changes every `interval`, 2 seconds by default, SHALL start a check when a CloudKit push arrives, and SHALL add, replace and delete shared keys to match their records.
+signd SHALL check for changes every `interval`, 2 seconds by default.
+It SHALL start a check when a CloudKit push arrives.
+It SHALL add, replace and delete shared keys to match their records.
 
 #### Scenario: A key is deleted
 
@@ -68,7 +77,8 @@ A check SHALL make one request when the `signd` zone has not changed since the l
 
 ### Requirement: Requests never wait for iCloud
 
-signd SHALL answer list and sign requests from its local store, and SHALL NOT start or wait for a check, a CloudKit call or the account status before it answers.
+signd SHALL answer list and sign requests from its local store.
+It SHALL NOT start or wait for a check, a CloudKit call or the account status before it answers.
 
 #### Scenario: iCloud unreachable
 
@@ -77,7 +87,9 @@ signd SHALL answer list and sign requests from its local store, and SHALL NOT st
 
 ### Requirement: Failures back off
 
-signd SHALL give each CloudKit request a timeout of 10 seconds, SHALL wait longer after each failed check, up to 60 seconds, and after a throttle SHALL wait at least the retry-after time CloudKit gives.
+signd SHALL give each CloudKit request a timeout of 10 seconds.
+It SHALL wait longer after each failed check, up to 60 seconds.
+After a throttle it SHALL wait at least the retry-after time CloudKit gives.
 
 #### Scenario: Throttled
 
@@ -86,7 +98,9 @@ signd SHALL give each CloudKit request a timeout of 10 seconds, SHALL wait longe
 
 ### Requirement: A change of account keeps only this Mac's own keys
 
-When another Apple account signs in, or the user deletes signd's data in iCloud settings, signd SHALL delete every key another device shared with the Mac. It SHALL keep each key the Mac made or imported, shared or not, as a key of this Mac only.
+When another Apple account signs in, signd SHALL delete every key another device shared with the Mac.
+It SHALL do the same when the user deletes signd's data in iCloud settings.
+It SHALL keep each key the Mac made or imported, shared or not, as a key of this Mac only.
 
 #### Scenario: Data deleted in iCloud settings
 
@@ -95,18 +109,21 @@ When another Apple account signs in, or the user deletes signd's data in iCloud 
 
 ### Requirement: Builds without iCloud keep local keys
 
-A build whose signature lacks signd's iCloud container SHALL never call CloudKit, SHALL keep every key local, and `signd status` SHALL show that sync is off in this build.
+A build whose signature lacks signd's iCloud container SHALL never call CloudKit.
+It SHALL keep every key local.
+`signd status` SHALL show that sync is off in this build.
 
 #### Scenario: A build from source
 
 - **WHEN** an unsigned build runs `signd serve` and `signd key create ci --type ed25519`
-- **THEN** the key is stored locally, the command exits 0 and says sync is off, and the agent keeps serving
+- **THEN** the key is stored locally, the command exits 0 with a note that sync is off, and the agent keeps serving
 
 ### Requirement: Device commands
 
-`signd device list` SHALL print each device record's name, id and whether it is this device, and `signd device remove ID` SHALL delete that record and drop its copies from every key.
+`signd device list` SHALL print each device record's name, id and whether it is this device.
+`signd device remove ID` SHALL delete that record and drop its copies from every key.
 
 #### Scenario: Remove a device
 
 - **WHEN** `signd device remove` runs for a Mac that no longer runs signd
-- **THEN** `signd device list` no longer shows it and no record holds a copy for it
+- **THEN** `signd device list` no longer shows it and no record has a copy for it

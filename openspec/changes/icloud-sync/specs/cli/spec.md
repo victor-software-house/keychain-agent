@@ -4,7 +4,11 @@
 
 ### Requirement: Status and settings
 
-`signd status` SHALL show the version, the socket, whether the agent answers, and each key with whether it is in memory. It SHALL also show the iCloud sync: whether it is on, the last check and its result, the next check, and each waiting or skipped key. `signd config get|set|unset` SHALL read and change settings.
+`signd status` SHALL show the version, the socket, whether the agent answers, and each key with whether it is in memory.
+It SHALL also show the iCloud sync.
+The sync part SHALL show whether it is on, the last check and its result, the next check, and each waiting or skipped key.
+
+`signd config get|set|unset` SHALL read and change settings.
 
 #### Scenario: Status with the agent stopped
 
