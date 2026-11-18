@@ -8,30 +8,40 @@ Each Mac's store mirrors the keys shared through iCloud, and holds its own Secur
 
 ## Decisions
 
-### 1. Ownership
+### 1. Ownership and scope
 
-Every item the backup writes carries the tag `signd`, and a `signd` section with the key's fingerprint and its signd name.  
-A run lists the vault's items, keeps those with the tag, and matches them to keys by fingerprint.  
-An item without the tag is never read past its overview, changed or removed, so the vault can hold the user's own items.
+Every item the backup writes carries the tag `signd`, and a `signd` section with its `kind` and `scope`.  
+An item is signd's only when it has the tag and a well-formed section; any other item, tagged or not, is never changed or removed.
+
+| `kind` | What the item holds | `scope` |
+|:--|:--|:--|
+| `key` | One key, with its fingerprint and signd name | `shared`, or `local` with a device identifier |
+| `secure-enclave-list` | One Mac's Secure Enclave keys | that Mac's device identifier |
 
 ### 2. Item shape
 
-Each shareable key becomes an SSH Key item titled with its name, holding the private key, a `hosts` text field and the comment.  
-The Secure Enclave keys go in one Secure Note, `signd Secure Enclave keys`, with each key's name, public key and hosts, for recreation.
+A `key` item is an SSH Key item titled with the key's name, holding the private key, a `hosts` text field and the comment.  
+A `secure-enclave-list` item is a Secure Note, `signd Secure Enclave keys (<device name>)`, with each key's name, public key and hosts, for recreation.
 
 ### 3. A run
 
-A run reads the `Key` records from CloudKit, the source of truth, and the tagged items, then applies the difference in as few calls as the SDK allows.  
-It never plans from the local store, which a new Mac fills only after its first fetch.
+A run plans each scope from the source that knows it:
+
+- Shared keys come from the `Key` records in CloudKit, the source of truth, never from the local store, which a new Mac fills only after its first fetch.
+- This Mac's local keys and its Secure Enclave list come from its own store; no Mac plans another Mac's local items.
+
+It then applies the difference in as few calls as the SDK allows:
 
 | Difference | Call |
 |:--|:--|
 | A key with no item | `createAll`, up to 100 items a call |
-| An item whose fields differ from its key | `put`, one call per changed item |
+| An item whose fields differ from its source | `put`, one call per changed item |
 | An item whose key is gone | `deleteAll` up to 50 a call, `archive` each, or nothing, by `backupRemoved` |
 
-Removals come only from a CloudKit read that completed in the same run.  
-A read that fails, or lists no keys while the vault holds tagged items, removes nothing and records why in `signd status`, since an empty account and an unloaded one look alike.  
+Removals of shared items come only from a CloudKit read that completed in the same run.  
+A read that fails, or lists no keys while the vault holds shared items, removes nothing and records why in `signd status`, since an empty account and an unloaded one look alike.  
+No run removes an item whose fingerprint matches a key in this Mac's store, whatever its scope.  
+A Mac's `secure-enclave-list` item is updated with `put` and removed only when that Mac's `Device` record is gone from a completed read.  
 A run with no difference makes only the list call.  
 The run happens in a task of its own, never on the event loop or inside the agent actor, so a slow 1Password call delays no SSH request.
 
@@ -45,7 +55,9 @@ A failed run records its error for `signd status` and waits for the next slot; i
 
 CloudKit has no record expiry in its public API, so the lease is a `Lease` record named `backup` with the holder's device identifier and an expiry 10 minutes out.  
 A Mac claims it with a save that uses `ifServerRecordUnchanged`, so two claims cannot both succeed.  
-A lease past its expiry counts as free, and the same save takes it over; the holder clears it when the run ends.  
+A lease past its expiry counts as free, and the same save takes it over.  
+The holder renews it with the same conditional save before each batch of calls, and stops the run when a renewal fails.  
+It clears the lease at the end with a conditional save too, so a late clear never removes another Mac's claim.  
 Only the backup reads the lease, so no key change or SSH request ever waits on it.
 
 ### 6. Token

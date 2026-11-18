@@ -14,12 +14,22 @@ It SHALL never change a key from the vault's content.
 
 ### Requirement: The backup touches only its own items
 
-signd SHALL read, change and remove only items tagged `signd` in the backup vault.
+signd SHALL change and remove only items that carry the tag `signd` and a well-formed `signd` section.
 
 #### Scenario: A user's item in the vault
 
 - **WHEN** the vault holds an item without the tag and the backup runs
 - **THEN** that item is unchanged
+
+#### Scenario: A tagged item of the user's
+
+- **WHEN** an item tagged `signd` has no `signd` section and the backup runs
+- **THEN** that item is unchanged
+
+#### Scenario: A key restored to one Mac
+
+- **WHEN** a key is restored with `--local` on one Mac and the backup runs on each Mac
+- **THEN** its item stays in the vault, scoped to that Mac
 
 ### Requirement: A removed key's item follows the setting
 
@@ -38,7 +48,7 @@ When a completed CloudKit read in the same run no longer lists a key, signd SHAL
 ### Requirement: Runs follow the schedule and one Mac runs at a time
 
 signd SHALL run the backup `backupDelay` after the last key change, at most once per `backupInterval`, and once per `backupDailyInterval` with no change.  
-It SHALL run only while it holds the `Lease` record, and SHALL take over a lease past its expiry.
+It SHALL run only while it holds the `Lease` record, SHALL renew it before each batch and stop when a renewal fails, and SHALL take over a lease past its expiry.
 
 #### Scenario: Two Macs at once
 
@@ -49,6 +59,11 @@ It SHALL run only while it holds the `Lease` record, and SHALL take over a lease
 
 - **WHEN** the lease holder stopped mid-run and its expiry passed
 - **THEN** the next Mac's run takes the lease and runs
+
+#### Scenario: A run that outlasts its lease
+
+- **WHEN** another Mac took the lease while a run was in progress
+- **THEN** the first run stops at its next renewal, and its final clear leaves the other Mac's lease in place
 
 ### Requirement: A backup never delays a request
 
