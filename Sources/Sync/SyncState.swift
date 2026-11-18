@@ -20,6 +20,10 @@ public struct SkippedItem: Codable, Sendable, Equatable {
     public var updated: Date
     public var kind: SkipKind
     public var reason: String
+    /// The key name a `nameTaken` item wanted, so a later check can tell, with no request, whether another key still holds it.
+    public var name: String?
+    /// The signd version whose client could not read the item's reply; a later version reads the item again.
+    public var undecodedBy: String?
 
     public var isReported: Bool { kind != .otherMac }
 }

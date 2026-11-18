@@ -205,7 +205,10 @@ struct SyncRig: ~Copyable {
 
     var stateURL: URL { directory.url.appendingPathComponent("sync.json") }
 
-    init(source: FakeSource, store: MemoryStore = MemoryStore(), token: String? = "token", random: Double = 0.5, hostName: String = "mac-a", factory: SourceFactory? = nil) throws {
+    init(
+        source: FakeSource, store: MemoryStore = MemoryStore(), token: String? = "token", random: Double = 0.5, hostName: String = "mac-a",
+        version: String = "1.0.0", factory: SourceFactory? = nil, changed: (@Sendable () async -> Void)? = nil
+    ) throws {
         self.source = source
         self.store = store
         let clock = TestClock()
@@ -220,10 +223,13 @@ struct SyncRig: ~Copyable {
         let make: SourceFactory = factory ?? { _ in source }
         service = SyncService(
             SyncService.Dependencies(
-                token: { box.value }, deleteToken: { box.delete() }, makeSource: make, store: store, wrap: softwareWrapper, hostName: { hostName },
+                token: { box.value }, deleteToken: { box.delete() }, makeSource: make, store: store, wrap: softwareWrapper, hostName: { hostName }, version: version,
                 interval: { _ in 300 }, now: { clock.now }, sleep: { try await clock.sleep($0) },
                 schedule: SyncSchedule(random: { random }), stateURL: stateURL,
-                changed: { changes.increment() }
+                changed: {
+                    changes.increment()
+                    await changed?()
+                }
             )
         )
     }

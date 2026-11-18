@@ -33,16 +33,23 @@ struct SyncCheck {
     let hostName: String
     /// Whether the token this check started with is still the agent's; asked before every write to the store.
     let isCurrent: @Sendable () -> Bool
+    /// The running signd's version: an item its client could not read is read again by another version.
+    let version: String
 
     /// What 1Password's client says when it cannot read an item's reply; that item is skipped and the rest are checked.
     static let undecodable = "the reply could not be decoded"
+
+    static func isUndecodable(_ error: OnePasswordError) -> Bool {
+        error.kind == .other && error.message == undecodable
+    }
 
     /// An item whose fetch has been read and whose key name another key may hold until this vault's renames and removals are done.
     typealias Deferred = (overview: ItemOverview, item: Item)
 
     /// Returns the state after the check; the keys are changed in the store as it goes.
-    /// A vault's version is kept only when no key name is left taken in it, so the next check reads it again.
-    func run(from old: SyncState, counters: inout Counters, changes: inout Changes) async throws -> SyncState {
+    /// The service's isolation is part of the signature: no suspension separates `current()` from the write it guards,
+    /// so a logout or a new login cannot run in between, and `@concurrent` cannot be added here without breaking that.
+    func run(from old: SyncState, counters: inout Counters, changes: inout Changes, isolation _: isolated SyncService) async throws -> SyncState {
         counters.requests += 1
         let vaults = try await source.vaults()
         try current()
@@ -53,7 +60,9 @@ struct SyncCheck {
             try remove(key, keys: &keys, changes: &changes)
         }
 
-        let moved = vaults.filter { old.vaultVersions[$0.id] != $0.contentVersion }
+        // A vault with an item that another signd version could not read is read again, as is a vault that changed.
+        let reread = Set(old.skipped.filter { $0.kind != .invalidNote && $0.undecodedBy.map { $0 != version } ?? false }.map(\.vaultID))
+        let moved = vaults.filter { old.vaultVersions[$0.id] != $0.contentVersion || reread.contains($0.id) }
         let movedIDs = Set(moved.map(\.id))
         var state = old
         state.vaultVersions = Dictionary(uniqueKeysWithValues: vaults.map { ($0.id, $0.contentVersion) })
@@ -83,8 +92,25 @@ struct SyncCheck {
             for entry in deferred {
                 _ = try place(entry.item, overview: entry.overview, in: vault, state: &state, keys: &keys, changes: &changes, allowDefer: false)
             }
-            if state.skipped.contains(where: { $0.vaultID == vault.id && $0.kind == .nameTaken }) {
-                state.vaultVersions[vault.id] = old.vaultVersions[vault.id]
+        }
+
+        // A vault that did not change keeps its name conflicts with no request, until no key holds the name any more.
+        let freed = state.skipped.filter { skip in
+            skip.kind == .nameTaken && !movedIDs.contains(skip.vaultID) && !(skip.name.map { name in keys.contains { $0.name == name } } ?? false)
+        }
+        if !freed.isEmpty {
+            state.skipped.removeAll { skip in freed.contains(skip) }
+            let byID = Dictionary(uniqueKeysWithValues: vaults.map { ($0.id, $0) })
+            var deferred: [(vault: VaultOverview, entry: Deferred)] = []
+            for skip in freed {
+                guard let vault = byID[skip.vaultID] else { continue }
+                let overview = ItemOverview(id: skip.itemID, title: skip.title, category: Selection.keyCategory, vaultId: vault.id, updatedAt: skip.updated, state: "active")
+                var held: [Deferred] = []
+                try await read(overview, in: vault, state: &state, keys: &keys, counters: &counters, changes: &changes, deferred: &held)
+                deferred += held.map { (vault, $0) }
+            }
+            for (vault, entry) in deferred {
+                _ = try place(entry.item, overview: entry.overview, in: vault, state: &state, keys: &keys, changes: &changes, allowDefer: false)
             }
         }
 
@@ -114,18 +140,33 @@ struct SyncCheck {
         let existing = keys.first { $0.isSynced && $0.vaultID == vault.id && $0.itemID == overview.id }
         if let existing, existing.itemUpdated == overview.updatedAt { return }
         // A name taken by another key can free up without the item changing, so that skip is read again.
-        if let known = old.skipped.first(where: { $0.vaultID == vault.id && $0.itemID == overview.id && $0.updated == overview.updatedAt && $0.kind != .nameTaken }) {
+        if let known = old.skipped.first(where: {
+            $0.vaultID == vault.id && $0.itemID == overview.id && $0.updated == overview.updatedAt && $0.kind != .nameTaken
+                && $0.undecodedBy.map { $0 == version } ?? true
+        }) {
             state.skipped.append(known)
             return
         }
+        try await read(overview, in: vault, state: &state, keys: &keys, counters: &counters, changes: &changes, deferred: &deferred)
+    }
+
+    /// Fetches one item and brings its stored key up to date, or skips it.
+    private func read(
+        _ overview: ItemOverview, in vault: VaultOverview, state: inout SyncState, keys: inout [StoredKey], counters: inout Counters,
+        changes: inout Changes, deferred: inout [Deferred]
+    ) async throws {
         counters.requests += 1
         counters.fetched += 1
         let item: Item
         do throws(OnePasswordError) {
             item = try await source.item(vaultID: vault.id, itemID: overview.id)
         } catch {
-            guard error.kind == .other, error.message == Self.undecodable else { throw error }
-            try skip(overview, in: vault, .invalidKey, "1Password's reply for this item could not be read", state: &state, keys: &keys, changes: &changes)
+            guard Self.isUndecodable(error) else { throw error }
+            // The client cannot read the item, which says nothing about the key it gave before, so that key stays.
+            state.skipped.append(SkippedItem(
+                vaultID: vault.id, itemID: overview.id, title: Selection.clean(overview.title), updated: overview.updatedAt, kind: .invalidKey,
+                reason: "1Password's reply for this item could not be read", undecodedBy: version
+            ))
             return
         }
         if try place(item, overview: overview, in: vault, state: &state, keys: &keys, changes: &changes, allowDefer: true) {
@@ -134,12 +175,12 @@ struct SyncCheck {
     }
 
     private func skip(
-        _ overview: ItemOverview, in vault: VaultOverview, _ kind: SkipKind, _ reason: String, state: inout SyncState, keys: inout [StoredKey],
-        changes: inout Changes
+        _ overview: ItemOverview, in vault: VaultOverview, _ kind: SkipKind, _ reason: String, name: String? = nil, state: inout SyncState,
+        keys: inout [StoredKey], changes: inout Changes
     ) throws {
         state.skipped.append(SkippedItem(
             vaultID: vault.id, itemID: overview.id, title: Selection.clean(overview.title), updated: overview.updatedAt, kind: kind,
-            reason: Selection.clean(reason)
+            reason: Selection.clean(reason), name: name
         ))
         if let existing = keys.first(where: { $0.isSynced && $0.vaultID == vault.id && $0.itemID == overview.id }) {
             try remove(existing, keys: &keys, changes: &changes)
@@ -160,7 +201,7 @@ struct SyncCheck {
         case let .key(privateKey, name, hosts):
             if let owner = keys.first(where: { $0.name == name }), owner.itemID != overview.id || !owner.isSynced || owner.vaultID != vault.id {
                 if allowDefer { return true }
-                try skip(overview, in: vault, .nameTaken, "the key name \(name) belongs to another key", state: &state, keys: &keys, changes: &changes)
+                try skip(overview, in: vault, .nameTaken, "the key name \(name) belongs to another key", name: name, state: &state, keys: &keys, changes: &changes)
                 return false
             }
             let comment = Selection.clean(overview.title)
@@ -217,11 +258,24 @@ struct SyncCheck {
         }
         let reference = NoteRef(vaultID: found.vaultID, itemID: found.overview.id, updated: found.overview.updatedAt)
         state.note = reference
-        if old.note == reference { return }
+        let unreadable = old.skipped.contains { $0.kind == .invalidNote && $0.undecodedBy.map { $0 != version } ?? false }
+        if old.note == reference && !unreadable { return }
         state.skipped.removeAll { $0.kind == .invalidNote }
         counters.requests += 1
         counters.fetched += 1
-        let item = try await source.item(vaultID: found.vaultID, itemID: found.overview.id)
+        let item: Item
+        do throws(OnePasswordError) {
+            item = try await source.item(vaultID: found.vaultID, itemID: found.overview.id)
+        } catch {
+            guard Self.isUndecodable(error) else { throw error }
+            // The settings stay at their defaults until a signd version can read the note.
+            state.fleet = [:]
+            state.skipped.append(SkippedItem(
+                vaultID: found.vaultID, itemID: found.overview.id, title: "\(Selection.note) note", updated: found.overview.updatedAt, kind: .invalidNote,
+                reason: "the reply for the note could not be read, so the default settings apply", undecodedBy: version
+            ))
+            return
+        }
         state.fleet = [:]
         for key in Settings.Key.allCases {
             guard let value = Selection.field(item, titled: key.rawValue), !value.isEmpty else { continue }

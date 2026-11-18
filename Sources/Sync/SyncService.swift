@@ -48,6 +48,8 @@ public actor SyncService {
         public var store: any KeyStore
         public var wrap: KeyWrapper
         public var hostName: @Sendable () -> String
+        /// The running signd's version.
+        public var version: String
         /// The interval in seconds, from the settings and the note's values.
         public var interval: @Sendable (_ fleet: [String: String]) -> TimeInterval
         public var now: @Sendable () -> Date
@@ -60,7 +62,7 @@ public actor SyncService {
         public init(
             token: @escaping @Sendable () throws(StoreError) -> String?, deleteToken: @escaping @Sendable () throws(StoreError) -> Void,
             makeSource: @escaping SourceFactory, store: any KeyStore, wrap: @escaping KeyWrapper,
-            hostName: @escaping @Sendable () -> String = { Selection.localHostName() },
+            hostName: @escaping @Sendable () -> String = { Selection.localHostName() }, version: String,
             interval: @escaping @Sendable (_ fleet: [String: String]) -> TimeInterval,
             now: @escaping @Sendable () -> Date = { Date() },
             sleep: @escaping @Sendable (_ seconds: TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0), tolerance: .seconds(1)) },
@@ -73,6 +75,7 @@ public actor SyncService {
             self.store = store
             self.wrap = wrap
             self.hostName = hostName
+            self.version = version
             self.interval = interval
             self.now = now
             self.sleep = sleep
@@ -132,9 +135,13 @@ public actor SyncService {
         configure(force: false)
     }
 
-    /// Starts again from the state file and the stored token, as after `signd login`, even when the token is the same one,
-    /// so that a token the last login found refused gets a new try.
+    /// Starts again from an empty state and the stored token, as after `signd login`, even when the token is the same one,
+    /// so that a token the last login found refused gets a new try. The state file goes after the epoch moves,
+    /// so a check that started under the old token cannot write it again.
     public func login() {
+        epoch.bump()
+        SyncState.remove(at: dependencies.stateURL)
+        state = SyncState()
         configure(force: true)
     }
 
@@ -145,6 +152,7 @@ public actor SyncService {
         timer?.cancel()
         timer = nil
         checkTask?.cancel()
+        checkTask = nil
         clientTask?.cancel()
         clientTask = nil
         source = nil
@@ -235,6 +243,7 @@ public actor SyncService {
         timer?.cancel()
         timer = nil
         checkTask?.cancel()
+        checkTask = nil
         clientTask?.cancel()
         clientTask = nil
         source = nil
@@ -329,7 +338,7 @@ public actor SyncService {
         let task = Task { await self.runCheck() }
         checkTask = task
         let summary = await task.value
-        checkTask = nil
+        if checkTask == task { checkTask = nil }
         return summary
     }
 
@@ -355,10 +364,10 @@ public actor SyncService {
         if let client {
             let check = SyncCheck(
                 source: client, store: dependencies.store, wrap: dependencies.wrap, hostName: dependencies.hostName(),
-                isCurrent: { epoch.value == started }
+                isCurrent: { epoch.value == started }, version: dependencies.version
             )
             do {
-                ended = .done(try await check.run(from: state, counters: &counters, changes: &changes))
+                ended = .done(try await check.run(from: state, counters: &counters, changes: &changes, isolation: self))
             } catch is Stale {
                 ended = .stale
             } catch let error as OnePasswordError {
@@ -427,12 +436,15 @@ public actor SyncService {
         fleet.set(updated.fleet)
         publish()
         if !changes.isEmpty { await dependencies.changed() }
-        scheduleNext()
         let summary = CheckSummary(
             outcome: outcome, message: message, requests: counters.requests, fetched: counters.fetched,
             added: changes.added, replaced: changes.replaced, removed: changes.removed, skipped: updated.skipped.filter(\.isReported).count
         )
-        lastSummary = (summary, now)
+        // A logout or a login during `changed` already started over, so this check's result and schedule are no longer the service's.
+        if epoch.value == started {
+            scheduleNext()
+            lastSummary = (summary, now)
+        }
         return summary
     }
 

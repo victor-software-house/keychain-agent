@@ -28,6 +28,8 @@ public struct SyncStatus: Codable, Sendable {
     public let requests: Int
     public let fetched: Int
     public let skipped: [Skipped]
+    /// The local settings that are not valid, so signd uses the note's value or the default instead.
+    public let ignoredSettings: [Settings.Ignored]
 
     public init(signedIn: Bool, state: SyncState, settings: Settings = Settings()) {
         let interval = settings.resolve(.interval, fleet: state.fleet)
@@ -40,6 +42,9 @@ public struct SyncStatus: Codable, Sendable {
         nextAttempt = signedIn ? state.nextAttempt : nil
         requests = state.requests
         fetched = state.fetched
+        ignoredSettings = settings.ignored().map {
+            Settings.Ignored(key: $0.key, value: Selection.clean($0.value), reason: $0.reason)
+        }
         skipped = state.skipped.filter(\.isReported).map {
             Skipped(item: Selection.clean($0.title), itemID: $0.itemID, vaultID: $0.vaultID, reason: Selection.clean($0.reason))
         }

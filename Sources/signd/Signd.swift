@@ -247,6 +247,7 @@ struct Status: ParsableCommand {
                 print("last check  \(at.formatted(.iso8601)) \(result.rawValue)\(detail), \(sync.requests) requests, \(sync.fetched) items fetched")
             }
             if let next = sync.nextAttempt { print("next attempt  \(next.formatted(.iso8601))") }
+            for setting in sync.ignoredSettings { print("ignored  \(setting.key) \(setting.value) (local): \(setting.reason)") }
             for item in sync.skipped { print("skipped  \(item.item): \(item.reason)") }
         }
         if agent == nil { throw ExitCode.failure }
@@ -267,11 +268,12 @@ struct Login: AsyncParsableCommand {
         do throws(OnePasswordError) {
             vaults = try await Client(token: token, integrationName: "signd", integrationVersion: signdVersion).vaults()
         } catch {
-            throw Failure(error.kind == .authentication ? "1Password refused the token: \(error.message)" : "cannot read from 1Password: \(error.message)")
+            let message = Selection.clean(error.message)
+            throw Failure(error.kind == .authentication ? "1Password refused the token: \(message)" : "cannot read from 1Password: \(message)")
         }
         do { try TokenStore().write(token) } catch { throw Failure(error) }
-        SyncState.remove()
-        AgentClient(path: defaultSocketPath).login()
+        // A running agent forgets the state itself, after it stops the checks of the old token; with none, nothing is checking.
+        if !AgentClient(path: defaultSocketPath).login() { SyncState.remove() }
         print("signed in; the token reads \(vaults.count) vault\(vaults.count == 1 ? "" : "s")")
     }
 }
@@ -297,6 +299,7 @@ struct Logout: ParsableCommand {
                 throw Failure(error)
             }
             removed = synced.count
+            AgentClient(path: defaultSocketPath).reload()
         }
         print("signed out; removed \(removed) synced key\(removed == 1 ? "" : "s")")
     }
@@ -429,7 +432,7 @@ struct Serve: AsyncParsableCommand {
         let sync = SyncService(
             SyncService.Dependencies(
                 token: { () throws(StoreError) -> String? in try TokenStore().read() }, deleteToken: { () throws(StoreError) in try TokenStore().delete() },
-                makeSource: LiveSource.factory(version: signdVersion), store: store, wrap: LiveSource.wrapper,
+                makeSource: LiveSource.factory(version: signdVersion), store: store, wrap: LiveSource.wrapper, version: signdVersion,
                 interval: { settings.resolve(.interval, fleet: $0).seconds }, changed: { await agent.reload() }
             ),
             fleet: fleet
