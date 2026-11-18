@@ -10,8 +10,10 @@ signd never reads `Bundle.main` (AGENTS.md, invariant 6); the updater reads its 
 ### 1. Check schedule
 
 Only the `serve` process checks, in a task of its own, never on the event loop and never inside the agent actor.
-It checks 60 seconds after start, then every `updateInterval`, 6 hours by default, with up to 10 minutes of random delay so Macs do not check together.
-`updates` (on by default) and `updateInterval` are settings, which the config file or an MDM profile can set.
+It checks 60 seconds after start, then every `updateInterval`, 6 hours by default.
+It adds up to 10 minutes of random delay, so Macs do not check together.
+
+`updates` (on by default) and `updateInterval` are settings, which the config file or a Mobile Device Management (MDM) profile can set.
 
 ### 2. Release source
 
@@ -28,12 +30,12 @@ and identifier "com.victor-software-house.signd"
 and certificate leaf[subject.OU] = "<team>"
 ```
 
-`<team>` is the team identifier of the running code, read from its own signature, so the repository names no team.
+`<team>` is the team identifier of the running code, read from its own signature, so the repository contains no team identifier.
 A failed check deletes the download and records the error for `signd status`.
 
 ### 4. Bundle swap
 
-`renamex_np` with `RENAME_SWAP` exchanges the new bundle's `Contents` with the installed one's in one step, on the Data volume that holds both `/Applications` and the home folder.
+`renamex_np` with `RENAME_SWAP` exchanges the new bundle's `Contents` with the installed one's in one step, on the Data volume that contains both `/Applications` and the home folder.
 The old `Contents` is then deleted, the agent logs the new version and exits, and launchd starts the new binary.
 A running process keeps its mapped binary, so a signature in flight finishes.
 
@@ -49,5 +51,6 @@ The cask sets `auto_updates true`, so `brew upgrade` leaves the app to the updat
 
 ## Risks
 
-- A bundle swap may affect the login item approval; Apple documents nothing for this case. Task 2.1 checks it on portable before a release ships the updater.
+- A bundle swap may affect the login item approval; Apple documents nothing for this case.
+  Task 2.1 checks it on portable before a release ships the updater.
 - A standard account has not been tested; task 2.2 runs the update as one.
