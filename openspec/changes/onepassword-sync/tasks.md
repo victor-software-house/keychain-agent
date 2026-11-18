@@ -10,19 +10,31 @@
 ## 2. Token and sync
 
 - [ ] 2.1 Implement `signd login` and `signd logout`; verify the token scenarios with the live test account.
-- [ ] 2.2 Implement the check of design decision 5, with item selection and naming from decision 3; verify unit tests against a recorded 1Password fake for add, replace, delete, the `macs` field and the one-read case.
-- [ ] 2.3 Implement the schedule and failures of decisions 6 and 7, and `signd sync`; verify unit tests with an injected clock for phase, jitter, backoff and the rate-limit wait.
-- [ ] 2.6 Open the client in the background at agent start and keep it. Verify with a test that list and sign requests answer within the same p99 as with no token stored, both while the client starts and while a check runs.
-- [ ] 2.4 Read the `signd` note and merge it under local settings; verify the fleet-interval scenario against the fake.
-- [ ] 2.5 Show sync state in `signd status`; verify `--json` carries the last result, the next attempt and every skipped item.
+  - 2026-11-17 (UTC): not verified. `TokenStore` and the commands are in [PR 16][signd#16], and a bad token is refused with the stored one kept; storing, `signd status` and the file check need a signed Mac and stay with the hardware run.
+- [x] 2.2 Implement the check of design decision 5, with item selection and naming from decision 3; verify unit tests against a recorded 1Password fake for add, replace, delete, the `macs` field and the one-read case.
+  - 2026-11-17 (UTC): on a Mac, [`Checks`][sync-tests] passed against a recorded fake: add, replace in place, hosts-only change, rename, delete, archived item, deleted vault, `macs`, bad host and name taken. Unchanged vaults cost 1 request and no fetch ([PR 16][signd#16]).
+- [x] 2.3 Implement the schedule and failures of decisions 6 and 7, and `signd sync`; verify unit tests with an injected clock for phase, jitter, backoff and the rate-limit wait.
+  - 2026-11-17 (UTC): on a Mac, `Schedule` passed with an injected clock and random source.  
+    It covers the phase, the 0.8 to 1.2 factor, backoff up to the interval, and rate-limit waits of 1 h, 2 h and 4 h.  
+    A refused token is not retried ([PR 16][signd#16]).
+- [x] 2.6 Open the client in the background at agent start and keep it. Verify with a test that list and sign requests answer within the same p99 as with no token stored, both while the client starts and while a check runs.
+  - 2026-11-17 (UTC): on a Mac, [`RequestsNeverWait`][sync-tests] kept list and sign p99 within 3 times the no-token p99 plus 5 ms, while the client took 2 s to open and while each call took 2 s. It failed when a request awaited a check.
+- [x] 2.4 Read the `signd` note and merge it under local settings; verify the fleet-interval scenario against the fake.
+  - 2026-11-17 (UTC): on a Mac, `theNoteSetsFleetSettings` passed against the fake: a note interval of `60m` reaches the status unless a local value is set, and a bad note value is reported.
+- [x] 2.5 Show sync state in `signd status`; verify `--json` carries the last result, the next attempt and every skipped item.
+  - 2026-11-17 (UTC): on a Mac, `statusJSONCarriesTheLastResultTheNextAttemptAndEverySkippedItem` passed on the encoded status. The command was built and its help read; a run against an agent is left to the hardware run.
 
 ## 3. SSH routing
 
-- [ ] 3.1 Write `~/.ssh/signd/config` and the public files atomically, with host pattern checks; verify the `ssh-routing` scenarios with `ssh -G` in `mise run ci:e2e`.
+- [x] 3.1 Write `~/.ssh/signd/config` and the public files atomically, with host pattern checks; verify the `ssh-routing` scenarios with `ssh -G` in `mise run ci:e2e`.
+  - 2026-11-17 (UTC): `mise run ci:e2e` passed on a Mac ([PR 16][signd#16]).  
+    `ssh -G` showed the socket and key files for shared and wildcard hosts, and the files had modes 700, 600 and 644.  
+    A bad pattern got no block, and a key's last host was removed.
 
 ## 4. Documentation
 
 - [ ] 4.1 Document the vault, the service account, the item fields and the `signd` note in README.md; verify each documented command runs as written.
+  - 2026-11-17 (UTC): the README section is in [PR 16][signd#16]. `login`, `logout`, `sync` and `status` parse and print help, and `config set interval` ran; commands that need the signed app have not run.
 
 ## 5. Integration
 
@@ -32,3 +44,6 @@
 ## Workflow follow-up
 
 - Archive this change after the `wrapped-keys` change.
+
+[signd#16]: https://github.com/victor-software-house/signd/pull/16
+[sync-tests]: ../../../Tests/SigndTests/SyncTests.swift

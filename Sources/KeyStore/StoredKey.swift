@@ -24,10 +24,20 @@ public struct StoredKey: Codable, Sendable, Equatable {
     public var keyData: Data
     /// The sealed private key of a wrapped key; nil for a Secure Enclave key.
     public var wrapped: WrappedKey?
+    /// The 1Password vault and item a synced key came from; nil for a key that did not come from 1Password.
+    public var vaultID: String?
+    public var itemID: String?
+    /// The item's `updatedAt` when the key was last written from it.
+    public var itemUpdated: Date?
+
+    /// The `source` of a key synced from 1Password.
+    public static let syncedSource = "1password"
+
+    public var isSynced: Bool { source == Self.syncedSource }
 
     public init(
         name: String, kind: KeyKind, publicBlob: Data, comment: String, hosts: [String], source: String = "local", created: Date = Date(),
-        keyData: Data, wrapped: WrappedKey? = nil
+        keyData: Data, wrapped: WrappedKey? = nil, vaultID: String? = nil, itemID: String? = nil, itemUpdated: Date? = nil
     ) {
         self.name = name
         self.kind = kind
@@ -38,6 +48,9 @@ public struct StoredKey: Codable, Sendable, Equatable {
         self.created = created
         self.keyData = keyData
         self.wrapped = wrapped
+        self.vaultID = vaultID
+        self.itemID = itemID
+        self.itemUpdated = itemUpdated
     }
 
     public var publicKey: PublicKey? { PublicKey(blob: publicBlob) }
@@ -86,5 +99,7 @@ public enum StoreError: Error, Sendable, Equatable, CustomStringConvertible {
 public protocol KeyStore: Sendable {
     func list() throws(StoreError) -> [StoredKey]
     func add(_ key: StoredKey) throws(StoreError)
+    /// Replaces the key of the same name in one keychain write.
+    func replace(_ key: StoredKey) throws(StoreError)
     func delete(name: String) throws(StoreError)
 }

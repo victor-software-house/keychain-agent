@@ -3,6 +3,7 @@ import AgentServer
 import Darwin
 import Foundation
 import SSHWire
+import Sync
 
 /// The agent socket, `~/.ssh/signd.sock`.
 let defaultSocketPath = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh/signd.sock").path
@@ -11,13 +12,13 @@ let defaultSocketPath = FileManager.default.homeDirectoryForCurrentUser.appendin
 struct AgentClient {
     let path: String
 
-    /// Sends one request body and returns the reply body, or nil when no agent answers.
-    func call(_ body: Data) -> Data? {
+    /// Sends one request body and returns the reply body, or nil when no agent answers within `timeout` seconds.
+    func call(_ body: Data, timeout: Int = 5) -> Data? {
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return nil }
         defer { close(fd) }
-        var timeout = timeval(tv_sec: 5, tv_usec: 0)
-        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+        var limit = timeval(tv_sec: timeout, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &limit, socklen_t(MemoryLayout<timeval>.size))
         var address = sockaddr_un()
         address.sun_family = sa_family_t(AF_UNIX)
         let bytes = Array(path.utf8)
@@ -46,10 +47,10 @@ struct AgentClient {
         return data
     }
 
-    private func callExtension(_ name: String) -> Data? {
+    private func callExtension(_ name: String, timeout: Int = 5) -> Data? {
         var body = Data([MessageType.extension.rawValue])
         body.appendString(name)
-        return call(body)
+        return call(body, timeout: timeout)
     }
 
     /// The agent's status, or nil when no agent answers.
@@ -58,6 +59,29 @@ struct AgentClient {
         var reader = Reader(reply.dropFirst())
         guard reader.text() == PrivateExtension.status, let json = reader.string() else { return nil }
         return try? JSONDecoder().decode(AgentStatus.self, from: json)
+    }
+
+    /// Asks the agent to check 1Password now and returns the check's result, or nil when no agent answers.
+    func sync() -> CheckSummary? {
+        // A check makes several requests to 1Password, so it may take longer than a status call.
+        decoded(PrivateExtension.sync, timeout: 300)
+    }
+
+    /// Asks the agent to sign out, and returns what it did, or nil when no agent that knows the request answers.
+    func logout() -> LogoutResult? {
+        decoded(PrivateExtension.logout, timeout: 60)
+    }
+
+    /// Tells the agent that a new token is stored, so it starts syncing from it; does nothing when none runs.
+    func login() {
+        _ = callExtension(PrivateExtension.login)
+    }
+
+    private func decoded<Value: Decodable>(_ name: String, timeout: Int) -> Value? {
+        guard let reply = callExtension(name, timeout: timeout), reply.first == MessageType.extensionResponse.rawValue else { return nil }
+        var reader = Reader(reply.dropFirst())
+        guard reader.text() == name, let json = reader.string() else { return nil }
+        return try? JSONDecoder().decode(Value.self, from: json)
     }
 
     /// Asks a running agent to read the stored keys again; does nothing when none runs.

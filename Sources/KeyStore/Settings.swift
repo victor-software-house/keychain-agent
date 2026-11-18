@@ -7,12 +7,38 @@ public struct Settings: Sendable {
     /// A setting signd reads, with its default.
     public enum Key: String, CaseIterable, Sendable {
         case keyLifetime = "key-lifetime"
+        case interval
 
         public var defaultValue: String {
             switch self {
             case .keyLifetime: "1h"
+            case .interval: "5m"
             }
         }
+
+        /// The shortest and longest value, in seconds: an interval of 1 minute to 24 hours, and a key lifetime of 1 second to 30 days.
+        public var bounds: ClosedRange<TimeInterval> {
+            switch self {
+            case .keyLifetime: 1...2_592_000
+            case .interval: 60...86_400
+            }
+        }
+    }
+
+    /// Where a setting's value comes from, in order of precedence.
+    public enum Source: String, Codable, Sendable {
+        /// `signd config set` on this Mac.
+        case local
+        /// The `signd` note in 1Password, for every Mac.
+        case note
+        case `default`
+    }
+
+    /// A setting's value, its length in seconds, and where it came from.
+    public struct Resolved: Sendable, Equatable {
+        public let value: String
+        public let seconds: TimeInterval
+        public let source: Source
     }
 
     public init() {}
@@ -25,10 +51,7 @@ public struct Settings: Sendable {
     }
 
     public func set(_ key: Key, _ value: String) throws(SettingsError) {
-        switch key {
-        case .keyLifetime:
-            guard Self.seconds(value) != nil else { throw .invalid(key.rawValue, value) }
-        }
+        guard Self.validSeconds(key, value) != nil else { throw .invalid(key.rawValue, value) }
         write(key, value as CFString)
     }
 
@@ -39,21 +62,34 @@ public struct Settings: Sendable {
         CFPreferencesAppSynchronize(Self.domain as CFString)
     }
 
-    /// How long a private key stays in memory after its last signature.
-    public var keyLifetime: TimeInterval {
-        value(.keyLifetime).flatMap(Self.seconds) ?? Self.seconds(Key.keyLifetime.defaultValue)!
+    /// A setting's value: the local one, else the `signd` note's in `fleet`, else the default.
+    /// A value that is not a valid duration for the setting is passed over.
+    public func resolve(_ key: Key, fleet: [String: String] = [:]) -> Resolved {
+        let candidates: [(String?, Source)] = [(value(key), .local), (fleet[key.rawValue], .note)]
+        for (value, source) in candidates {
+            if let value, let seconds = Self.validSeconds(key, value) { return Resolved(value: value, seconds: seconds, source: source) }
+        }
+        let value = key.defaultValue
+        return Resolved(value: value, seconds: Self.seconds(value)!, source: .default)
+    }
+
+    /// A duration that suits `key`, within its bounds.
+    public static func validSeconds(_ key: Key, _ text: String) -> TimeInterval? {
+        guard let seconds = seconds(text), key.bounds.contains(seconds) else { return nil }
+        return seconds
     }
 
     /// Reads a duration such as `90s`, `30m`, `1h` or `2d`.
     public static func seconds(_ text: String) -> TimeInterval? {
-        guard let unit = text.last, let number = Double(text.dropLast()), number >= 0 else { return nil }
-        return switch unit {
+        guard let unit = text.last, let number = Double(text.dropLast()), number >= 0, number.isFinite else { return nil }
+        let seconds: TimeInterval? = switch unit {
         case "s": number
         case "m": number * 60
         case "h": number * 3600
         case "d": number * 86400
         default: nil
         }
+        return seconds.flatMap { $0.isFinite ? $0 : nil }
     }
 }
 
@@ -62,7 +98,9 @@ public enum SettingsError: Error, Sendable, CustomStringConvertible {
 
     public var description: String {
         switch self {
-        case let .invalid(key, value): "invalid value \(value) for \(key): use a duration such as 90s, 30m, 1h or 2d"
+        case let .invalid(key, value):
+            let range = Settings.Key(rawValue: key).map { ", from \(Int($0.bounds.lowerBound)) to \(Int($0.bounds.upperBound)) seconds" } ?? ""
+            return "invalid value \(value) for \(key): use a duration such as 90s, 30m, 1h or 2d\(range)"
         }
     }
 }

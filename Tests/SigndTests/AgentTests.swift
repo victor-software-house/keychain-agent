@@ -21,6 +21,13 @@ final class MemoryStore: KeyStore {
         }
     }
 
+    func replace(_ key: StoredKey) throws(StoreError) {
+        try keys.withLock { keys throws(StoreError) in
+            guard let index = keys.firstIndex(where: { $0.name == key.name }) else { throw .notFound(key.name) }
+            keys[index] = key
+        }
+    }
+
     func delete(name: String) throws(StoreError) {
         try keys.withLock { keys throws(StoreError) in
             guard keys.contains(where: { $0.name == name }) else { throw .notFound(name) }
