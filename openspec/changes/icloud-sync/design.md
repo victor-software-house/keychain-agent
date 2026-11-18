@@ -155,4 +155,4 @@ The `signd` note goes; the `declarative-config` change carries settings for ever
 3. On every other Mac, delete the local copy of each such key; the shared copy arrives within seconds.
 4. Remove the dotfiles step that signs signd in to 1Password, and move the key items back to the vault the other SSH keys use, where they stay as a backup; delete the vault signd read.
 5. The token item that the 1Password release stored stays in signd's keychain group, unread; revoke its service account in 1Password.
-6. Rollback: install the previous release and run `signd login` again.
+6. Rollback: before step 4, install the previous release and run `signd login` again. After step 4, also put the key items back in a vault the previous release reads, and give it a new service account token.
