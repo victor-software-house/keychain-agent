@@ -9,15 +9,15 @@ A trial on two Macs measured CloudKit's private database: a check every 2 second
 ## What Changes
 
 - New: signd keeps shared keys in the user's own iCloud private database, in a zone named `signd`, as `Key` records.
-  Each Mac publishes a `Mac` record with the public half of its own Secure Enclave key-agreement key.
-- New: a shared key's private part is sealed with HPKE to each Mac's key, inside CloudKit's encrypted field, so neither Apple nor the signd team can read it.
+  Each device publishes a `Device` record with the public half of its own Secure Enclave key-agreement key; today every device is a Mac.
+- New: a shared key's private part is sealed with HPKE to each device's key, inside CloudKit's encrypted field, so neither Apple nor the signd team can read it.
 - New: keys sync by default.
   `signd key create` and `signd key import` share every key that can leave the Mac, and `--local` keeps a key on its Mac; a Secure Enclave P-256 key never leaves it.
   `signd key share NAME` shares an existing key, and `signd key delete` on a shared key deletes it on every Mac.
 - New: a Mac that has a shared key seals it to each new Mac on the account at its next check, with no step on either Mac.
 - New: the agent checks for changes every 2 seconds, one request when nothing changed, and a push from CloudKit starts a check at once.
   Each request times out after 10 seconds, failures back off, and a throttled check waits the time CloudKit gives.
-- New: `signd mac list` and `signd mac remove`.
+- New: `signd device list` and `signd device remove`.
 - **BREAKING** Removed: `signd login`, `signd logout`, the 1Password sync, the `signd` note and the `swift-onepassword` dependency.
   A key synced from 1Password stays on its Mac as a local key until it is shared or deleted.
 - Changed: the `interval` setting defaults to 2 seconds, from 1 second to 1 hour.

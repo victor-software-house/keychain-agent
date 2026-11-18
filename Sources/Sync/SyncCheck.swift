@@ -1,290 +1,320 @@
+import CryptoKit
 import Foundation
 import KeyStore
-import OnePassword
+import os
 import SSHWire
 
-/// Request counts of one check, kept outside `SyncCheck.run` so a failed check still reports them.
-struct Counters: Sendable {
-    var requests = 0
-    var fetched = 0
-}
+private let log = Logger(subsystem: "com.victor-software-house.signd", category: "sync")
 
-/// What a check changed in the store, by key name.
+/// Opens a stored wrapped key to its private key and comment, as `Wrapping.openStored` does with the Secure Enclave.
+public typealias KeyOpener = @Sendable (StoredKey) throws(SignError) -> (PrivateKey, String)
+
+/// What a check or a command changed, by key name.
 struct Changes: Sendable {
     var added: [String] = []
     var replaced: [String] = []
     var removed: [String] = []
+    /// Keys this device sealed for other devices.
+    var sealed: [String] = []
 
     var isEmpty: Bool { added.isEmpty && replaced.isEmpty && removed.isEmpty }
 }
 
-/// The token changed while a check ran, so the check stops before it writes anything else.
-struct Stale: Error {}
+/// A request the agent refuses, with the reason the command prints.
+struct SyncRefusal: Error, CustomStringConvertible {
+    let description: String
+    init(_ description: String) { self.description = description }
+}
 
-/// Seals a private key into a stored key, as `KeychainStore.makeWrappedKey` does.
-public typealias KeyWrapper = @Sendable (_ name: String, _ key: PrivateKey, _ comment: String, _ hosts: [String]) throws(StoreError) -> StoredKey
-
-/// One check of design decision 5: reads 1Password and brings the stored keys, the `signd` note and the skipped items up to date.
+/// The work of design decisions 4 to 6, on the state of one device: a check, and the commands that change shared keys and devices.
 struct SyncCheck {
-    let source: any OnePasswordSource
+    let cloud: any CloudStore
     let store: any KeyStore
-    let wrap: KeyWrapper
-    /// This Mac's `LocalHostName`, in lowercase.
-    let hostName: String
-    /// Whether the token this check started with is still the agent's; asked before every write to the store.
-    let isCurrent: @Sendable () -> Bool
-    /// The running signd's version: an item its client could not read is read again by another version.
+    let device: DeviceKey
+    /// This device's name, a Mac's `LocalHostName` in lowercase.
+    let deviceName: String
     let version: String
+    let open: KeyOpener
 
-    /// Whether 1Password's client could not read an item's reply; that item is skipped and the rest are checked.
-    static func isUndecodable(_ error: OnePasswordError) -> Bool {
-        error.kind == .decoding
-    }
+    /// This device's record name.
+    var me: String { device.recordName }
 
-    /// An item whose fetch has been read and whose key name another key may hold until this vault's renames and removals are done.
-    typealias Deferred = (overview: ItemOverview, item: Item)
+    // MARK: The check
 
-    /// Returns the state after the check; the keys are changed in the store as it goes.
-    /// The service's isolation is part of the signature: no suspension separates `current()` from the write it guards,
-    /// so a logout or a new login cannot run in between, and `@concurrent` cannot be added here without breaking that.
-    func run(from old: SyncState, counters: inout Counters, changes: inout Changes, isolation _: isolated SyncService) async throws -> SyncState {
-        counters.requests += 1
-        let vaults = try await source.vaults()
-        try current()
-        let vaultIDs = Set(vaults.map(\.id))
-        var keys = try store.list()
-
-        for key in keys where key.isSynced && !(key.vaultID.map(vaultIDs.contains) ?? false) {
-            try remove(key, keys: &keys, changes: &changes)
-        }
-
-        // A vault with an item that another signd version could not read is read again, as is a vault that changed.
-        let reread = Set(old.skipped.filter { $0.kind != .invalidNote && $0.undecodedBy.map { $0 != version } ?? false }.map(\.vaultID))
-        let moved = vaults.filter { old.vaultVersions[$0.id] != $0.contentVersion || reread.contains($0.id) }
-        let movedIDs = Set(moved.map(\.id))
+    /// Reads the changes since the state's tokens, brings the store in line, publishes this device's record and seals keys for new devices.
+    func run(from old: SyncState, requests: inout Int, changes: inout Changes) async throws -> SyncState {
         var state = old
-        state.vaultVersions = Dictionary(uniqueKeysWithValues: vaults.map { ($0.id, $0.contentVersion) })
-        state.skipped = old.skipped.filter { vaultIDs.contains($0.vaultID) && ($0.kind == .invalidNote || !movedIDs.contains($0.vaultID)) }
+        if !state.prepared {
+            try await cloud.prepare()
+            requests += 1
+            state.prepared = true
+        }
+        var full = state.databaseToken == nil
+        var fetched: CloudChanges
+        do {
+            fetched = try await cloud.changes(database: state.databaseToken, zone: state.zoneToken)
+        } catch where error.kind == .tokenExpired || error.kind == .zoneMissing {
+            requests += 1
+            if error.kind == .zoneMissing {
+                try await cloud.prepare()
+                requests += 1
+            }
+            full = true
+            fetched = try await cloud.changes(database: nil, zone: nil)
+        }
+        requests += fetched.requests
 
-        var notes: [(vaultID: String, overview: ItemOverview)] = []
-        if let note = old.note, vaultIDs.contains(note.vaultID), !movedIDs.contains(note.vaultID) {
-            notes.append((note.vaultID, ItemOverview(id: note.itemID, title: Selection.note, category: Selection.noteCategory, vaultId: note.vaultID, updatedAt: note.updated, state: "active")))
+        if let loss = fetched.zoneLoss {
+            try removeShared(changes: &changes)
+            state.forgetRecords()
+            state.stopped = loss == .deletedByUser
+            return state
+        }
+        state.databaseToken = fetched.databaseToken
+        if let token = fetched.zoneToken { state.zoneToken = token }
+        if full {
+            state.devices = [:]
+            state.keys = [:]
         }
 
-        for vault in moved {
-            counters.requests += 1
-            let overviews = try await source.items(vaultID: vault.id).filter { $0.state == "active" }.sorted { ($0.title, $0.id) < ($1.title, $1.id) }
-            if let note = overviews.first(where: { $0.category == Selection.noteCategory && $0.title == Selection.note }) {
-                notes.append((vault.id, note))
-            }
-            var present = Set<String>()
-            var deferred: [Deferred] = []
-            for overview in overviews where overview.category == Selection.keyCategory {
-                present.insert(overview.id)
-                try await sync(overview, in: vault, old: old, state: &state, keys: &keys, counters: &counters, changes: &changes, deferred: &deferred)
-            }
-            for key in keys where key.isSynced && key.vaultID == vault.id && !present.contains(key.itemID ?? "") {
-                try remove(key, keys: &keys, changes: &changes)
-            }
-            // Renames and removals are done, so a name that was taken may be free now.
-            for entry in deferred {
-                _ = try place(entry.item, overview: entry.overview, in: vault, state: &state, keys: &keys, changes: &changes, allowDefer: false)
+        // A record deleted and made again in one batch comes back as changed, so deletions go first.
+        var payloads: [String: KeyPayload] = [:]
+        var unreadable: [String: SkippedKey] = [:]
+        for name in fetched.deleted {
+            state.devices[name] = nil
+            state.keys[name] = nil
+        }
+        for record in fetched.changed {
+            switch record.type {
+            case .device:
+                state.devices[record.name] = Self.deviceEntry(record)
+            case .key:
+                do throws(PayloadError) {
+                    let payload = try Payload.decode(KeyPayload.self, from: record.payload)
+                    state.keys[record.name] = KeyEntry(name: payload.name, hosts: payload.hosts, publicKey: payload.publicKey, sealedFor: payload.sealed.keys.sorted())
+                    payloads[record.name] = payload
+                } catch {
+                    // A record this version cannot read keeps the key it gave before, as a later version may read it.
+                    state.keys[record.name] = nil
+                    unreadable[record.name] = SkippedKey(
+                        record: record.name, name: String(record.name.dropFirst(RecordType.key.prefix.count)), kind: .invalidRecord, reason: error.description
+                    )
+                }
             }
         }
 
-        // A vault that did not change keeps its name conflicts with no request, until no key holds the name any more.
-        let freed = state.skipped.filter { skip in
-            skip.kind == .nameTaken && !movedIDs.contains(skip.vaultID) && !(skip.name.map { name in keys.contains { $0.name == name } } ?? false)
+        var keys = try store.list()
+        let touched = Set(fetched.deleted).union(payloads.keys).union(unreadable.keys)
+        var skipped = old.skipped.filter { !touched.contains($0.record) && (!full || state.keys[$0.record] != nil || $0.kind == .invalidRecord) }
+        skipped += unreadable.values
+
+        for name in fetched.deleted {
+            if let local = keys.first(where: { $0.isShared && $0.recordName == name }) { try delete(local, keys: &keys, changes: &changes) }
         }
-        if !freed.isEmpty {
-            state.skipped.removeAll { skip in freed.contains(skip) }
-            let byID = Dictionary(uniqueKeysWithValues: vaults.map { ($0.id, $0) })
-            var deferred: [(vault: VaultOverview, entry: Deferred)] = []
-            for skip in freed {
-                guard let vault = byID[skip.vaultID] else { continue }
-                let overview = ItemOverview(id: skip.itemID, title: skip.title, category: Selection.keyCategory, vaultId: vault.id, updatedAt: skip.updated, state: "active")
-                var held: [Deferred] = []
-                try await read(overview, in: vault, state: &state, keys: &keys, counters: &counters, changes: &changes, deferred: &held)
-                deferred += held.map { (vault, $0) }
-            }
-            for (vault, entry) in deferred {
-                _ = try place(entry.item, overview: entry.overview, in: vault, state: &state, keys: &keys, changes: &changes, allowDefer: false)
+        if full {
+            let kept = Set(state.keys.keys).union(skipped.filter { $0.kind == .invalidRecord }.map(\.record))
+            for local in keys where local.isShared && !kept.contains(local.recordName ?? "") {
+                try delete(local, keys: &keys, changes: &changes)
             }
         }
 
-        let order = Dictionary(uniqueKeysWithValues: vaults.enumerated().map { ($1.id, $0) })
-        let note = notes.min { (order[$0.vaultID] ?? 0) < (order[$1.vaultID] ?? 0) }
-        try await readNote(note, old: old, state: &state, counters: &counters)
-        state.skipped.sort { ($0.title, $0.itemID) < ($1.title, $1.itemID) }
+        // A name that a local key held may be free now; its record did not change, so it is fetched.
+        let freed = skipped.filter { skip in skip.kind == .nameTaken && !keys.contains { $0.name == skip.name } }
+        for skip in freed {
+            skipped.removeAll { $0 == skip }
+            requests += 1
+            guard let record = try await cloud.fetch(.key, name: skip.record) else {
+                state.keys[skip.record] = nil
+                continue
+            }
+            if let payload = try? Payload.decode(KeyPayload.self, from: record.payload) {
+                payloads[skip.record] = payload
+                state.keys[skip.record] = KeyEntry(name: payload.name, hosts: payload.hosts, publicKey: payload.publicKey, sealedFor: payload.sealed.keys.sorted())
+            }
+        }
+
+        for (record, payload) in payloads.sorted(by: { $0.key < $1.key }) {
+            if let skip = try place(record, payload, keys: &keys, changes: &changes) { skipped.append(skip) }
+        }
+        state.skipped = skipped.sorted { ($0.name, $0.record) < ($1.name, $1.record) }
+
+        try await publish(&state, requests: &requests)
+        try await sealForNewMacs(&state, keys: keys, requests: &requests, changes: &changes)
         return state
     }
 
-    private func current() throws {
-        if !isCurrent() { throw Stale() }
+    static func deviceEntry(_ record: CloudRecord) -> DeviceEntry? {
+        guard let payload = try? Payload.decode(DevicePayload.self, from: record.payload),
+              record.name == DeviceKey.recordName(for: payload.publicKey),
+              (try? P256.KeyAgreement.PublicKey(x963Representation: payload.publicKey)) != nil
+        else { return nil }
+        return DeviceEntry(name: Display.clean(payload.name), publicKey: payload.publicKey, system: record.system)
     }
 
-    private func remove(_ key: StoredKey, keys: inout [StoredKey], changes: inout Changes) throws {
-        try current()
+    /// Stores the key a record gives this device, or says why it does not.
+    private func place(_ record: String, _ payload: KeyPayload, keys: inout [StoredKey], changes: inout Changes) throws -> SkippedKey? {
+        let existing = keys.first { $0.isShared && $0.recordName == record }
+        let name = Display.clean(payload.name)
+        func skip(_ kind: SkipKind, _ reason: String) throws -> SkippedKey {
+            if let existing { try delete(existing, keys: &keys, changes: &changes) }
+            return SkippedKey(record: record, name: name, kind: kind, reason: reason)
+        }
+        guard record == KeyPayload.recordName(for: payload.name), StoredKey.isValidName(payload.name), PublicKey(blob: payload.publicKey) != nil else {
+            return try skip(.invalidRecord, "the record's name, key name and public key do not agree")
+        }
+        if let host = payload.hosts.first(where: { !StoredKey.isValidHost($0) }) {
+            return try skip(.invalidHost, "the hosts hold \"\(Display.clean(host))\", which is not a host pattern")
+        }
+        guard let sealed = payload.sealed[me] else {
+            return try skip(.waiting, "no other device has shared it with this Mac yet")
+        }
+        if keys.contains(where: { $0.name == payload.name && $0.recordName != record }) {
+            return SkippedKey(record: record, name: name, kind: .nameTaken, reason: "a key on this Mac that is not shared has the name \(name)")
+        }
+        var key = StoredKey(
+            name: payload.name, kind: .wrapped, publicBlob: payload.publicKey, comment: Display.clean(payload.comment), hosts: payload.hosts,
+            source: StoredKey.sharedSource, keyData: device.handle, wrapped: sealed, recordName: record
+        )
+        if let existing {
+            key.created = existing.created
+            if existing == key { return nil }
+            try store.replace(key)
+            keys.removeAll { $0.name == key.name }
+            keys.append(key)
+            changes.replaced.append(key.name)
+        } else {
+            try store.add(key)
+            keys.append(key)
+            changes.added.append(key.name)
+        }
+        return nil
+    }
+
+    private func delete(_ key: StoredKey, keys: inout [StoredKey], changes: inout Changes) throws {
         try store.delete(name: key.name)
         keys.removeAll { $0.name == key.name }
         changes.removed.append(key.name)
     }
 
-    /// Reads one SSH Key item when it is new or changed, and brings its stored key up to date.
-    private func sync(
-        _ overview: ItemOverview, in vault: VaultOverview, old: SyncState, state: inout SyncState, keys: inout [StoredKey],
-        counters: inout Counters, changes: inout Changes, deferred: inout [Deferred]
-    ) async throws {
-        let existing = keys.first { $0.isSynced && $0.vaultID == vault.id && $0.itemID == overview.id }
-        if let existing, existing.itemUpdated == overview.updatedAt { return }
-        // A name taken by another key can free up without the item changing, so that skip is read again.
-        if let known = old.skipped.first(where: {
-            $0.vaultID == vault.id && $0.itemID == overview.id && $0.updated == overview.updatedAt && $0.kind != .nameTaken
-                && $0.undecodedBy.map { $0 == version } ?? true
-        }) {
-            state.skipped.append(known)
-            return
-        }
-        try await read(overview, in: vault, state: &state, keys: &keys, counters: &counters, changes: &changes, deferred: &deferred)
+    /// Deletes every shared key on this device, as a change of account or a deleted zone needs.
+    func removeShared(changes: inout Changes) throws {
+        var keys = try store.list()
+        for key in keys where key.isShared { try delete(key, keys: &keys, changes: &changes) }
     }
 
-    /// Fetches one item and brings its stored key up to date, or skips it.
-    private func read(
-        _ overview: ItemOverview, in vault: VaultOverview, state: inout SyncState, keys: inout [StoredKey], counters: inout Counters,
-        changes: inout Changes, deferred: inout [Deferred]
-    ) async throws {
-        counters.requests += 1
-        counters.fetched += 1
-        let item: Item
-        do throws(OnePasswordError) {
-            item = try await source.item(vaultID: vault.id, itemID: overview.id)
-        } catch {
-            guard Self.isUndecodable(error) else { throw error }
-            // The client cannot read the item, which says nothing about the key it gave before, so that key stays.
-            state.skipped.append(SkippedItem(
-                vaultID: vault.id, itemID: overview.id, title: Selection.clean(overview.title), updated: overview.updatedAt, kind: .invalidKey,
-                reason: "1Password's reply for this item could not be read", undecodedBy: version
-            ))
-            return
-        }
-        if try place(item, overview: overview, in: vault, state: &state, keys: &keys, changes: &changes, allowDefer: true) {
-            deferred.append((overview, item))
+    /// Saves this device's record when the zone has none for its key, or one with another name.
+    private func publish(_ state: inout SyncState, requests: inout Int) async throws {
+        let entry = state.devices[me]
+        if let entry, entry.name == deviceName, entry.publicKey == device.publicKey { return }
+        let payload = DevicePayload(name: deviceName, publicKey: device.publicKey, version: version)
+        requests += 1
+        do {
+            let saved = try await cloud.save(CloudRecord(type: .device, name: me, payload: Payload.encode(payload), system: entry?.system))
+            state.devices[me] = DeviceEntry(name: deviceName, publicKey: device.publicKey, system: saved.system)
+        } catch where error.kind == .conflict {
+            // Another signd process on this device saved it first; the next check reads it.
         }
     }
 
-    private func skip(
-        _ overview: ItemOverview, in vault: VaultOverview, _ kind: SkipKind, _ reason: String, name: String? = nil, state: inout SyncState,
-        keys: inout [StoredKey], changes: inout Changes
-    ) throws {
-        state.skipped.append(SkippedItem(
-            vaultID: vault.id, itemID: overview.id, title: Selection.clean(overview.title), updated: overview.updatedAt, kind: kind,
-            reason: Selection.clean(reason), name: name
-        ))
-        if let existing = keys.first(where: { $0.isSynced && $0.vaultID == vault.id && $0.itemID == overview.id }) {
-            try remove(existing, keys: &keys, changes: &changes)
-        }
-    }
-
-    /// Stores the key of a fetched item, or skips the item. With `allowDefer`, an item whose name another key holds is not skipped
-    /// yet: it returns true, and waits for the end of its vault. Without it, that item is skipped.
-    private func place(
-        _ item: Item, overview: ItemOverview, in vault: VaultOverview, state: inout SyncState, keys: inout [StoredKey], changes: inout Changes,
-        allowDefer: Bool
-    ) throws -> Bool {
-        let existing = keys.first { $0.isSynced && $0.vaultID == vault.id && $0.itemID == overview.id }
-        switch Selection.read(item, hostName: hostName) {
-        case let .skipped(kind, reason):
-            try skip(overview, in: vault, kind, reason, state: &state, keys: &keys, changes: &changes)
-            return false
-        case let .key(privateKey, name, hosts):
-            if let owner = keys.first(where: { $0.name == name }), owner.itemID != overview.id || !owner.isSynced || owner.vaultID != vault.id {
-                if allowDefer { return true }
-                try skip(overview, in: vault, .nameTaken, "the key name \(name) belongs to another key", name: name, state: &state, keys: &keys, changes: &changes)
-                return false
+    /// Seals each shared key this device holds to every device that has no copy, as design decision 5 says. It never drops a copy.
+    private func sealForNewMacs(_ state: inout SyncState, keys: [StoredKey], requests: inout Int, changes: inout Changes) async throws {
+        for local in keys where local.isShared {
+            guard let record = local.recordName, let entry = state.keys[record] else { continue }
+            let missing = state.devices.keys.filter { !entry.sealedFor.contains($0) }.sorted()
+            guard !missing.isEmpty else { continue }
+            requests += 1
+            guard let current = try await cloud.fetch(.key, name: record), var payload = try? Payload.decode(KeyPayload.self, from: current.payload) else { continue }
+            var added = false
+            for device in missing where payload.sealed[device] == nil {
+                guard let recipient = state.devices[device].flatMap({ try? P256.KeyAgreement.PublicKey(x963Representation: $0.publicKey) }) else { continue }
+                let opened: (PrivateKey, String)
+                do {
+                    opened = try open(local)
+                } catch {
+                    log.error("cannot open \(local.name, privacy: .public) to share it: \(String(describing: error), privacy: .public)")
+                    break
+                }
+                payload.sealed[device] = try Wrapping.seal(opened.0, comment: opened.1, to: recipient)
+                added = true
             }
-            let comment = Selection.clean(overview.title)
-            let blob = privateKey.publicKey.blob
-            if var kept = existing, kept.publicBlob == blob, kept.kind == .wrapped {
-                // Only the item's other fields changed, so the sealed key stays.
-                let oldName = kept.name
-                kept.name = name
-                kept.hosts = hosts
-                kept.comment = comment
-                kept.itemUpdated = overview.updatedAt
-                try write(kept, replacing: oldName, keys: &keys, changes: &changes)
-                return false
+            state.keys[record]?.sealedFor = payload.sealed.keys.sorted()
+            guard added else { continue }
+            requests += 1
+            do {
+                _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload), system: current.system))
+                changes.sealed.append(local.name)
+            } catch where error.kind == .conflict {
+                // Another device sealed it first; the next check reads that record.
+                state.keys[record]?.sealedFor = entry.sealedFor
             }
-            try current()
-            var key = try wrap(name, privateKey, comment, hosts)
-            key.vaultID = vault.id
-            key.itemID = overview.id
-            key.itemUpdated = overview.updatedAt
-            try write(key, replacing: existing?.name, keys: &keys, changes: &changes)
-            return false
         }
     }
 
-    /// Stores `key`: one write over the key of the same name, or a delete and an add when the name changed.
-    private func write(_ key: StoredKey, replacing oldName: String?, keys: inout [StoredKey], changes: inout Changes) throws {
-        try current()
-        switch oldName {
-        case key.name?:
-            try store.replace(key)
-            keys.removeAll { $0.name == key.name }
-            keys.append(key)
-            changes.replaced.append(key.name)
-        case let oldName?:
-            try store.delete(name: oldName)
-            try store.add(key)
-            keys.removeAll { $0.name == oldName }
-            keys.append(key)
-            changes.replaced.append(key.name)
-        case nil:
-            try store.add(key)
-            keys.append(key)
-            changes.added.append(key.name)
+    // MARK: Commands
+
+    /// Shares a key of this device: seals it to every known device, saves its record, and keeps this device's own copy in its place.
+    func share(_ name: String, state: inout SyncState, requests: inout Int) async throws -> StoredKey {
+        guard let local = try store.list().first(where: { $0.name == name }) else { throw SyncRefusal(StoreError.notFound(name).description) }
+        guard !local.isShared else { throw SyncRefusal("\(name) is already shared") }
+        guard local.kind == .wrapped else { throw SyncRefusal("\(name) is a Secure Enclave key, which cannot leave this Mac") }
+        let record = KeyPayload.recordName(for: name)
+        if state.keys[record] != nil || state.skipped.contains(where: { $0.record == record }) {
+            throw SyncRefusal("a shared key named \(name) exists; delete this Mac's own \(name) to take the shared one, or pick another name")
         }
+        try await publish(&state, requests: &requests)
+        var devices = state.devices
+        if devices[me] == nil { devices[me] = DeviceEntry(name: deviceName, publicKey: device.publicKey, system: nil) }
+        let (privateKey, comment) = try open(local)
+        var sealed: [String: WrappedKey] = [:]
+        for (id, device) in devices {
+            guard let recipient = try? P256.KeyAgreement.PublicKey(x963Representation: device.publicKey) else { continue }
+            sealed[id] = try Wrapping.seal(privateKey, comment: comment, to: recipient)
+        }
+        let payload = KeyPayload(name: name, comment: local.comment, hosts: local.hosts, publicKey: local.publicBlob, sealed: sealed)
+        requests += 1
+        do {
+            _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload)))
+        } catch where error.kind == .conflict {
+            throw SyncRefusal("a shared key named \(name) exists; delete this Mac's own \(name) to take the shared one, or pick another name")
+        } catch where error.kind == .quota {
+            throw SyncRefusal("your iCloud storage is full, so \(name) was not shared")
+        }
+        var shared = local
+        shared.source = StoredKey.sharedSource
+        shared.keyData = device.handle
+        shared.wrapped = sealed[me]
+        shared.recordName = record
+        try store.replace(shared)
+        state.keys[record] = KeyEntry(name: name, hosts: local.hosts, publicKey: local.publicBlob, sealedFor: sealed.keys.sorted())
+        return shared
     }
 
-    /// Reads the `signd` note when it is new or changed, and keeps its settings.
-    private func readNote(_ found: (vaultID: String, overview: ItemOverview)?, old: SyncState, state: inout SyncState, counters: inout Counters) async throws {
-        guard let found else {
-            state.note = nil
-            state.fleet = [:]
-            state.skipped.removeAll { $0.kind == .invalidNote }
-            return
+    /// Deletes a shared key's record, then this device's copy; every other device deletes its copy at its next check.
+    func deleteShared(_ name: String, state: inout SyncState, requests: inout Int, changes: inout Changes) async throws {
+        var keys = try store.list()
+        guard let local = keys.first(where: { $0.name == name }), local.isShared, let record = local.recordName else {
+            throw SyncRefusal("\(name) is not a shared key")
         }
-        let reference = NoteRef(vaultID: found.vaultID, itemID: found.overview.id, updated: found.overview.updatedAt)
-        state.note = reference
-        let unreadable = old.skipped.contains { $0.kind == .invalidNote && $0.undecodedBy.map { $0 != version } ?? false }
-        if old.note == reference && !unreadable { return }
-        state.skipped.removeAll { $0.kind == .invalidNote }
-        counters.requests += 1
-        counters.fetched += 1
-        let item: Item
-        do throws(OnePasswordError) {
-            item = try await source.item(vaultID: found.vaultID, itemID: found.overview.id)
-        } catch {
-            guard Self.isUndecodable(error) else { throw error }
-            // The settings stay at their defaults until a signd version can read the note.
-            state.fleet = [:]
-            state.skipped.append(SkippedItem(
-                vaultID: found.vaultID, itemID: found.overview.id, title: "\(Selection.note) note", updated: found.overview.updatedAt, kind: .invalidNote,
-                reason: "the reply for the note could not be read, so the default settings apply", undecodedBy: version
-            ))
-            return
-        }
-        state.fleet = [:]
-        for key in Settings.Key.allCases {
-            guard let value = Selection.field(item, titled: key.rawValue), !value.isEmpty else { continue }
-            if Settings.validSeconds(key, value) != nil {
-                state.fleet[key.rawValue] = value
-            } else {
-                state.skipped.append(SkippedItem(
-                    vaultID: found.vaultID, itemID: item.id, title: "\(Selection.note) note", updated: item.updatedAt, kind: .invalidNote,
-                    reason: Selection.clean("\(key.rawValue) is \"\(value)\", not a duration such as 90s, 30m, 1h or 2d from \(key.bounds.lowerBound) to \(key.bounds.upperBound) seconds")
-                ))
-            }
+        requests += 1
+        try await cloud.delete(.key, name: record)
+        try delete(local, keys: &keys, changes: &changes)
+        state.keys[record] = nil
+    }
+
+    /// Deletes a device's record and drops its copies from every key.
+    func removeDevice(_ id: String, state: inout SyncState, requests: inout Int) async throws {
+        guard id != me else { throw SyncRefusal("\(id) is this Mac, which would publish its record again at its next check") }
+        guard state.devices[id] != nil else { throw SyncRefusal("no device has the id \(id); see signd device list") }
+        requests += 1
+        try await cloud.delete(.device, name: id)
+        state.devices[id] = nil
+        for (record, entry) in state.keys.sorted(by: { $0.key < $1.key }) where entry.sealedFor.contains(id) {
+            requests += 1
+            guard let current = try await cloud.fetch(.key, name: record), var payload = try? Payload.decode(KeyPayload.self, from: current.payload) else { continue }
+            payload.sealed[id] = nil
+            requests += 1
+            _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload), system: current.system))
+            state.keys[record]?.sealedFor = payload.sealed.keys.sorted()
         }
     }
 }

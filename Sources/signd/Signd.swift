@@ -1,19 +1,20 @@
 import AgentServer
+import AppKit
 import ArgumentParser
+import CloudKit
 import Foundation
 import KeyStore
-import OnePassword
 import os
 import ServiceManagement
 import SSHWire
 import Sync
 
 @main
-struct Signd: AsyncParsableCommand {
+struct Signd: ParsableCommand {
     static let configuration = CommandConfiguration(
-        abstract: "An SSH agent for keys only its signed app can use.",
+        abstract: "An SSH agent for keys only its signed app can use, shared through iCloud.",
         version: signdVersion,
-        subcommands: [KeyCommand.self, Login.self, Logout.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self]
+        subcommands: [KeyCommand.self, DeviceCommand.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self]
     )
 }
 
@@ -72,7 +73,7 @@ func storedKey(_ name: String) throws -> StoredKey {
 }
 
 struct KeyCommand: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "key", abstract: "Create, list, show and delete keys.", subcommands: [Create.self, Import.self, List.self, Show.self, Delete.self])
+    static let configuration = CommandConfiguration(commandName: "key", abstract: "Create, list, show and delete keys.", subcommands: [Create.self, Import.self, Share.self, List.self, Show.self, Delete.self])
 
     /// The kinds of key `key create` makes.
     enum KeyType: String, ExpressibleByArgument, CaseIterable {
@@ -102,11 +103,32 @@ struct KeyCommand: ParsableCommand {
         }
     }
 
-    /// Stores a new key, tells a running agent, and prints the public key.
-    static func finish(_ key: StoredKey, store: KeychainStore, output: JSONOption) throws {
+    /// Stores a new key, tells a running agent, shares it unless `local`, and prints the public key.
+    static func finish(_ key: StoredKey, store: KeychainStore, local: Bool, output: JSONOption) throws {
         do { try store.add(key) } catch { throw Failure(error) }
-        AgentClient(path: defaultSocketPath).reload()
-        if output.json { try output.print(KeySummary(key)) } else { print(KeySummary(key).publicKey) }
+        let client = AgentClient(path: defaultSocketPath)
+        client.reload()
+        var printed = key
+        var failure: Failure?
+        if !local && key.kind == .wrapped {
+            switch client.share(key.name) {
+            case nil:
+                failure = Failure("created \(key.name) on this Mac, but the agent does not answer, so it is not shared; run signd key share \(key.name)")
+            case let result? where result.outcome == .failed:
+                failure = Failure("created \(key.name) on this Mac, but did not share it: \(result.message ?? "unknown reason"); run signd key share \(key.name)")
+            case let result? where result.outcome == .off:
+                note(result.message ?? "sync is off; \(key.name) stays on this Mac")
+            case _:
+                printed = (try? storedKey(key.name)) ?? key
+            }
+        }
+        if output.json { try output.print(KeySummary(printed)) } else { print(KeySummary(printed).publicKey) }
+        if let failure { throw failure }
+    }
+
+    /// Writes a note to stderr, so stdout keeps only the command's output.
+    static func note(_ text: String) {
+        FileHandle.standardError.write(Data("▲ \(text)\n".utf8))
     }
 
     struct Create: ParsableCommand {
@@ -115,6 +137,7 @@ struct KeyCommand: ParsableCommand {
         @Option(help: "The key type: a Secure Enclave P-256 key, or an Ed25519 or RSA key wrapped by the Secure Enclave.") var type = KeyType.secureEnclave
         @Option(help: "The comment ssh-add shows; the name when empty.") var comment = ""
         @Option(name: .customLong("host"), help: "An SSH host pattern that uses this key; repeat for more.") var hosts: [String] = []
+        @Flag(help: "Keep the key on this Mac instead of sharing it through iCloud. A Secure Enclave key always stays.") var local = false
         @OptionGroup var output: JSONOption
 
         func run() throws {
@@ -128,7 +151,7 @@ struct KeyCommand: ParsableCommand {
                 } else {
                     key = try KeychainStore.makeSecureEnclaveKey(name: name, comment: comment, hosts: hosts)
                 }
-                try finish(key, store: store, output: output)
+                try finish(key, store: store, local: local, output: output)
             } catch let error as Failure {
                 throw error
             } catch {
@@ -146,6 +169,7 @@ struct KeyCommand: ParsableCommand {
         @Argument(help: "An OpenSSH, PKCS#1, PKCS#8 or SEC1 private key file, or '-' for stdin.") var file: String
         @Option(help: "The comment ssh-add shows; the key's own comment, or the name, when empty.") var comment: String?
         @Option(name: .customLong("host"), help: "An SSH host pattern that uses this key; repeat for more.") var hosts: [String] = []
+        @Flag(help: "Keep the key on this Mac instead of sharing it through iCloud.") var local = false
         @OptionGroup var output: JSONOption
 
         func run() throws {
@@ -165,11 +189,25 @@ struct KeyCommand: ParsableCommand {
                     imported = try KeyImport.importWithSSHAdd(file: file)
                 }
                 let key = try KeychainStore.makeWrappedKey(name: name, privateKey: imported.0, comment: comment ?? imported.1, hosts: hosts, source: "import")
-                try finish(key, store: store, output: output)
+                try finish(key, store: store, local: local, output: output)
             } catch let error as Failure {
                 throw error
             } catch {
                 throw Failure(error)
+            }
+        }
+    }
+
+    struct Share: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Share a key of this Mac with every device on the iCloud account.")
+        @Argument var name: String
+
+        func run() throws {
+            guard let result = AgentClient(path: defaultSocketPath).share(name) else { throw Failure("the agent does not answer") }
+            switch result.outcome {
+            case .done: print("shared \(name)")
+            case .off: throw Failure(result.message ?? "sync is off")
+            case .failed: throw Failure(result.message ?? "the share failed")
             }
         }
     }
@@ -200,18 +238,25 @@ struct KeyCommand: ParsableCommand {
     }
 
     struct Delete: ParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Delete one key.")
+        static let configuration = CommandConfiguration(abstract: "Delete one key; a shared key is deleted on every device.")
         @Argument var name: String
 
         func run() throws {
+            let key = try storedKey(name)
+            let client = AgentClient(path: defaultSocketPath)
+            if key.isShared {
+                guard let result = client.deleteShared(name) else { throw Failure("the agent does not answer, and a shared key is deleted through it") }
+                guard result.outcome == .done else { throw Failure(result.message ?? "the delete failed") }
+                return
+            }
             do { try KeychainStore().delete(name: name) } catch { throw Failure(error) }
-            AgentClient(path: defaultSocketPath).reload()
+            client.reload()
         }
     }
 }
 
 struct Status: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Show the agent and its keys; exits non-zero when the agent does not answer.")
+    static let configuration = CommandConfiguration(abstract: "Show the agent, its keys and the iCloud sync; exits non-zero when the agent does not answer.")
     @Option(help: "The agent socket.") var socket = defaultSocketPath
     @OptionGroup var output: JSONOption
 
@@ -224,8 +269,9 @@ struct Status: ParsableCommand {
     }
 
     func run() throws {
-        let agent = AgentClient(path: socket).status()
-        let sync = SyncStatus(signedIn: TokenStore().isStored, state: SyncState.load())
+        let client = AgentClient(path: socket)
+        let agent = client.status()
+        let sync = SyncStatus(state: client.syncState() ?? SyncState.load())
         let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync)
         if output.json {
             try output.print(report)
@@ -240,73 +286,49 @@ struct Status: ParsableCommand {
             } else {
                 print("agent   does not answer")
             }
-            print(sync.signedIn ? "1password  signed in" : "1password  not signed in; run signd login")
+            print("icloud  \(sync.state)\(sync.lastMessage.map { ": \($0)" } ?? "")")
             print("interval  \(sync.interval.value) (\(sync.interval.source.rawValue))")
             if let at = sync.lastCheck, let result = sync.lastResult {
-                let detail = sync.lastMessage.map { ": \($0)" } ?? ""
-                print("last check  \(at.formatted(.iso8601)) \(result.rawValue)\(detail), \(sync.requests) requests, \(sync.fetched) items fetched")
+                print("last check  \(at.formatted(.iso8601)) \(result.rawValue), \(sync.requests) requests")
             }
-            if let next = sync.nextAttempt { print("next attempt  \(next.formatted(.iso8601))") }
+            if let next = sync.nextAttempt { print("next check  \(next.formatted(.iso8601))") }
+            if let push = sync.lastPush { print("last push  \(push.formatted(.iso8601))") }
+            print("devices  \(sync.devices)")
             for setting in sync.ignoredSettings { print("ignored  \(setting.key) \(setting.value) (local): \(setting.reason)") }
-            for item in sync.skipped { print("skipped  \(item.item): \(item.reason)") }
+            for key in sync.skipped { print("\(key.kind == .waiting ? "waiting" : "skipped")  \(key.name): \(key.reason)") }
         }
         if agent == nil { throw ExitCode.failure }
     }
 }
 
-struct Login: AsyncParsableCommand {
-    static let configuration = CommandConfiguration(
-        abstract: "Store a 1Password service account token read from stdin, so signd syncs keys from 1Password.",
-        discussion: "The token is read from stdin only, never from an argument or the environment; a token stored before stays when 1Password refuses the new one."
-    )
+struct DeviceCommand: ParsableCommand {
+    static let configuration = CommandConfiguration(commandName: "device", abstract: "List and remove the devices that share keys through iCloud.", subcommands: [List.self, Remove.self])
 
-    func run() async throws {
-        guard isatty(STDIN_FILENO) == 0 else { throw Failure("pipe the token into stdin") }
-        let token = String(decoding: FileHandle.standardInput.readDataToEndOfFile(), as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { throw Failure("stdin holds no token") }
-        let vaults: [VaultOverview]
-        do throws(OnePasswordError) {
-            vaults = try await Client(token: token, integrationName: "signd", integrationVersion: signdVersion).vaults()
-        } catch {
-            let message = Selection.clean(error.message)
-            throw Failure(error.kind == .authentication ? "1Password refused the token: \(message)" : "cannot read from 1Password: \(message)")
+    struct List: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "List the devices on the iCloud account.")
+        @OptionGroup var output: JSONOption
+
+        func run() throws {
+            guard let devices = AgentClient(path: defaultSocketPath).devices() else { throw Failure("the agent does not answer") }
+            if output.json { return try output.print(devices) }
+            for device in devices { print([device.name, device.id, device.isThisDevice ? "this device" : ""].joined(separator: "  ")) }
         }
-        do { try TokenStore().write(token) } catch { throw Failure(error) }
-        // A running agent forgets the state itself, after it stops the checks of the old token; with none, nothing is checking.
-        if !AgentClient(path: defaultSocketPath).login() { SyncState.remove() }
-        print("signed in; the token reads \(vaults.count) vault\(vaults.count == 1 ? "" : "s")")
     }
-}
 
-struct Logout: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Delete the stored token and every key synced from 1Password; local keys stay.")
+    struct Remove: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Remove a device that no longer runs signd, and drop its copies of every shared key.")
+        @Argument(help: "The device's id, as signd device list prints it.") var id: String
 
-    func run() throws {
-        let removed: Int
-        if let result = AgentClient(path: defaultSocketPath).logout() {
-            // The agent drops a check in flight first, so that it cannot write a key after this.
-            guard result.ok else { throw Failure("the agent could not remove everything; run signd logout again") }
-            removed = result.removed
-        } else {
-            // No agent answers, so nothing is checking: the state and the token go first, so no later check starts from them.
-            let store = KeychainStore()
-            let synced = try storedKeys().filter(\.isSynced)
-            SyncState.remove()
-            do {
-                try TokenStore().delete()
-                for key in synced { try store.delete(name: key.name) }
-            } catch {
-                throw Failure(error)
-            }
-            removed = synced.count
-            AgentClient(path: defaultSocketPath).reload()
+        func run() throws {
+            guard let result = AgentClient(path: defaultSocketPath).removeDevice(id) else { throw Failure("the agent does not answer") }
+            guard result.outcome == .done else { throw Failure(result.message ?? "the removal failed") }
+            print("removed \(id)")
         }
-        print("signed out; removed \(removed) synced key\(removed == 1 ? "" : "s")")
     }
 }
 
 struct SyncNow: ParsableCommand {
-    static let configuration = CommandConfiguration(commandName: "sync", abstract: "Check 1Password now, wait for the result, and report what changed.")
+    static let configuration = CommandConfiguration(commandName: "sync", abstract: "Check iCloud now, wait for the result, and report what changed.")
     @Option(help: "The agent socket.") var socket = defaultSocketPath
     @OptionGroup var output: JSONOption
 
@@ -315,11 +337,12 @@ struct SyncNow: ParsableCommand {
         if output.json {
             try output.print(summary)
         } else {
-            print("\(summary.outcome.rawValue): \(summary.requests) requests, \(summary.fetched) items fetched")
+            print("\(summary.outcome.rawValue): \(summary.requests) requests")
             if let message = summary.message { print(message) }
             for name in summary.added { print("added  \(name)") }
             for name in summary.replaced { print("replaced  \(name)") }
             for name in summary.removed { print("removed  \(name)") }
+            for name in summary.sealed { print("shared with a new device  \(name)") }
             if summary.skipped > 0 { print("skipped  \(summary.skipped); see signd status") }
         }
         if summary.outcome != .ok { throw ExitCode.failure }
@@ -342,7 +365,7 @@ struct Config: ParsableCommand {
     struct Get: ParsableCommand {
         @Argument var name: SettingName
         func run() {
-            print(Settings().resolve(name.key, fleet: SyncState.load().fleet).value)
+            print(Settings().resolve(name.key).value)
         }
     }
 
@@ -408,35 +431,53 @@ struct Service: ParsableCommand {
     }
 }
 
-struct Serve: AsyncParsableCommand {
+struct Serve: ParsableCommand {
     static let configuration = CommandConfiguration(abstract: "Run the agent in the foreground.")
     @Option(help: "The socket to listen on.") var socket = defaultSocketPath
 
-    func run() async throws {
+    func run() throws {
         signal(SIGPIPE, SIG_IGN)
         let settings = Settings()
         let store = KeychainStore()
-        let fleet = FleetSettings()
         let socketPath = socket
-        let routingLog = Logger(subsystem: "com.victor-software-house.signd", category: "routing")
+        let log = Logger(subsystem: "com.victor-software-house.signd", category: "agent")
         let agent = Agent(
-            store: store, version: signdVersion, lifetime: { settings.resolve(.keyLifetime, fleet: fleet.values).seconds },
+            store: store, version: signdVersion, lifetime: { settings.resolve(.keyLifetime).seconds },
             keysRead: { keys in
                 do {
                     try Routing.write(keys, socket: socketPath, home: FileManager.default.homeDirectoryForCurrentUser)
                 } catch {
-                    routingLog.error("cannot write the SSH routing files: \(String(describing: error), privacy: .public)")
+                    log.error("cannot write the SSH routing files: \(String(describing: error), privacy: .public)")
                 }
             }
         )
+        // A build without signd's iCloud container never touches CloudKit, which would stop the process.
+        let cloud: (any CloudStore)? = CloudEntitlement.isPresent ? CloudKitStore() : nil
         let sync = SyncService(
             SyncService.Dependencies(
-                token: { () throws(StoreError) -> String? in try TokenStore().read() }, deleteToken: { () throws(StoreError) in try TokenStore().delete() },
-                makeSource: LiveSource.factory(version: signdVersion), store: store, wrap: LiveSource.wrapper, version: signdVersion,
-                interval: { settings.resolve(.interval, fleet: $0).seconds }, changed: { await agent.reload() }
-            ),
-            fleet: fleet
+                cloud: cloud, store: store, device: { () throws(StoreError) -> DeviceKey in try DeviceKeyStore().readOrCreate() },
+                open: { key throws(SignError) in try Wrapping.openStored(key) }, version: signdVersion,
+                interval: { settings.resolve(.interval).seconds }, changed: { await agent.reload() }
+            )
         )
-        try await Server(agent: agent, sync: sync).run(socketPath: socket)
+        let server = Server(agent: agent, sync: sync)
+        Task.detached {
+            do {
+                try await server.run(socketPath: socketPath)
+            } catch {
+                log.fault("the agent stopped: \(String(describing: error), privacy: .public)")
+                Darwin.exit(1)
+            }
+        }
+        guard cloud != nil else { dispatchMain() }
+        // Pushes reach only a running application, so the agent runs one, with no window and no Dock icon.
+        MainActor.assumeIsolated {
+            let app = NSApplication.shared
+            app.setActivationPolicy(.accessory)
+            let receiver = PushReceiver(sync: sync)
+            app.delegate = receiver
+            NotificationCenter.default.addObserver(forName: .CKAccountChanged, object: nil, queue: nil) { _ in sync.accountChanged() }
+            withExtendedLifetime(receiver) { app.run() }
+        }
     }
 }

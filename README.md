@@ -1,7 +1,7 @@
 # signd
 
 An SSH agent for macOS backed by the [Secure Enclave][secure-enclave].  
-Create new keys, import the Ed25519, ECDSA and RSA keys you already have, or sync SSH keys from a 1Password vault.
+Create new keys or import the Ed25519, ECDSA and RSA keys you already have, and share them through iCloud with every Mac on your Apple account.
 
 ```mermaid
 flowchart LR
@@ -9,7 +9,7 @@ flowchart LR
   sock --> agent["signd agent"]
   agent <-->|decrypts a key on first use| store[("Keychain, readable only by signd")]
   store --- enclave["Secure Enclave"]
-  agent -->|syncs every few minutes| vault["1Password vault"]
+  agent <-->|checks every 2 seconds| icloud[("iCloud private database")]
   agent -->|writes| routes["~/.ssh/signd/config"]
   routes -->|Include| sshconfig["~/.ssh/config"]
 ```
@@ -74,78 +74,63 @@ The decrypted key is never written to disk.
 |:--|:--|:--|
 | `signd key create`, `signd key import` | the keychain | `signd key delete` |
 | `ssh-add` | memory only, respecting `ssh-add -t` | `ssh-add -D` |
-| 1Password | the keychain, as a wrapped key | deleting it from the vault, or `signd logout` |
+| another Mac, through iCloud | the keychain, as a wrapped key | `signd key delete` on any Mac |
 
-## Keys from 1Password
+## Keys through iCloud
 
-With a 1Password service account token, signd syncs SSH keys from a vault, without the 1Password CLI or a helper process.
+signd shares keys between the Macs signed in to one Apple account, through that account's iCloud private database.
+Each Mac makes its own Secure Enclave key, and every shared key is sealed to each Mac's key before it leaves the Mac, so neither Apple nor the signd team can read it.
 
 ```mermaid
 sequenceDiagram
-  participant A as signd agent
-  participant O as 1Password
-  participant K as Keychain
-  loop once per interval, at a random point in it
-    A->>O: list vaults (1 request)
-    alt a vault's content version changed
-      A->>O: list items in that vault, fetch changed SSH Key items
-      A->>K: wrap and store each key
-      A->>A: rewrite ~/.ssh/signd/config
-    end
+  participant A as signd on one Mac
+  participant C as iCloud
+  participant B as signd on another Mac
+  A->>A: key create or key import
+  A->>C: save the key, sealed to every Mac's Secure Enclave key
+  C-->>B: a push, when one arrives
+  loop every 2 seconds
+    B->>C: any changes? (1 request when none)
   end
-  Note over A: ssh requests use the keys already on the Mac and never wait for 1Password
+  B->>B: store its own sealed copy, rewrite ~/.ssh/signd/config
+  Note over A,B: ssh requests use the keys already on the Mac and never wait for iCloud
 ```
 
-### Set up
-
-1. Make a vault for signd with only SSH Key items and the `signd` note.  
-   Edits to other items in the vault would trigger extra syncs.
-2. Make a service account that can read only that vault.
-   > [!NOTE]
-   > On a Business account, each token gets 10,000 reads an hour, and all service accounts together 50,000 requests a day.
-3. Sign in with the service account token, read from stdin:
-
-   ```sh
-   pbpaste | signd login
-   ```
-
-### Items
-
-signd syncs every SSH Key item in every vault the token can read.
-
-| Field | Purpose | Format |
-|:--|:--|:--|
-| Title | the key name | lowercase, with every character other than ASCII letters, digits, `-` and `_` turned into `-` |
-| `hosts`, optional text | hosts that use the key | separated by commas; letters, digits, `.`, `-`, `_`, `*` and `?` |
-| `macs`, optional text | Macs that get the key | each Mac's `LocalHostName`, separated by commas or spaces; without it, every Mac |
-
-signd skips an item it cannot use and lists it in `signd status` with the reason:
-
-- a local key already uses the same name;
-- `hosts` contains an invalid character;
-- the key cannot be read, for example because it has a passphrase.
+| Key | Shared |
+|:--|:--|
+| `key create --type ed25519`, `rsa-3072`, `rsa-4096` | yes, unless `--local` |
+| `key import` | yes, unless `--local` |
+| `key create`, a Secure Enclave P-256 key | never: it cannot leave the Mac |
+| added with `ssh-add` | never: it stays in memory |
 
 ```sh
-signd sync                           # check 1Password now, wait, and print what changed
-signd status                         # signed in or not, the interval and its source, the last and next check, skipped items
-signd logout                         # delete the token and every synced key, and stop a check in flight; local keys stay
+signd key import deploy ~/.ssh/deploy --host git.example.com   # stored here, and shared with every Mac
+signd key create scratch --type ed25519 --local                # stays on this Mac
+signd key share old                                            # share a key made before
+signd key delete deploy                                        # deleted on every Mac
+signd device list                                              # the Macs on the account
+signd device remove device-0123…                               # forget a Mac that is gone, and drop its copies
+signd sync                                                     # check iCloud now, wait, and print what changed
+signd status                                                   # iCloud state, the last and next check, keys waiting or skipped
 ```
+
+- A new Mac on the account gets every shared key at the next check of a Mac that has them, with no command on either Mac.
+- A check with no change costs one request. After a failure signd waits longer each time, up to a minute, and after a throttle it waits the time iCloud gives.
+- A key whose name a key on this Mac already has is skipped and shown in `signd status` until that key is deleted.
+- Signing in to another Apple account, or deleting signd's data in iCloud settings, removes the shared keys from the Mac; local keys stay.
+
+> [!NOTE]
+> Sharing needs the notarized release: only its provisioning profile grants signd's iCloud container. A build from source keeps every key on its Mac, and `signd status` shows sync as off.
 
 ## Settings
 
 | Setting | Default | Range | Controls |
 |:--|:--|:--|:--|
-| `interval` | 5m | 1 minute to 24 hours | how often signd syncs with 1Password |
+| `interval` | 2s | 1 second to 1 hour | how often signd checks iCloud for changes |
 | `key-lifetime` | 1h | 1 second to 30 days | how long a decrypted key stays in memory when idle |
 
-- `signd config set interval 10m` sets a value on this Mac, and `signd config unset interval` removes it.
-- A Secure Note titled `signd` in a synced vault sets values for every Mac, in text fields named `interval` and `key-lifetime`, as `30s`, `5m`, `1h` or `2d`.
-- A value set on the Mac wins over the note.
-- signd rejects a value out of range, and ignores one in the note, showing it in `signd status`.
-
-A sync with no changes costs one request.  
-A failed sync is retried after growing, randomized waits.  
-After a rate limit, signd waits at least an hour before the next sync.
+- `signd config set interval 10s` sets a value on this Mac, and `signd config unset interval` removes it.
+- Values are durations such as `30s`, `5m`, `1h` or `2d`; signd rejects one out of range.
 
 ## Operation
 

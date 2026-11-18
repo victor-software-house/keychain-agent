@@ -63,18 +63,22 @@ public enum Wrapping {
     }
 }
 
-extension SoftwareSigner {
-    /// Opens a wrapped key with its Secure Enclave key-agreement key, whose handle is `keyData`.
-    public init(opening key: StoredKey) throws(SignError) {
+extension Wrapping {
+    /// Opens a stored wrapped key with its Secure Enclave key-agreement key, whose handle is `keyData`, and returns the private key and its comment.
+    public static func openStored(_ key: StoredKey) throws(SignError) -> (PrivateKey, String) {
         guard let wrapped = key.wrapped else { throw .invalidKey("\(key.name) has no wrapped key") }
         do {
             let agreement = try SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: key.keyData)
-            let (privateKey, _) = try Wrapping.open(wrapped, publicBlob: key.publicBlob, with: agreement)
-            try self.init(privateKey)
-        } catch let error as SignError {
-            throw error
+            return try open(wrapped, publicBlob: key.publicBlob, with: agreement)
         } catch {
             throw .invalidKey("\(error)")
         }
+    }
+}
+
+extension SoftwareSigner {
+    /// Opens a wrapped key with its Secure Enclave key-agreement key, whose handle is `keyData`.
+    public init(opening key: StoredKey) throws(SignError) {
+        try self.init(Wrapping.openStored(key).0)
     }
 }

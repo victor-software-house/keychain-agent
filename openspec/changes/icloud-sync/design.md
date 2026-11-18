@@ -4,6 +4,7 @@
 
 The `wrapped-keys` change keeps each key in the keychain, sealed to a Secure Enclave key of its Mac, and the `onepassword-sync` change copies SSH Key items from 1Password into that store every five minutes.
 This change replaces 1Password with the user's iCloud private database, through CloudKit.
+Its data model speaks of devices, each with its own hardware-sealed key; today every device is a Mac with a Secure Enclave.
 [research.md](research.md) records the trial on two Macs that this design rests on.
 
 ## Goals / Non-Goals
@@ -32,29 +33,30 @@ The payload is JSON with its own `format` number, so a later format needs no sch
 
 | Record | Record name | Payload |
 |:--|:--|:--|
-| `Mac` | `mac-` and the first 16 bytes of the SHA-256 of the Mac's device public key, in hex | `format`, `name`, `publicKey`, `version` |
+| `Device` | `device-` and the first 16 bytes of the SHA-256 of the device's public key, in hex | `format`, `name`, `publicKey`, `version` |
 | `Key` | `key-` and the key name | `format`, `name`, `comment`, `hosts`, `publicKey`, `sealed` |
 
-A Mac's `name` is its `LocalHostName`, and `publicKey` is the X9.63 form of its device key.
-A key's `publicKey` is its SSH public blob, and `sealed` maps each Mac record name to that Mac's sealed copy.
+A device's `name` is a Mac's `LocalHostName`, and `publicKey` is the X9.63 form of its device key.
+A key's `publicKey` is its SSH public blob, and `sealed` maps each device record name to that device's sealed copy.
+The production schema also holds a `Mac` type, deployed for the trial before the model was named for devices; CloudKit never deletes a deployed type, and signd neither reads nor writes it.
 The record name contains the key name, so a key name is unique on the account.
 
 ### 2. The device key
 
-Each Mac makes one Secure Enclave P-256 key-agreement key the first time the agent finds iCloud available.
+Each device makes one Secure Enclave P-256 key-agreement key the first time the agent finds iCloud available.
 Its handle is a keychain item in signd's access group, readable after the first unlock, on this device only, like every other signd item.
-Its public half goes in the Mac's record.
+Its public half goes in the device's record.
 
 ### 3. Sealed copies
 
-A sealed copy is `Wrapping.seal` from the `wrapped-keys` change, addressed to a Mac's device key: HPKE with P-256, SHA-256 and AES-GCM-256, bound to the key type and public blob.
-A Mac stores its own copy as a wrapped key whose handle is its device key, so the agent opens it on first use, as it opens any wrapped key.
+A sealed copy is `Wrapping.seal` from the `wrapped-keys` change, addressed to a device key: HPKE with P-256, SHA-256 and AES-GCM-256, bound to the key type and public blob.
+A device stores its own copy as a wrapped key whose handle is its device key, so the agent opens it on first use, as it opens any wrapped key.
 A shared key's source is `icloud`, and its item records the record name.
 
 ### 4. Sharing
 
 - `signd key create` with a wrapped type and `signd key import` store the key, then ask the agent to share it, unless `--local` is given.
-- The agent opens the key, seals it to every Mac record it knows, and saves a new Key record. It then replaces the local item with this Mac's sealed copy.
+- The agent opens the key, seals it to every device record it knows, and saves a new Key record. It then replaces the local item with this device's sealed copy.
 - A record of the same name fails the share with "a shared key named NAME exists".
 - When sync is off, because the build has no iCloud entitlement or the Mac has no iCloud account, the key stays local and the command says so and exits 0.
   Any other failure leaves the key local and exits 1 with the reason and the `signd key share NAME` command to retry.
@@ -63,27 +65,28 @@ A shared key's source is `icloud`, and its item records the record name.
 
 The operator chose sharing by default and `--local` as the way out (operator, 2026-11-18).
 
-### 5. New and removed Macs
+### 5. New and removed devices
 
-At each check, a Mac that holds a shared key compares the key's `sealed` map with the Mac records.
-It seals the key to each Mac that has no copy, drops the copies of Macs whose record is gone, and saves the record against its last change tag.
-When two Macs race, the second save fails with a changed record, and that Mac reads the first one's record at its next check.
+At each check, a device that holds a shared key compares the key's `sealed` map with the device records.
+It seals the key to each device that has no copy and saves the record against the change tag it read.
+It never drops a copy, because a device record newer than its last fetch may already have one.
+When two devices race, the second save fails with a changed record, and that device reads the first one's record at its next check.
 
-A Mac publishes its own record when the zone has none for its device key, and saves it again when its `LocalHostName` changes.
-`signd mac remove ID` deletes a Mac's record and drops its copies from every key.
-A running Mac publishes its record again at its next check, so the command is for a Mac that is gone.
+A device publishes its own record when the zone has none for its key, and saves it again when its `LocalHostName` changes.
+`signd device remove ID` deletes a device's record and drops its copies from every key.
+A running device publishes its record again at its next check, so the command is for a device that is gone.
 The operator chose that a new Mac gets every key with no approval step (operator, 2026-11-18).
 
 ### 6. The check
 
 1. Ask for database changes since the last token: one request, and nothing more when the `signd` zone did not change.
-2. Ask for the zone's changes since its token until none are left: the changed and deleted Mac and Key records.
+2. Ask for the zone's changes since its token until none are left: the changed and deleted `Device` and `Key` records.
 3. Bring the store in line: add or replace each key whose record carries a copy for this Mac, and delete each shared key whose record is gone.
    A key with no copy for this Mac yet is reported as waiting; a key whose name a local key already has is skipped and reported.
-4. Seal keys to new Macs, as decision 5 says, and publish this Mac's record.
+4. Seal keys to new devices, as decision 5 says, and publish this device's record.
 5. When a key changed, the agent reads the store again, which rewrites the SSH routing files of the `ssh-routing` capability.
 
-`sync.json` keeps the change tokens and, for each record, its name, change tag, public key, hosts and the Macs it is sealed to.
+`sync.json` keeps the change tokens and, for each record, its name, change tag, public key, hosts and the devices it is sealed to.
 It contains no private key and no sealed copy.
 An expired change token starts again with a full fetch.
 
@@ -125,8 +128,8 @@ The command line never calls CloudKit: it asks the agent.
 ### 11. Commands and status
 
 - `signd sync` runs a check now and prints what changed.
-- `signd mac list` prints each Mac's name, record name and whether it is this Mac; `signd mac remove ID` removes one.
-- `signd status` shows whether iCloud is available, the last check, its result and requests, the next check, the number of Macs, and each waiting or skipped key.
+- `signd device list` prints each device's name, record name and whether it is this one; `signd device remove ID` removes one.
+- `signd status` shows whether iCloud is available, the last check, its result and requests, the next check, the number of devices, and each waiting or skipped key.
 - `signd login` and `signd logout` go, with the token item.
 
 ### 12. Settings

@@ -1,10 +1,9 @@
 import AgentProtocol
 @testable import AgentServer
+import CryptoKit
 import Foundation
 @testable import KeyStore
-import OnePassword
 import SSHWire
-import Synchronization
 import Testing
 @testable import Sync
 
@@ -18,565 +17,414 @@ func eventually(_ seconds: Double = 5, _ condition: () -> Bool) async -> Bool {
     return condition()
 }
 
-func oneVault(_ items: Item...) -> FakeSource {
-    let source = FakeSource()
-    source.addVault("v1")
-    for item in items { source.put(item) }
-    return source
+/// Two devices on one account, the first holding a local key `deploy` with a host.
+func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: PrivateKey) {
+    let cloud = FakeCloud()
+    let a = DeviceRig(cloud: cloud, name: "mac-a")
+    let b = DeviceRig(cloud: cloud, name: "mac-b")
+    let (stored, privateKey) = try localWrappedKey("deploy", hosts: ["git.example.com"], comment: "deploy key")
+    try a.store.add(stored)
+    return (cloud, a, b, privateKey)
 }
 
-@Test func namesAreLowercaseWithOtherCharactersTurnedIntoDashes() {
-    #expect(Selection.keyName(forTitle: "Deploy Key (prod)") == "deploy-key--prod-")
-    #expect(Selection.keyName(forTitle: "ci_runner-2") == "ci_runner-2")
-    #expect(Selection.keyName(forTitle: "Zürich.key") == "z-rich-key")
+// MARK: Records
+
+@Test func payloadsKeepEveryFieldThroughAnEncodeAndDecode() throws {
+    let wrapped = WrappedKey(encapsulatedKey: Data([1, 2]), ciphertext: Data([3, 4]))
+    let key = KeyPayload(name: "deploy", comment: "c", hosts: ["h"], publicKey: Data([5]), sealed: ["device-1": wrapped])
+    #expect(try Payload.decode(KeyPayload.self, from: Payload.encode(key)) == key)
+    let device = DevicePayload(name: "mac-a", publicKey: Data([6]), version: "1.0.0")
+    #expect(try Payload.decode(DevicePayload.self, from: Payload.encode(device)) == device)
 }
 
-@Test func aTitleWithNoUsableNameIsSkipped() {
-    guard case let .skipped(kind, _) = Selection.read(sshItem("i", title: ""), hostName: "mac-a") else {
-        Issue.record("an empty title was accepted")
-        return
-    }
-    #expect(kind == .invalidName)
+@Test func aPayloadOfAnotherFormatIsReportedAndNotRead() {
+    #expect(throws: PayloadError.format(2)) { try Payload.decode(KeyPayload.self, from: Data(#"{"format":2,"name":"x"}"#.utf8)) }
+    #expect(throws: PayloadError.unreadable) { try Payload.decode(KeyPayload.self, from: Data("not json".utf8)) }
 }
 
-@Test func aProtectedOrMissingKeyIsSkipped() {
-    let missing = Item(id: "i", title: "k", category: "SshKey", vaultId: "v1", fields: [], sections: [], notes: "", version: 1, updatedAt: at(0))
-    guard case let .skipped(kind, _) = Selection.read(missing, hostName: "mac-a") else {
-        Issue.record("an item with no key was accepted")
-        return
-    }
-    #expect(kind == .invalidKey)
-    guard case let .skipped(garbage, _) = Selection.read(sshItem("i", title: "k", pem: "not a key"), hostName: "mac-a") else {
-        Issue.record("a garbage key was accepted")
-        return
-    }
-    #expect(garbage == .invalidKey)
+@Test func aDeviceRecordNameComesFromItsPublicKey() {
+    let key = P256.KeyAgreement.PrivateKey().publicKey.x963Representation
+    let name = DeviceKey.recordName(for: key)
+    #expect(name.hasPrefix("device-"))
+    #expect(name.count == "device-".count + 32)
+    #expect(name == DeviceKey.recordName(for: key))
 }
 
-@Test(.timeLimit(.minutes(1))) func addsAKeyFromAnSSHKeyItem() async throws {
-    let (pem, key) = ed25519Key()
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "Deploy Key", pem: pem, hosts: "git.example.com, other.example.com")))
-    await rig.service.start()
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .ok)
-    #expect(summary.added == ["deploy-key"])
-    #expect(summary.requests == 3)
-    #expect(summary.fetched == 1)
-    let stored = try #require(try rig.store.list().first)
-    #expect(stored.hosts == ["git.example.com", "other.example.com"])
-    #expect(stored.source == "1password")
-    #expect(stored.publicBlob == key.publicKey.blob)
-    #expect(stored.vaultID == "v1")
-    #expect(stored.itemID == "i1")
-    #expect(rig.changes.value == 1)
+// MARK: Sharing
+
+@Test(.timeLimit(.minutes(1))) func aSharedKeyReachesTheOtherDevice() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
+    #expect(await b.service.checkNow().outcome == .ok)
+    #expect(await a.service.share("deploy") == SyncResult(.done))
+
+    let own = try #require(try a.store.list().first)
+    #expect(own.isShared)
+    #expect(own.recordName == "key-deploy")
+    #expect(own.keyData == a.device.handle)
+    let record = try #require(cloud.record("key-deploy"))
+    let payload = try Payload.decode(KeyPayload.self, from: record.payload)
+    #expect(Set(payload.sealed.keys) == [a.device.recordName, b.device.recordName])
+
+    let summary = await b.service.checkNow()
+    #expect(summary.added == ["deploy"])
+    let received = try #require(try b.shared().first)
+    #expect(received.hosts == ["git.example.com"])
+    #expect(received.comment == "deploy key")
+    #expect(received.source == StoredKey.sharedSource)
+    #expect(try softwareOpen(received).0.publicKey.blob == privateKey.publicKey.blob)
+    #expect(b.changes.value == 1)
 }
 
-@Test(.timeLimit(.minutes(1))) func aChangedKeyReplacesTheStoredOneInPlace() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    let before = try #require(try rig.store.list().first)
-    let (pem, key) = ed25519Key()
-    rig.source.put(sshItem("i1", title: "deploy", pem: pem, updated: at(10)))
-    rig.source.resetCalls()
-    let summary = await rig.service.checkNow()
-    #expect(summary.replaced == ["deploy"])
-    #expect(summary.requests == 3)
-    let after = try rig.store.list()
-    #expect(after.count == 1)
-    #expect(after.first?.publicBlob == key.publicKey.blob)
-    #expect(after.first?.publicBlob != before.publicBlob)
-    #expect(after.first?.itemUpdated == at(10))
+@Test(.timeLimit(.minutes(1))) func aDeviceThatJoinsLaterWaitsThenGetsTheKeyFromOneThatHasIt() async throws {
+    let (_, a, b, privateKey) = try twoDevices()
+    #expect(await a.service.share("deploy") == SyncResult(.done))
+
+    _ = await b.service.checkNow()
+    #expect(try b.shared().isEmpty)
+    #expect(await b.service.snapshot().skipped.map(\.kind) == [.waiting])
+
+    #expect(await a.service.checkNow().sealed == ["deploy"])
+    #expect(await b.service.checkNow().added == ["deploy"])
+    #expect(await b.service.snapshot().skipped.isEmpty)
+    #expect(try softwareOpen(try #require(try b.shared().first)).0.publicKey.blob == privateKey.publicKey.blob)
 }
 
-@Test(.timeLimit(.minutes(1))) func aChangeOfHostsKeepsTheSealedKey() async throws {
-    let (pem, _) = ed25519Key()
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy", pem: pem, hosts: "a.example.com")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    let before = try #require(try rig.store.list().first)
-    rig.source.put(sshItem("i1", title: "deploy", pem: pem, hosts: "b.example.com", updated: at(10)))
-    let summary = await rig.service.checkNow()
-    #expect(summary.replaced == ["deploy"])
-    let after = try #require(try rig.store.list().first)
-    #expect(after.hosts == ["b.example.com"])
-    #expect(after.wrapped == before.wrapped)
+@Test(.timeLimit(.minutes(1))) func deletingASharedKeyRemovesItOnEveryDevice() async throws {
+    let (_, a, b, _) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    #expect(try b.shared().count == 1)
+
+    #expect(await a.service.deleteShared("deploy") == SyncResult(.done))
+    #expect(try a.store.list().isEmpty)
+    #expect(await b.service.checkNow().removed == ["deploy"])
+    #expect(try b.store.list().isEmpty)
 }
 
-@Test(.timeLimit(.minutes(1))) func aRenamedItemReplacesItsOldName() async throws {
-    let (pem, _) = ed25519Key()
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "old", pem: pem)))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    rig.source.put(sshItem("i1", title: "New", pem: pem, updated: at(10)))
-    _ = await rig.service.checkNow()
-    #expect(try rig.store.list().map(\.name) == ["new"])
+@Test(.timeLimit(.minutes(1))) func aLocalKeyWithTheNameIsKeptAndTheSharedOneTakesItsPlaceOnceItIsDeleted() async throws {
+    let (_, a, b, privateKey) = try twoDevices()
+    let (other, _) = try localWrappedKey("deploy")
+    try b.store.add(other)
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+
+    _ = await b.service.checkNow()
+    #expect(try b.store.list() == [other])
+    #expect(await b.service.snapshot().skipped.map(\.kind) == [.nameTaken])
+    // The record is known, so sharing this device's own key of that name is refused.
+    #expect(await b.service.share("deploy").outcome == .failed)
+
+    try b.store.delete(name: "deploy")
+    #expect(await b.service.checkNow().added == ["deploy"])
+    #expect(try softwareOpen(try #require(try b.shared().first)).0.publicKey.blob == privateKey.publicKey.blob)
 }
 
-@Test(.timeLimit(.minutes(1))) func aDeletedItemRemovesItsKey() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy"), sshItem("i2", title: "other")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    rig.source.remove(itemID: "i1", vault: "v1")
-    let summary = await rig.service.checkNow()
-    #expect(summary.removed == ["deploy"])
-    #expect(try rig.store.list().map(\.name) == ["other"])
+@Test(.timeLimit(.minutes(1))) func aSecureEnclaveKeyIsNeverShared() async throws {
+    let rig = DeviceRig(cloud: FakeCloud())
+    try rig.store.add(storedSoftwareKey("build"))
+    let result = await rig.service.share("build")
+    #expect(result.outcome == .failed)
+    #expect(result.message?.contains("cannot leave") == true)
+    #expect(try rig.store.list().first?.isShared == false)
 }
 
-@Test(.timeLimit(.minutes(1))) func anArchivedItemCountsAsDeleted() async throws {
-    let item = sshItem("i1", title: "deploy")
-    let rig = try SyncRig(source: oneVault(item))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    rig.source.put(item, state: "archived")
-    _ = await rig.service.checkNow()
-    #expect(try rig.store.list().isEmpty)
+@Test(.timeLimit(.minutes(1))) func aNameAnotherDeviceSharedFirstIsRefused() async throws {
+    let (cloud, a, _, _) = try twoDevices()
+    _ = await a.service.share("deploy")
+    let c = DeviceRig(cloud: cloud, name: "mac-c")
+    let (own, _) = try localWrappedKey("deploy")
+    try c.store.add(own)
+    let result = await c.service.share("deploy")
+    #expect(result.outcome == .failed)
+    #expect(result.message?.contains("exists") == true)
 }
 
-@Test(.timeLimit(.minutes(1))) func aDeletedVaultRemovesItsKeys() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let rig = try SyncRig(source: source)
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    let empty = FakeSource()
-    let second = try SyncRig(source: empty, store: rig.store)
-    await second.service.start()
-    _ = await second.service.checkNow()
-    #expect(try rig.store.list().isEmpty)
+@Test(.timeLimit(.minutes(1))) func removingADeviceDropsItsCopies() async throws {
+    let (cloud, a, b, _) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    #expect(await a.service.devices().count == 2)
+
+    #expect(await a.service.removeDevice(b.device.recordName) == SyncResult(.done))
+    let payload = try Payload.decode(KeyPayload.self, from: try #require(cloud.record("key-deploy")).payload)
+    #expect(Array(payload.sealed.keys) == [a.device.recordName])
+    #expect(cloud.record(b.device.recordName) == nil)
+    #expect(await a.service.devices().map(\.isThisDevice) == [true])
+    #expect(await a.service.removeDevice(a.device.recordName).outcome == .failed)
 }
 
-@Test(.timeLimit(.minutes(1))) func nothingChangedCostsOneRequest() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    rig.source.resetCalls()
+// MARK: The check
+
+@Test(.timeLimit(.minutes(1))) func anUnchangedZoneCostsOneRequest() async throws {
+    let rig = DeviceRig(cloud: FakeCloud())
+    #expect(await rig.service.checkNow().outcome == .ok)
+    // The first check saved this device's record, which the second reads back.
+    #expect(await rig.service.checkNow().requests == 2)
     let summary = await rig.service.checkNow()
     #expect(summary.outcome == .ok)
     #expect(summary.requests == 1)
-    #expect(summary.fetched == 0)
-    #expect(rig.source.calls == FakeSource.Calls(vaults: 1, items: 0, item: 0))
-    #expect(rig.changes.value == 1)
 }
 
-@Test(.timeLimit(.minutes(1))) func theMacsFieldLimitsWhichMacsTakeAKey() async throws {
-    let rig = try SyncRig(source: oneVault(
-        sshItem("i1", title: "mine", macs: "Mac-B, MAC-A"),
-        sshItem("i2", title: "theirs", macs: "mac-b mac-c"),
-        sshItem("i3", title: "everyone")
-    ))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    #expect(try rig.store.list().map(\.name) == ["everyone", "mine"])
-    let status = SyncStatus(signedIn: true, state: rig.state())
-    #expect(status.skipped.isEmpty)
-
-    rig.source.put(sshItem("i2", title: "theirs", macs: "mac-a", updated: at(10)))
-    _ = await rig.service.checkNow()
-    #expect(try rig.store.list().map(\.name) == ["everyone", "mine", "theirs"])
+@Test(.timeLimit(.minutes(1))) func anExpiredTokenFetchesEverythingAgain() async throws {
+    let (cloud, a, b, _) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    cloud.expireNextToken()
+    let summary = await b.service.checkNow()
+    #expect(summary.outcome == .ok)
+    #expect(try b.shared().count == 1)
+    #expect(summary.removed.isEmpty)
 }
 
-@Test(.timeLimit(.minutes(1))) func aKeyLimitedToOtherMacsLeavesWhenItsMacsChange() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    await rig.service.start()
+@Test(.timeLimit(.minutes(1))) func aRecordWithABadHostIsSkippedAndNamed() async throws {
+    let cloud = FakeCloud()
+    let rig = DeviceRig(cloud: cloud)
     _ = await rig.service.checkNow()
-    rig.source.put(sshItem("i1", title: "deploy", macs: "mac-b", updated: at(10)))
+    let privateKey = memoryKey()
+    let sealed = try Wrapping.seal(privateKey, comment: "", to: rig.agreement.publicKey)
+    let payload = KeyPayload(name: "bad", comment: "", hosts: ["example.com ProxyCommand x"], publicKey: privateKey.publicKey.blob, sealed: [rig.device.recordName: sealed])
+    cloud.put(.key, "key-bad", payload: Payload.encode(payload))
     _ = await rig.service.checkNow()
     #expect(try rig.store.list().isEmpty)
+    let skipped = try #require(await rig.service.snapshot().skipped.first)
+    #expect(skipped.kind == .invalidHost)
+    #expect(skipped.reason.contains("ProxyCommand"))
 }
 
-@Test(.timeLimit(.minutes(1))) func aBadHostSkipsTheItemAndNamesIt() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy", hosts: "example.com ProxyCommand x")))
+@Test(.timeLimit(.minutes(1))) func aZoneDeletedInSettingsRemovesSharedKeysAndWaitsForSync() async throws {
+    let (cloud, a, b, _) = try twoDevices()
+    let (local, _) = try localWrappedKey("mine")
+    try b.store.add(local)
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    #expect(try b.shared().count == 1)
+
+    cloud.deleteZoneByUser()
+    #expect(await b.service.checkNow().outcome == .stopped)
+    #expect(try b.store.list().map(\.name) == ["mine"])
+    let calls = cloud.calls.changes
+    #expect(await b.service.checkNow().outcome == .stopped)
+    #expect(cloud.calls.changes == calls)
+
+    #expect(await b.service.syncRequested().outcome == .ok)
+    #expect(await b.service.snapshot().stopped == false)
+}
+
+@Test(.timeLimit(.minutes(1))) func anotherAccountRemovesTheSharedKeys() async throws {
+    let (cloud, a, b, _) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    #expect(try b.shared().count == 1)
+
+    cloud.setAccount(.available(user: "user-2"))
+    b.service.accountChanged()
+    #expect(await eventually { (try? b.shared().isEmpty) == true })
+    #expect(await b.service.snapshot().user == "user-2")
+}
+
+@Test(.timeLimit(.minutes(1))) func withNoAccountNothingIsSharedAndTheAccountIsAskedAgainInAMinute() async throws {
+    let cloud = FakeCloud()
+    cloud.setAccount(.unavailable("no iCloud account is signed in"))
+    let rig = DeviceRig(cloud: cloud)
+    let (key, _) = try localWrappedKey("k")
+    try rig.store.add(key)
+    #expect(await rig.service.share("k").outcome == .off)
+    let state = await rig.service.snapshot()
+    #expect(state.lastResult == .accountUnavailable)
+    #expect(state.lastMessage == "no iCloud account is signed in")
+    #expect(rig.clock.requestedSleeps.last == SyncSchedule.accountRecheck)
+    #expect(try rig.store.list().first?.isShared == false)
+}
+
+@Test(.timeLimit(.minutes(1))) func withoutTheEntitlementSyncIsOffAndKeysStayLocal() async throws {
+    let rig = DeviceRig(cloud: nil)
     await rig.service.start()
-    let summary = await rig.service.checkNow()
-    #expect(summary.skipped == 1)
-    #expect(try rig.store.list().isEmpty)
-    let skipped = try #require(SyncStatus(signedIn: true, state: rig.state()).skipped.first)
-    #expect(skipped.item == "deploy")
-    #expect(skipped.reason.contains("example.com ProxyCommand x"))
+    #expect(await rig.service.snapshot().lastResult == .off)
+    #expect(SyncState.load(from: rig.stateURL).lastResult == .off)
+    #expect(await rig.service.share("k").outcome == .off)
+    #expect(await rig.service.syncRequested().outcome == .off)
 }
 
-@Test(.timeLimit(.minutes(1))) func aNameTakenByALocalKeyIsSkippedAndReported() async throws {
-    let store = MemoryStore()
-    var local = storedSoftwareKey("deploy")
-    local.source = "local"
-    try store.add(local)
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "Deploy")), store: store)
-    await rig.service.start()
-    let summary = await rig.service.checkNow()
-    #expect(summary.skipped == 1)
-    #expect(try store.list() == [local])
+@Test(.timeLimit(.minutes(1))) func theStateFileHoldsNoPrivateKeyOrSealedCopy() async throws {
+    let (cloud, a, _, privateKey) = try twoDevices()
+    _ = await a.service.share("deploy")
+    let text = try String(contentsOf: a.stateURL, encoding: .utf8)
+    let payload = try Payload.decode(KeyPayload.self, from: try #require(cloud.record("key-deploy")).payload)
+    for copy in payload.sealed.values { #expect(!text.contains(copy.ciphertext.base64EncodedString())) }
+    var secret = Data()
+    privateKey.write(to: &secret)
+    #expect(!text.contains(secret.base64EncodedString()))
 }
 
-@Test(.timeLimit(.minutes(1))) func theNoteSetsFleetSettings() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy"), noteItem(interval: "60m", keyLifetime: "soon")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    #expect(rig.service.fleet.values == ["interval": "60m"])
-    let status = SyncStatus(signedIn: true, state: rig.state())
-    let local = Settings().value(.interval)
-    #expect(status.interval.source == (local == nil ? .note : .local))
-    #expect(status.interval.value == (local ?? "60m"))
-    #expect(status.skipped.map(\.item) == ["signd note"])
-    #expect(try rig.store.list().map(\.name) == ["deploy"])
-}
-
-@Test(.timeLimit(.minutes(1))) func statusJSONCarriesTheLastResultTheNextAttemptAndEverySkippedItem() async throws {
-    let rig = try SyncRig(source: oneVault(
-        sshItem("i1", title: "deploy"), sshItem("i2", title: "bad", hosts: "a b"), sshItem("i3", title: "worse", hosts: "c;d")
-    ))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    let encoder = JSONEncoder()
-    encoder.dateEncodingStrategy = .iso8601
-    let data = try encoder.encode(SyncStatus(signedIn: true, state: rig.state()))
-    let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
-    #expect(json["signedIn"] as? Bool == true)
-    #expect(json["lastResult"] as? String == "ok")
-    #expect(json["nextAttempt"] as? String != nil)
-    #expect(json["requests"] as? Int == 5)
-    #expect((json["skipped"] as? [[String: Any]])?.map { $0["item"] as? String } == ["bad", "worse"])
-    let interval = try #require(json["interval"] as? [String: Any])
-    #expect(interval["source"] as? String != nil)
-    #expect(!String(decoding: data, as: UTF8.self).contains("token"))
-}
-
-@Test func aLocalSettingWinsOverTheNote() {
-    #expect(Settings().resolve(.keyLifetime, fleet: ["key-lifetime": "2h"]).source == (Settings().value(.keyLifetime) == nil ? .note : .local))
-    #expect(Settings().resolve(.interval, fleet: ["interval": "0s"]).source != .note)
-}
-
-@Test func theDefaultIntervalIsFiveMinutes() {
-    let resolved = Settings().resolve(.interval)
-    if Settings().value(.interval) == nil {
-        #expect(resolved.seconds == 300)
-        #expect(resolved.source == .default)
-    }
-}
-
-@Test(.timeLimit(.minutes(1))) func theStateFileHoldsNoToken() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")), token: "ops_secret-token-value")
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    let text = try String(contentsOf: rig.stateURL, encoding: .utf8)
-    #expect(!text.contains("ops_secret-token-value"))
-}
-
-@Test(.timeLimit(.minutes(1))) func withoutATokenACheckSaysSo() async throws {
-    let rig = try SyncRig(source: oneVault(), token: nil)
-    await rig.service.start()
-    #expect(await rig.service.checkNow().outcome == .notSignedIn)
-    #expect(rig.source.calls.total == 0)
-}
-
-@Test(.timeLimit(.minutes(1))) func storedKeysSurviveAnUnreachableOnePassword() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    rig.source.fail(with: OnePasswordError(kind: .other, message: "offline"))
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .failed)
-    #expect(summary.message == "offline")
-    #expect(try rig.store.list().map(\.name) == ["deploy"])
-    #expect(rig.state().lastResult == .failed)
-}
-
-@Test func theFirstWaitIsARandomPointWithinTheInterval() {
-    #expect(SyncSchedule(random: { 0 }).phase(interval: 300) == 0)
-    #expect(SyncSchedule(random: { 0.5 }).phase(interval: 300) == 150)
-    #expect(SyncSchedule(random: { 0.999 }).phase(interval: 300) < 300)
-}
+// MARK: The schedule
 
 @Test func eachWaitAfterASuccessIsTheIntervalTimesZeroPointEightToOnePointTwo() {
-    #expect(SyncSchedule(random: { 0 }).afterSuccess(interval: 300) == 240)
-    #expect(SyncSchedule(random: { 0.5 }).afterSuccess(interval: 300) == 300)
-    #expect(SyncSchedule(random: { 0.999 }).afterSuccess(interval: 300) < 360)
+    #expect(SyncSchedule(random: { 0 }).afterSuccess(interval: 2) == 1.6)
+    #expect(SyncSchedule(random: { 0.5 }).afterSuccess(interval: 2) == 2)
+    #expect(SyncSchedule(random: { 0.999 }).afterSuccess(interval: 2) < 2.4)
 }
 
-@Test func aFailureWaitsUpToSixtySecondsTimesTwoToTheAttemptCappedByTheInterval() {
-    let schedule = SyncSchedule(random: { 1 })
-    #expect(schedule.afterFailure(interval: 300, failures: 1) == 60)
-    #expect(schedule.afterFailure(interval: 300, failures: 2) == 120)
-    #expect(schedule.afterFailure(interval: 300, failures: 3) == 240)
-    #expect(schedule.afterFailure(interval: 300, failures: 4) == 300)
-    #expect(schedule.afterFailure(interval: 300, failures: 100) == 300)
-    #expect(SyncSchedule(random: { 0 }).afterFailure(interval: 300, failures: 3) == 0)
+@Test func failuresDoubleTheWaitUpToAMinute() {
+    let schedule = SyncSchedule(random: { 0.999_999 })
+    #expect(abs(schedule.afterFailure(interval: 2, failures: 1) - 2) < 0.001)
+    #expect(abs(schedule.afterFailure(interval: 2, failures: 3) - 8) < 0.001)
+    #expect(abs(schedule.afterFailure(interval: 2, failures: 20) - 60) < 0.001)
+    #expect(SyncSchedule(random: { 0 }).afterFailure(interval: 2, failures: 1) == 1)
 }
 
-@Test func aRateLimitWaitsAnHourPlusJitterDoublingUpToADay() {
-    #expect(SyncSchedule(random: { 0 }).afterRateLimit(repeats: 1) == 3600)
-    #expect(SyncSchedule(random: { 1 }).afterRateLimit(repeats: 1) == 4200)
-    #expect(SyncSchedule(random: { 0 }).afterRateLimit(repeats: 2) == 7200)
-    #expect(SyncSchedule(random: { 0 }).afterRateLimit(repeats: 4) == 28800)
-    #expect(SyncSchedule(random: { 1 }).afterRateLimit(repeats: 20) == 86400)
+@Test func aThrottleWaitsTheRetryAfterTimeAndAtLeastTheInterval() {
+    let schedule = SyncSchedule(random: { 0.5 })
+    #expect(schedule.afterThrottle(interval: 2, retryAfter: 30, failures: 1) == 30)
+    #expect(schedule.afterThrottle(interval: 2, retryAfter: 0.5, failures: 1) == 2)
+    #expect(schedule.afterThrottle(interval: 2, retryAfter: nil, failures: 3) == 6)
 }
 
-@Test(.timeLimit(.minutes(1))) func theServiceWaitsARandomPhaseThenTheIntervalAfterEachSuccess() async throws {
-    let rig = try SyncRig(source: oneVault(), random: 0.5)
-    await rig.service.start()
-    #expect(await eventually { rig.clock.requestedSleeps == [150] })
-    #expect(rig.state().nextAttempt == at(150))
-    rig.clock.advance(150)
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .ok)
-    #expect(rig.state().nextAttempt == at(450))
-    #expect(await eventually { rig.clock.requestedSleeps == [150, 300] })
-}
-
-@Test(.timeLimit(.minutes(1))) func failuresBackOffWithFullJitter() async throws {
-    let rig = try SyncRig(source: oneVault(), random: 1)
-    rig.source.fail(with: OnePasswordError(kind: .other, message: "offline"))
-    await rig.service.start()
-    var waits: [TimeInterval] = []
-    for _ in 0..<5 {
-        _ = await rig.service.checkNow()
-        let next = try #require(rig.state().nextAttempt)
-        waits.append(next.timeIntervalSince(rig.clock.now))
-    }
-    #expect(waits == [60, 120, 240, 300, 300])
-    rig.source.fail(with: nil)
-    #expect(await rig.service.checkNow().outcome == .ok)
-    #expect(rig.state().failures == 0)
-}
-
-@Test(.timeLimit(.minutes(1))) func aRateLimitWaitsAtLeastAnHourAndGrows() async throws {
-    let rig = try SyncRig(source: oneVault(), random: 0)
-    rig.source.fail(with: OnePasswordError(kind: .rateLimited, message: "429"))
-    await rig.service.start()
-    var waits: [TimeInterval] = []
-    for _ in 0..<3 {
-        let summary = await rig.service.checkNow()
-        #expect(summary.outcome == .rateLimited)
-        waits.append(try #require(rig.state().nextAttempt).timeIntervalSince(rig.clock.now))
-    }
-    #expect(waits == [3600, 7200, 14400])
-}
-
-@Test(.timeLimit(.minutes(1))) func aRefusedTokenIsNotRetried() async throws {
-    let rig = try SyncRig(source: oneVault())
-    rig.source.fail(with: OnePasswordError(kind: .authentication, message: "refused"))
-    await rig.service.start()
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .tokenRefused)
-    #expect(rig.state().nextAttempt == nil)
-    rig.source.resetCalls()
-    rig.service.noteRequest()
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(rig.source.calls.total == 0)
-}
-
-@Test(.timeLimit(.minutes(1))) func aRequestOnAStaleMacStartsACheck() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    await rig.service.start()
-    rig.service.noteRequest()
-    #expect(await eventually { (try? rig.store.list().count) == 1 })
-    // A fresh success starts no second check.
-    rig.source.resetCalls()
-    rig.service.noteRequest()
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(rig.source.calls.total == 0)
-    // Past the interval, the next request starts one.
-    rig.clock.advance(301)
-    rig.service.noteRequest()
-    #expect(await eventually { rig.source.calls.vaults == 1 })
-}
-
-@Test(.timeLimit(.minutes(1))) func aRequestDuringBackoffStartsNoCheck() async throws {
-    let rig = try SyncRig(source: oneVault(), random: 1)
-    rig.source.fail(with: OnePasswordError(kind: .other, message: "offline"))
-    await rig.service.start()
+@Test(.timeLimit(.minutes(1))) func theServiceWaitsTheIntervalAfterASuccessAndTheRetryAfterTimeAfterAThrottle() async throws {
+    let cloud = FakeCloud()
+    let rig = DeviceRig(cloud: cloud)
     _ = await rig.service.checkNow()
-    rig.source.resetCalls()
-    rig.clock.advance(301)
-    rig.service.noteRequest()
-    #expect(await eventually { rig.source.calls.vaults == 1 })
-    rig.source.resetCalls()
-    rig.service.noteRequest()
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(rig.source.calls.total == 0)
+    #expect(rig.clock.requestedSleeps.last == 2)
+
+    cloud.fail(with: CloudError(.throttled, "throttled", retryAfter: 30))
+    #expect(await rig.service.checkNow().outcome == .throttled)
+    #expect(rig.clock.requestedSleeps.last == 30)
+    let state = await rig.service.snapshot()
+    #expect(state.nextAttempt == state.lastCheck?.addingTimeInterval(30))
+
+    cloud.fail(with: CloudError(.network, "offline"))
+    #expect(await rig.service.checkNow().outcome == .failed)
+    #expect(rig.clock.requestedSleeps.last == 3)
 }
 
-@Test(.timeLimit(.minutes(1))) func aFailedClientOpenIsRetriedByTheNextCheck() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let failing = Flag(true)
-    let opens = Counter()
-    let rig = try SyncRig(source: source, factory: { _ throws(OnePasswordError) in
-        opens.increment()
-        if failing.value { throw OnePasswordError(kind: .other, message: "no network") }
-        return source
-    })
-    await rig.service.start()
-    let first = await rig.service.checkNow()
-    #expect(first.outcome == .failed)
-    #expect(first.message?.contains("no network") == true)
-    #expect(rig.state().nextAttempt != nil)
-    failing.set(false)
-    let second = await rig.service.checkNow()
-    #expect(second.outcome == .ok)
-    #expect(second.added == ["deploy"])
-    #expect(opens.value >= 2)
+@Test(.timeLimit(.minutes(1))) func aPushStartsACheckUnlessTheServiceIsBackingOff() async throws {
+    let cloud = FakeCloud()
+    let rig = DeviceRig(cloud: cloud)
+    _ = await rig.service.checkNow()
+    rig.service.pushArrived()
+    #expect(await eventually { cloud.calls.changes == 2 })
+    #expect(await rig.service.snapshot().lastPush != nil)
+
+    cloud.fail(with: CloudError(.network, "offline"))
+    _ = await rig.service.checkNow()
+    let calls = cloud.calls.changes
+    rig.service.pushArrived()
+    try await Task.sleep(for: .milliseconds(200))
+    #expect(cloud.calls.changes == calls)
 }
 
-@Test(.timeLimit(.minutes(1))) func aClientThatTheTokenFailsToOpenIsATokenRefusal() async throws {
-    let source = oneVault()
-    let rig = try SyncRig(source: source, factory: { _ throws(OnePasswordError) in
-        throw OnePasswordError(kind: .authentication, message: "refused")
-    })
-    await rig.service.start()
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .tokenRefused)
-    #expect(summary.message == "1Password refused the token: refused")
-    #expect(rig.state().lastResult == .tokenRefused)
-    #expect(rig.state().nextAttempt == nil)
-}
-
-@Test(.timeLimit(.minutes(1))) func loginStartsAgainAfterARefusedToken() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    rig.source.fail(with: OnePasswordError(kind: .authentication, message: "refused"))
-    await rig.service.start()
-    #expect(await rig.service.checkNow().outcome == .tokenRefused)
-    #expect(rig.state().nextAttempt == nil)
-
-    // The same token, accepted now; signd login tells the agent, which forgets the state file.
-    rig.source.fail(with: nil)
-    await rig.service.login()
-    rig.service.noteRequest()
-    #expect(await eventually { (try? rig.store.list().count) == 1 })
-    #expect(rig.state().lastResult == .ok)
-}
-
-@Test(.timeLimit(.minutes(1))) func aCheckInFlightWritesNothingAfterLogout() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let rig = try SyncRig(source: source)
-    let service = rig.service
-    await service.start()
-    source.slow(.milliseconds(400))
-    let check = Task { await service.checkNow() }
-    #expect(await eventually { source.calls.item == 1 })
-    let result = await service.logout()
-    let summary = await check.value
-    #expect(result == LogoutResult(ok: true, removed: 0))
-    #expect(summary.message == "the token changed during the check")
-    #expect(try rig.store.list().isEmpty)
-    #expect(!FileManager.default.fileExists(atPath: rig.stateURL.path))
-    #expect(rig.token.value == nil)
-    #expect(rig.token.deleteCount == 1)
-}
-
-@Test(.timeLimit(.minutes(1))) func aCheckInFlightWritesNothingAfterANewLogin() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let rig = try SyncRig(source: source)
-    let service = rig.service
-    await service.start()
-    source.slow(.milliseconds(400))
-    let check = Task { await service.checkNow() }
-    #expect(await eventually { source.calls.item == 1 })
-    rig.token.set("another")
-    await service.login()
-    _ = await check.value
-    #expect(try rig.store.list().isEmpty)
-    source.slow(.zero)
-    #expect(await service.checkNow().added == ["deploy"])
-}
-
-@Test(.timeLimit(.minutes(1))) func logoutKeepsLocalKeys() async throws {
+@Test(.timeLimit(.minutes(1))) func listAndSignKeepTheirP99WhileACheckWaitsOnASlowCloud() async throws {
+    let key = storedSoftwareKey("served")
     let store = MemoryStore()
-    var local = storedSoftwareKey("mine")
-    local.source = "local"
-    try store.add(local)
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")), store: store)
+    try store.add(key)
+    let agent = await makeAgent(store)
+    let baseline = p99(await measure(Server(agent: agent), key: key, seconds: 1))
+
+    let cloud = FakeCloud()
+    cloud.slow(.seconds(2))
+    let rig = DeviceRig(cloud: cloud)
+    let server = Server(agent: agent, sync: rig.service)
     await rig.service.start()
-    _ = await rig.service.checkNow()
-    #expect(try store.list().count == 2)
-    let result = await rig.service.logout()
-    #expect(result == LogoutResult(ok: true, removed: 1))
-    #expect(try store.list() == [local])
-    #expect(await rig.service.checkNow().outcome == .notSignedIn)
+    #expect(await eventually(2) { cloud.calls.account == 1 })
+    let whileChecking = await measure(server, key: key, seconds: 1)
+    #expect(p99(whileChecking) <= baseline * 3 + .milliseconds(5))
 }
 
-@Test(.timeLimit(.minutes(1))) func aRenameFreesANameForAnotherItemInTheSameCheck() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "alpha")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    rig.source.put(sshItem("i1", title: "beta", updated: at(10)))
-    rig.source.put(sshItem("i2", title: "alpha", updated: at(10)))
-    let summary = await rig.service.checkNow()
-    #expect(summary.skipped == 0)
-    let keys = try rig.store.list()
-    #expect(keys.map(\.name).sorted() == ["alpha", "beta"])
-    #expect(keys.first { $0.name == "alpha" }?.itemID == "i2")
+// MARK: Settings and status
+
+@Test(arguments: ["infs", "nans", "1e25s", "0s", "3601s", "2h", "-1m", "5"])
+func anIntervalOutsideItsBoundsIsRefused(text: String) {
+    #expect(Settings.validSeconds(.interval, text) == nil)
 }
 
-@Test(.timeLimit(.minutes(1))) func aLastingNameConflictCostsOneRequestACheckUntilTheNameFrees() async throws {
-    let store = MemoryStore()
-    var local = storedSoftwareKey("deploy")
-    local.source = "local"
-    try store.add(local)
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "Deploy")), store: store)
-    await rig.service.start()
-    #expect(await rig.service.checkNow().skipped == 1)
-    #expect(rig.state().vaultVersions["v1"] != nil)
-
-    for _ in 0 ..< 2 {
-        rig.source.resetCalls()
-        let again = await rig.service.checkNow()
-        #expect(again.requests == 1)
-        #expect(again.skipped == 1)
-        #expect(rig.source.calls == FakeSource.Calls(vaults: 1, items: 0, item: 0))
-    }
-
-    // The name frees without the item changing: only that item is fetched.
-    try store.delete(name: "deploy")
-    rig.source.resetCalls()
-    let freed = await rig.service.checkNow()
-    #expect(freed.added == ["deploy"])
-    #expect(freed.skipped == 0)
-    #expect(freed.requests == 2)
-    #expect(rig.source.calls == FakeSource.Calls(vaults: 1, items: 0, item: 1))
-    rig.source.resetCalls()
-    #expect(await rig.service.checkNow().requests == 1)
+@Test(arguments: ["infs", "1e25s", "0s", "31d", "-1s"])
+func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
+    #expect(Settings.validSeconds(.keyLifetime, text) == nil)
 }
 
-@Test(.timeLimit(.minutes(1))) func aNameFreedByARenameInAnotherVaultIsTakenInTheSameCheck() async throws {
-    let source = FakeSource()
-    source.addVault("v1")
-    source.addVault("v2")
-    source.put(sshItem("j1", title: "deploy", vault: "v1"))
-    source.put(sshItem("i1", title: "Deploy", vault: "v2"))
-    let rig = try SyncRig(source: source)
-    await rig.service.start()
-    let first = await rig.service.checkNow()
-    #expect(first.added == ["deploy"])
-    #expect(first.skipped == 1)
-
-    source.put(sshItem("j1", title: "other", vault: "v1", updated: at(10)))
-    let second = await rig.service.checkNow()
-    #expect(second.skipped == 0)
-    #expect(try rig.store.list().map(\.name).sorted() == ["deploy", "other"])
-    #expect(try rig.store.list().first { $0.name == "deploy" }?.itemID == "i1")
+@Test func durationsAtTheBoundsAreAccepted() {
+    #expect(Settings.validSeconds(.interval, "1s") == 1)
+    #expect(Settings.validSeconds(.interval, "1h") == 3600)
+    #expect(Settings.validSeconds(.keyLifetime, "1s") == 1)
+    #expect(Settings.validSeconds(.keyLifetime, "30d") == 2_592_000)
 }
 
-@Test(.timeLimit(.minutes(1))) func aRestartDoesNotCutARateLimitShort() async throws {
-    let rig = try SyncRig(source: oneVault(), random: 1)
-    rig.source.fail(with: OnePasswordError(kind: .rateLimited, message: "429"))
-    await rig.service.start()
-    #expect(await rig.service.checkNow().outcome == .rateLimited)
-    let before = rig.clock.requestedSleeps.count
-    await rig.service.start()
-    #expect(await eventually { rig.clock.requestedSleeps.count > before && rig.clock.requestedSleeps.last == 4200 })
-    #expect(rig.state().nextAttempt == at(4200))
+@Test func theDefaultIntervalIsTwoSeconds() {
+    let resolved = Settings(local: { _ in nil }).resolve(.interval)
+    #expect(resolved.seconds == 2)
+    #expect(resolved.source == .default)
 }
 
-@Test(.timeLimit(.minutes(1))) func signdSyncWithinAMinuteGetsTheLastResult() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    await rig.service.start()
-    let first = await rig.service.syncRequested()
-    let second = await rig.service.syncRequested()
-    #expect(first == second)
-    #expect(rig.source.calls.vaults == 1)
-    rig.clock.advance(61)
-    _ = await rig.service.syncRequested()
-    #expect(rig.source.calls.vaults == 2)
+@Test func aBadSettingIsRefusedBeforeItIsWritten() {
+    #expect(throws: SettingsError.self) { try Settings().set(.interval, "infs") }
+    #expect(throws: SettingsError.self) { try Settings().set(.keyLifetime, "1e25s") }
 }
+
+@Test func aLocalSettingOutOfBoundsIsShownAsIgnoredWithItsReason() throws {
+    let settings = Settings(local: { $0 == .interval ? "2h" : nil })
+    let status = SyncStatus(state: SyncState(), settings: settings)
+    #expect(status.interval.source == .default)
+    #expect(status.interval.seconds == 2)
+    #expect(status.ignoredSettings.map(\.key) == ["interval"])
+    #expect(status.ignoredSettings.first?.reason == "not a duration such as 90s, 30m, 1h or 2d from 1 to 3600 seconds")
+}
+
+@Test(.timeLimit(.minutes(1))) func statusJSONCarriesTheStateTheLastResultTheNextCheckAndEverySkippedKey() async throws {
+    let (_, a, b, _) = try twoDevices()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    let status = SyncStatus(state: await b.service.snapshot(), settings: Settings(local: { _ in nil }))
+    let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(status)) as? [String: Any])
+    #expect(json["state"] as? String == "on")
+    #expect(json["lastResult"] as? String == "ok")
+    #expect(json["nextAttempt"] != nil)
+    #expect(json["devices"] as? Int == 2)
+    #expect((json["skipped"] as? [[String: Any]])?.first?["kind"] as? String == "waiting")
+}
+
+// MARK: Stored keys
+
+struct LegacyKey: Codable {
+    var format = 1
+    var name: String
+    var kind: KeyKind
+    var publicBlob: Data
+    var comment: String
+    var hosts: [String]
+    var source: String
+    var created: Date
+    var keyData: Data
+    var wrapped: WrappedKey?
+    var vaultID: String?
+    var itemID: String?
+}
+
+@Test func anItemAnOlderReleaseWroteStillDecodes() throws {
+    let legacy = LegacyKey(
+        name: "old", kind: .wrapped, publicBlob: Data([1]), comment: "", hosts: ["a"], source: "1password", created: at(0), keyData: Data([2]),
+        vaultID: "v", itemID: "i"
+    )
+    let encoder = PropertyListEncoder()
+    encoder.outputFormat = .binary
+    let key = try PropertyListDecoder().decode(StoredKey.self, from: try encoder.encode(legacy))
+    #expect(key.name == "old")
+    #expect(key.recordName == nil)
+    #expect(!key.isShared)
+}
+
+@Test func aSharedKeySurvivesAnEncodeAndDecode() throws {
+    var key = try localWrappedKey("k").0
+    key.source = StoredKey.sharedSource
+    key.recordName = "key-k"
+    let encoder = PropertyListEncoder()
+    encoder.outputFormat = .binary
+    #expect(try PropertyListDecoder().decode(StoredKey.self, from: try encoder.encode(key)) == key)
+}
+
+// MARK: Private extensions
 
 @Test func aForwardedConnectionMayUseNoPrivateExtension() async throws {
     let store = MemoryStore()
@@ -596,7 +444,9 @@ func oneVault(_ items: Item...) -> FakeSource {
     #expect(await server.respond(to: .extension(name: Extension.sessionBind, contents: bind), on: connection) == .success)
     #expect(await server.respond(to: status, on: connection) == .failure)
     #expect(await server.respond(to: .extension(name: PrivateExtension.sync, contents: Data()), on: connection) == .failure)
-    #expect(await server.respond(to: .extension(name: PrivateExtension.logout, contents: Data()), on: connection) == .failure)
+    var share = Data()
+    share.appendString(Data("k".utf8))
+    #expect(await server.respond(to: .extension(name: PrivateExtension.share, contents: share), on: connection) == .failure)
     // A bind that says it is not forwarded leaves a connection as it was.
     let local = Connection(peerPID: getpid())
     bind.removeLast()
@@ -606,158 +456,6 @@ func oneVault(_ items: Item...) -> FakeSource {
         Issue.record("status was refused on a connection that is not forwarded")
         return
     }
-}
-
-@Test(.timeLimit(.minutes(1))) func anItemTheClientCannotDecodeIsSkippedAndTheRestAreChecked() async throws {
-    let source = oneVault(sshItem("bad", title: "broken"), sshItem("good", title: "fine"))
-    source.failItem("bad", with: OnePasswordError(kind: .decoding, message: "the reply could not be decoded"))
-    let rig = try SyncRig(source: source)
-    await rig.service.start()
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .ok)
-    #expect(summary.added == ["fine"])
-    #expect(summary.skipped == 1)
-    // The broken item is not read again until it changes.
-    source.put(sshItem("good", title: "fine", updated: at(10)))
-    source.resetCalls()
-    _ = await rig.service.checkNow()
-    #expect(source.calls.item == 1)
-}
-
-@Test(.timeLimit(.minutes(1))) func titlesAndReasonsLoseControlAndFormatCharacters() async throws {
-    let rig = try SyncRig(source: oneVault(
-        sshItem("i1", title: "evil\u{202E}key\u{1B}[2J"),
-        sshItem("i2", title: "bad\u{202E}host", hosts: "a\u{1B}b")
-    ))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    let key = try #require(try rig.store.list().first)
-    #expect(key.comment == "evilkey[2J")
-    let skipped = try #require(SyncStatus(signedIn: true, state: rig.state()).skipped.first)
-    #expect(skipped.item == "badhost")
-    #expect(skipped.reason.unicodeScalars.allSatisfy { $0.properties.generalCategory != .control && $0.properties.generalCategory != .format })
-    #expect(skipped.reason.contains("ab"))
-}
-
-@Test(arguments: ["infs", "nans", "1e25s", "1e308d", "1s", "59s", "25h", "-1m", "5"])
-func anIntervalOutsideItsBoundsIsRefused(text: String) {
-    #expect(Settings.validSeconds(.interval, text) == nil)
-}
-
-@Test(arguments: ["infs", "1e25s", "0s", "31d", "-1s"])
-func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
-    #expect(Settings.validSeconds(.keyLifetime, text) == nil)
-}
-
-@Test func durationsAtTheBoundsAreAccepted() {
-    #expect(Settings.validSeconds(.interval, "1m") == 60)
-    #expect(Settings.validSeconds(.interval, "24h") == 86400)
-    #expect(Settings.validSeconds(.keyLifetime, "1s") == 1)
-    #expect(Settings.validSeconds(.keyLifetime, "30d") == 2_592_000)
-}
-
-@Test func aBadSettingIsRefusedBeforeItIsWritten() {
-    #expect(throws: SettingsError.self) { try Settings().set(.interval, "infs") }
-    #expect(throws: SettingsError.self) { try Settings().set(.keyLifetime, "1e25s") }
-}
-
-@Test(.timeLimit(.minutes(1))) func aBadNoteValueIsReportedAndTheDefaultApplies() async throws {
-    let rig = try SyncRig(source: oneVault(noteItem(interval: "1s", keyLifetime: "infs")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    #expect(rig.service.fleet.values.isEmpty)
-    let status = SyncStatus(signedIn: true, state: rig.state())
-    #expect(status.skipped.count == 2)
-    if Settings().value(.interval) == nil {
-        #expect(status.interval.source == .default)
-        #expect(status.interval.seconds == 300)
-    }
-}
-
-@Test(.timeLimit(.minutes(1))) func aLogoutDuringACheckLeavesNoCheckForTheNextOneToJoin() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let rig = try SyncRig(source: source)
-    let service = rig.service
-    await service.start()
-    source.slow(.milliseconds(400))
-    let check = Task { await service.checkNow() }
-    #expect(await eventually { source.calls.item == 1 })
-    _ = await service.logout()
-    #expect(await service.checkNow().outcome == .notSignedIn)
-    #expect(await check.value.message == "the token changed during the check")
-}
-
-@Test(.timeLimit(.minutes(1))) func aLoginDuringACheckStartsAFreshCheckAndTheTimerStaysScheduled() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let rig = try SyncRig(source: source)
-    let service = rig.service
-    await service.start()
-    #expect(await eventually { rig.clock.requestedSleeps.count == 1 })
-    source.slow(.milliseconds(400))
-    let stale = Task { await service.checkNow() }
-    #expect(await eventually { source.calls.item == 1 })
-    await service.login()
-    // The check that began under the old login is over, so this one does not join it.
-    let fresh = await service.checkNow()
-    #expect(fresh.outcome == .ok)
-    #expect(fresh.added == ["deploy"])
-    #expect(await stale.value.message == "the token changed during the check")
-    // The login's timer and the fresh check's remain; the stale check, which ended last, stopped neither.
-    #expect(await eventually { rig.clock.requestedSleeps.count >= 3 })
-}
-
-@Test(.timeLimit(.minutes(1))) func aLoginDuringTheChangeNoticeLeavesNoResultAndNoTimer() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let slow = Flag(true)
-    let rig = try SyncRig(source: source, changed: { if slow.value { try? await Task.sleep(for: .milliseconds(400)) } })
-    let service = rig.service
-    await service.start()
-    #expect(await eventually { rig.clock.requestedSleeps.count == 1 })
-    let check = Task { await service.checkNow() }
-    #expect(await eventually { rig.changes.value == 1 })
-    await service.login()
-    slow.set(false)
-    #expect(await check.value.added == ["deploy"])
-    // Nothing of that check outlives the login: no timer of its own, and no result for `signd sync` to return.
-    try await Task.sleep(for: .milliseconds(100))
-    #expect(rig.clock.requestedSleeps.count == 2)
-    source.resetCalls()
-    _ = await service.syncRequested()
-    #expect(source.calls.vaults == 1)
-}
-
-@Test(.timeLimit(.minutes(1))) func loginForgetsTheStateTheOldTokenWrote() async throws {
-    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
-    await rig.service.start()
-    _ = await rig.service.checkNow()
-    #expect(rig.state().vaultVersions["v1"] != nil)
-    await rig.service.login()
-    #expect(rig.state().vaultVersions.isEmpty)
-    #expect(rig.state().lastSuccess == nil)
-    rig.source.resetCalls()
-    #expect(await rig.service.checkNow().requests == 2)
-}
-
-@Test func aLocalSettingOutOfBoundsIsShownAsIgnoredWithItsReason() throws {
-    let settings = Settings(local: { key in
-        switch key {
-        case .interval: "10s"
-        case .keyLifetime: "1h"
-        }
-    })
-    let status = SyncStatus(signedIn: true, state: SyncState(), settings: settings)
-    #expect(status.interval.source == .default)
-    #expect(status.interval.seconds == 300)
-    #expect(status.ignoredSettings.map(\.key) == ["interval"])
-    #expect(status.ignoredSettings.first?.value == "10s")
-    #expect(status.ignoredSettings.first?.reason == "not a duration such as 90s, 30m, 1h or 2d from 60 to 86400 seconds")
-    let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(status)) as? [String: Any])
-    #expect((json["ignoredSettings"] as? [[String: Any]])?.count == 1)
-}
-
-@Test func aValidOrAbsentLocalSettingIsNotIgnored() {
-    let settings = Settings(local: { $0 == .keyLifetime ? "2h" : nil })
-    #expect(settings.ignored().isEmpty)
 }
 
 @Test func privateExtensionsNeedAPeerThatRunsTheAgentsOwnExecutable() async throws {
@@ -774,100 +472,6 @@ func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
     #expect(await server.respond(to: .extension(name: Extension.query, contents: Data()), on: Connection(peerPID: nil)) == .query)
     #expect(FileIdentity(executableOf: getpid()) != nil)
     #expect(FileIdentity(executableOf: getpid()) == FileIdentity(executableOf: getpid()))
-}
-
-@Test(.timeLimit(.minutes(1))) func anItemTheClientCannotDecodeKeepsItsStoredKeyUntilAnotherVersionReadsIt() async throws {
-    let undecodable = OnePasswordError(kind: .decoding, message: "the reply could not be decoded")
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    let rig = try SyncRig(source: source)
-    await rig.service.start()
-    #expect(await rig.service.checkNow().added == ["deploy"])
-    let before = try #require(try rig.store.list().first)
-
-    source.put(sshItem("i1", title: "deploy", updated: at(10)))
-    source.failItem("i1", with: undecodable)
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .ok)
-    #expect(summary.removed.isEmpty)
-    #expect(summary.skipped == 1)
-    #expect(try rig.store.list() == [before])
-
-    // The same version does not read it again.
-    source.resetCalls()
-    #expect(await rig.service.checkNow().requests == 1)
-
-    // Another version does, and the item decodes there.
-    source.failItem("i1", with: nil)
-    let second = try SyncRig(source: source, store: rig.store, version: "2.0.0")
-    try FileManager.default.copyItem(at: rig.stateURL, to: second.stateURL)
-    await second.service.start()
-    source.resetCalls()
-    let next = await second.service.checkNow()
-    #expect(next.replaced == ["deploy"])
-    #expect(next.skipped == 0)
-    #expect(source.calls.item == 1)
-    #expect(try rig.store.list().first?.itemUpdated == at(10))
-}
-
-@Test(.timeLimit(.minutes(1))) func aNoteTheClientCannotDecodeIsReportedAndTheDefaultsApplyUntilAnotherVersionReadsIt() async throws {
-    let source = oneVault(sshItem("i1", title: "deploy"), noteItem("note", interval: "30m"))
-    source.failItem("note", with: OnePasswordError(kind: .decoding, message: "the reply could not be decoded"))
-    let rig = try SyncRig(source: source)
-    await rig.service.start()
-    let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .ok)
-    #expect(summary.added == ["deploy"])
-    #expect(summary.skipped == 1)
-    #expect(rig.service.fleet.values.isEmpty)
-    #expect(SyncStatus(signedIn: true, state: rig.state()).skipped.map(\.item) == ["signd note"])
-
-    source.resetCalls()
-    #expect(await rig.service.checkNow().requests == 1)
-
-    source.failItem("note", with: nil)
-    let second = try SyncRig(source: source, store: rig.store, version: "2.0.0")
-    try FileManager.default.copyItem(at: rig.stateURL, to: second.stateURL)
-    await second.service.start()
-    #expect(await second.service.checkNow().skipped == 0)
-    #expect(second.service.fleet.values == ["interval": "30m"])
-}
-
-/// The item format before synced keys, which the Macs already hold.
-struct LegacyKey: Codable {
-    var format = 1
-    var name: String
-    var kind: KeyKind
-    var publicBlob: Data
-    var comment: String
-    var hosts: [String]
-    var source: String
-    var created: Date
-    var keyData: Data
-    var wrapped: WrappedKey?
-}
-
-@Test func anItemWrittenBeforeSyncedKeysDecodesWithNilFields() throws {
-    let legacy = LegacyKey(name: "old", kind: .wrapped, publicBlob: Data([1]), comment: "", hosts: ["a"], source: "import", created: at(0), keyData: Data([2]))
-    let encoder = PropertyListEncoder()
-    encoder.outputFormat = .binary
-    let key = try PropertyListDecoder().decode(StoredKey.self, from: try encoder.encode(legacy))
-    #expect(key.format == 1)
-    #expect(key.name == "old")
-    #expect(key.vaultID == nil)
-    #expect(key.itemID == nil)
-    #expect(key.itemUpdated == nil)
-    #expect(!key.isSynced)
-}
-
-@Test func syncedFieldsSurviveAnEncodeAndDecode() throws {
-    var key = storedSoftwareKey("synced")
-    key.source = StoredKey.syncedSource
-    key.vaultID = "v"
-    key.itemID = "i"
-    key.itemUpdated = at(5)
-    let encoder = PropertyListEncoder()
-    encoder.outputFormat = .binary
-    #expect(try PropertyListDecoder().decode(StoredKey.self, from: try encoder.encode(key)) == key)
 }
 
 /// The p99 of `samples`.
@@ -896,34 +500,3 @@ func measure(_ server: Server, key: StoredKey, seconds: Double) async -> [Durati
     return samples
 }
 
-@Test(.timeLimit(.minutes(1))) func listAndSignKeepTheirP99WhileTheClientStartsAndACheckRuns() async throws {
-    let key = storedSoftwareKey("served")
-    let store = MemoryStore()
-    try store.add(key)
-    let agent = await makeAgent(store)
-    let baseline = p99(await measure(Server(agent: agent), key: key, seconds: 1))
-
-    let source = oneVault(sshItem("i1", title: "deploy"))
-    source.slow(.seconds(2))
-    let opened = Counter()
-    let rig = try SyncRig(source: source, factory: { _ throws(OnePasswordError) in
-        try? await Task.sleep(for: .seconds(2))
-        opened.increment()
-        return source
-    })
-    let server = Server(agent: agent, sync: rig.service)
-    await rig.service.start()
-
-    // The client takes two seconds to open, and the first request starts a check that waits for it.
-    let whileStarting = await measure(server, key: key, seconds: 1)
-    #expect(opened.value == 0)
-    #expect(await eventually(4) { opened.value == 1 })
-    // Each call to 1Password now takes two seconds.
-    let whileChecking = await measure(server, key: key, seconds: 1)
-    #expect(rig.source.calls.vaults == 1)
-    #expect(rig.source.calls.items == 0)
-
-    let limit = baseline * 3 + .milliseconds(5)
-    #expect(p99(whileStarting) <= limit)
-    #expect(p99(whileChecking) <= limit)
-}

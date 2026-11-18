@@ -1,69 +1,82 @@
 import Foundation
 
-/// Why a check left an item out.
-public enum SkipKind: String, Codable, Sendable {
-    /// The item's `macs` field does not name this Mac; `signd status` does not report it.
-    case otherMac
-    case invalidName
-    case invalidHost
-    case invalidKey
-    case nameTaken
-    case invalidNote
+/// What signd knows about one `Device` record.
+public struct DeviceEntry: Codable, Sendable, Equatable {
+    public var name: String
+    public var publicKey: Data
+    /// CloudKit's system fields, which a save of this device's own record needs.
+    public var system: Data?
 }
 
-/// An item a check read and did not serve.
-public struct SkippedItem: Codable, Sendable, Equatable {
-    public var vaultID: String
-    public var itemID: String
-    public var title: String
-    /// The item's `updatedAt` when it was read, so an unchanged item is not read again.
-    public var updated: Date
+/// What signd knows about one `Key` record; it holds no sealed copy.
+public struct KeyEntry: Codable, Sendable, Equatable {
+    public var name: String
+    public var hosts: [String]
+    public var publicKey: Data
+    /// The record names of the Macs the key is sealed to.
+    public var sealedFor: [String]
+}
+
+/// Why this device does not serve a shared key.
+public enum SkipKind: String, Codable, Sendable {
+    /// No device has sealed the key to this one yet.
+    case waiting
+    /// A key that is not shared already has the name.
+    case nameTaken
+    /// A host is not a host pattern.
+    case invalidHost
+    /// The record cannot be read, or its name and key do not agree.
+    case invalidRecord
+}
+
+/// A shared key this device does not serve, and why.
+public struct SkippedKey: Codable, Sendable, Equatable {
+    public var record: String
+    public var name: String
     public var kind: SkipKind
     public var reason: String
-    /// The key name a `nameTaken` item wanted, so a later check can tell, with no request, whether another key still holds it.
-    public var name: String?
-    /// The signd version whose client could not read the item's reply; a later version reads the item again.
-    public var undecodedBy: String?
-
-    public var isReported: Bool { kind != .otherMac }
 }
 
 /// How a check ended.
 public enum CheckOutcome: String, Codable, Sendable {
     case ok
     case failed
-    case rateLimited = "rate-limited"
-    case tokenRefused = "token-refused"
-    case notSignedIn = "not-signed-in"
+    case throttled
+    /// No iCloud account is available.
+    case accountUnavailable = "account-unavailable"
+    /// The user deleted signd's data in iCloud settings; checks wait for `signd sync`.
+    case stopped
+    /// This build has no iCloud entitlement.
+    case off
 }
 
-/// The `signd` note a check last read.
-public struct NoteRef: Codable, Sendable, Equatable {
-    public var vaultID: String
-    public var itemID: String
-    public var updated: Date
-}
-
-/// What the agent keeps about syncing, in `sync.json`. It holds no secret.
+/// What the agent keeps about syncing, in `sync.json`. It holds no private key and no sealed copy.
 public struct SyncState: Codable, Sendable, Equatable {
-    public var format = 1
-    /// Each vault's content version at the last successful check.
-    public var vaultVersions: [String: UInt32] = [:]
-    public var note: NoteRef?
-    /// The settings the `signd` note sets for every Mac.
-    public var fleet: [String: String] = [:]
-    public var skipped: [SkippedItem] = []
+    public static let currentFormat = 2
+
+    public var format = Self.currentFormat
+    /// The iCloud user record the state belongs to.
+    public var user: String?
+    public var databaseToken: Data?
+    public var zoneToken: Data?
+    /// Whether the zone and the subscription have been saved.
+    public var prepared = false
+    /// The user deleted the zone in iCloud settings, so checks wait for `signd sync`.
+    public var stopped = false
+    /// The `Device` and `Key` records, by record name.
+    public var devices: [String: DeviceEntry] = [:]
+    public var keys: [String: KeyEntry] = [:]
+    public var skipped: [SkippedKey] = []
     public var lastCheck: Date?
     public var lastSuccess: Date?
     public var lastResult: CheckOutcome?
     public var lastMessage: String?
+    /// The requests the last check made.
     public var requests = 0
-    public var fetched = 0
     public var nextAttempt: Date?
     /// Failed checks in a row, which grow the wait.
     public var failures = 0
-    /// Rate-limited checks in a row, which grow the wait.
-    public var rateLimits = 0
+    public var lastPush: Date?
 
     public init() {}
 
@@ -72,9 +85,11 @@ public struct SyncState: Codable, Sendable, Equatable {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/signd/sync.json")
     }
 
-    /// The state in `url`; an empty one when the file is absent or unreadable, which makes the next check read everything.
+    /// The state in `url`; an empty one when the file is absent, unreadable or of another format, which makes the next check read everything.
     public static func load(from url: URL = defaultURL) -> SyncState {
-        guard let data = try? Data(contentsOf: url), let state = try? JSONDecoder().decode(SyncState.self, from: data) else { return SyncState() }
+        guard let data = try? Data(contentsOf: url), let state = try? JSONDecoder().decode(SyncState.self, from: data), state.format == currentFormat else {
+            return SyncState()
+        }
         return state
     }
 
@@ -84,9 +99,14 @@ public struct SyncState: Codable, Sendable, Equatable {
         try AtomicFile.write(try encoder.encode(self), to: url, mode: 0o600)
     }
 
-    /// Forgets the state, as a new token or a logout does.
-    public static func remove(at url: URL = defaultURL) {
-        try? FileManager.default.removeItem(at: url)
+    /// Forgets the records and tokens, as after a change of account or a deleted zone, and keeps the schedule.
+    mutating func forgetRecords() {
+        databaseToken = nil
+        zoneToken = nil
+        prepared = false
+        devices = [:]
+        keys = [:]
+        skipped = []
     }
 }
 
@@ -95,11 +115,42 @@ public struct CheckSummary: Codable, Sendable, Equatable {
     public var outcome: CheckOutcome
     public var message: String?
     public var requests = 0
-    public var fetched = 0
     public var added: [String] = []
     public var replaced: [String] = []
     public var removed: [String] = []
+    /// Keys this device sealed for other devices.
+    public var sealed: [String] = []
     public var skipped = 0
 
+    public init(outcome: CheckOutcome, message: String? = nil) {
+        self.outcome = outcome
+        self.message = message
+    }
+
     public var changed: Bool { !(added.isEmpty && replaced.isEmpty && removed.isEmpty) }
+}
+
+/// The result of a request to the agent that changes shared keys or Macs.
+public struct SyncResult: Codable, Sendable, Equatable {
+    public enum Outcome: String, Codable, Sendable {
+        case done
+        /// Sync is off in this build or the Mac has no iCloud account, so nothing was shared.
+        case off
+        case failed
+    }
+
+    public var outcome: Outcome
+    public var message: String?
+
+    public init(_ outcome: Outcome, _ message: String? = nil) {
+        self.outcome = outcome
+        self.message = message
+    }
+}
+
+/// One device, as `signd device list` prints it.
+public struct DeviceSummary: Codable, Sendable, Equatable {
+    public var id: String
+    public var name: String
+    public var isThisDevice: Bool
 }

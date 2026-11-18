@@ -6,9 +6,9 @@ How signd keeps shared SSH keys in step across the Macs of one Apple account thr
 
 ## ADDED Requirements
 
-### Requirement: Shared keys are sealed to each Mac
+### Requirement: Shared keys are sealed to each device
 
-signd SHALL store a shared key in the `signd` zone of the user's private database as a `Key` record whose encrypted payload holds the public key and one HPKE copy of the private key per Mac, each sealed to that Mac's Secure Enclave key-agreement key, and SHALL NOT store a private key in the clear anywhere outside the Mac.
+signd SHALL store a shared key in the `signd` zone of the user's private database as a `Key` record whose encrypted payload holds the public key and one HPKE copy of the private key per device, each sealed to that device's Secure Enclave key-agreement key, and SHALL NOT store a private key in the clear anywhere outside the device.
 
 #### Scenario: A record holds only sealed copies
 
@@ -34,11 +34,11 @@ signd SHALL store a shared key in the `signd` zone of the user's private databas
 - **WHEN** `signd key share build` runs for a Secure Enclave key
 - **THEN** the command fails and says the key cannot leave this Mac
 
-### Requirement: A new Mac gets every shared key
+### Requirement: A new device gets every shared key
 
-A Mac that holds a shared key SHALL seal it to each Mac record that has no copy, and SHALL drop the copies of Macs whose record is gone, with no command on either Mac.
+A device that holds a shared key SHALL seal it to each device record that has no copy, with no command on either device.
 
-#### Scenario: A Mac joins
+#### Scenario: A device joins
 
 - **WHEN** signd starts on a Mac signed in to the same Apple account
 - **THEN** within a few checks of the Macs that hold keys, its `signd key list` shows every shared key
@@ -63,8 +63,8 @@ A check SHALL make one request when the `signd` zone has not changed since the l
 
 #### Scenario: Nothing changed
 
-- **WHEN** `signd sync` runs twice with no change on any Mac
-- **THEN** the second run reports one request
+- **WHEN** `signd sync` runs after a check that saw every change, and no device has saved since
+- **THEN** it reports one request
 
 ### Requirement: Requests never wait for iCloud
 
@@ -102,11 +102,11 @@ A build whose signature lacks signd's iCloud container SHALL never call CloudKit
 - **WHEN** an unsigned build runs `signd serve` and `signd key create ci --type ed25519`
 - **THEN** the key is stored locally, the command exits 0 and says sync is off, and the agent keeps serving
 
-### Requirement: Mac commands
+### Requirement: Device commands
 
-`signd mac list` SHALL print each Mac record's name, id and whether it is this Mac, and `signd mac remove ID` SHALL delete that record and drop its copies from every key.
+`signd device list` SHALL print each device record's name, id and whether it is this device, and `signd device remove ID` SHALL delete that record and drop its copies from every key.
 
-#### Scenario: Remove a Mac
+#### Scenario: Remove a device
 
-- **WHEN** `signd mac remove` runs for a Mac that no longer runs signd
-- **THEN** `signd mac list` no longer shows it and no record holds a copy for it
+- **WHEN** `signd device remove` runs for a Mac that no longer runs signd
+- **THEN** `signd device list` no longer shows it and no record holds a copy for it

@@ -1,52 +1,62 @@
 import Foundation
 import KeyStore
 
-/// What `signd status` shows about syncing, from the token store, the settings and `sync.json`.
+/// What `signd status` shows about syncing, from the settings and the sync state.
 public struct SyncStatus: Codable, Sendable {
     public struct Interval: Codable, Sendable {
         public let value: String
         public let seconds: Double
-        /// `local`, `note` or `default`.
+        /// `local` or `default`.
         public let source: Settings.Source
     }
 
-    public struct Skipped: Codable, Sendable {
-        public let item: String
-        public let itemID: String
-        public let vaultID: String
+    public struct Key: Codable, Sendable {
+        public let name: String
+        public let record: String
+        public let kind: SkipKind
         public let reason: String
     }
 
-    public let signedIn: Bool
+    /// `on`, `off in this build`, `no account`, `stopped`, `backing off` or `not checked yet`.
+    public let state: String
     public let interval: Interval
     public let lastCheck: Date?
     public let lastSuccess: Date?
     public let lastResult: CheckOutcome?
     public let lastMessage: String?
     public let nextAttempt: Date?
-    /// The requests to 1Password the last check made, and the items it fetched.
+    public let lastPush: Date?
+    /// The requests the last check made.
     public let requests: Int
-    public let fetched: Int
-    public let skipped: [Skipped]
-    /// The local settings that are not valid, so signd uses the note's value or the default instead.
+    /// The devices on the account, this one included.
+    public let devices: Int
+    /// Shared keys this device waits for or skips.
+    public let skipped: [Key]
+    /// The local settings that are not valid, so signd uses the default instead.
     public let ignoredSettings: [Settings.Ignored]
 
-    public init(signedIn: Bool, state: SyncState, settings: Settings = Settings()) {
-        let interval = settings.resolve(.interval, fleet: state.fleet)
-        self.signedIn = signedIn
-        self.interval = Interval(value: interval.value, seconds: interval.seconds, source: interval.source)
-        lastCheck = state.lastCheck
-        lastSuccess = state.lastSuccess
-        lastResult = state.lastResult
-        lastMessage = state.lastMessage.map(Selection.clean)
-        nextAttempt = signedIn ? state.nextAttempt : nil
-        requests = state.requests
-        fetched = state.fetched
-        ignoredSettings = settings.ignored().map {
-            Settings.Ignored(key: $0.key, value: Selection.clean($0.value), reason: $0.reason)
+    public init(state sync: SyncState, settings: Settings = Settings()) {
+        let interval = settings.resolve(.interval)
+        state = switch sync.lastResult {
+        case .ok?: "on"
+        case .off?: "off in this build"
+        case .accountUnavailable?: "no account"
+        case .stopped?: "stopped"
+        case .failed?, .throttled?: "backing off"
+        case nil: "not checked yet"
         }
-        skipped = state.skipped.filter(\.isReported).map {
-            Skipped(item: Selection.clean($0.title), itemID: $0.itemID, vaultID: $0.vaultID, reason: Selection.clean($0.reason))
+        self.interval = Interval(value: interval.value, seconds: interval.seconds, source: interval.source)
+        lastCheck = sync.lastCheck
+        lastSuccess = sync.lastSuccess
+        lastResult = sync.lastResult
+        lastMessage = sync.lastMessage.map(Display.clean)
+        nextAttempt = sync.nextAttempt
+        lastPush = sync.lastPush
+        requests = sync.requests
+        devices = sync.devices.count
+        skipped = sync.skipped.map { Key(name: Display.clean($0.name), record: $0.record, kind: $0.kind, reason: Display.clean($0.reason)) }
+        ignoredSettings = settings.ignored().map {
+            Settings.Ignored(key: $0.key, value: Display.clean($0.value), reason: $0.reason)
         }
     }
 }

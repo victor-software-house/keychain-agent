@@ -18,26 +18,23 @@ public struct StoredKey: Codable, Sendable, Equatable {
     public var publicBlob: Data
     public var comment: String
     public var hosts: [String]
-    /// Where the key came from: `local` for keys made on this Mac.
+    /// Where the key came from: `local` for a key made on this Mac, `import` for an imported one, `icloud` for a shared one.
     public var source: String
     public var created: Date
     public var keyData: Data
     /// The sealed private key of a wrapped key; nil for a Secure Enclave key.
     public var wrapped: WrappedKey?
-    /// The 1Password vault and item a synced key came from; nil for a key that did not come from 1Password.
-    public var vaultID: String?
-    public var itemID: String?
-    /// The item's `updatedAt` when the key was last written from it.
-    public var itemUpdated: Date?
+    /// The `Key` record of a shared key; nil for a key that is not shared.
+    public var recordName: String?
 
-    /// The `source` of a key synced from 1Password.
-    public static let syncedSource = "1password"
+    /// The `source` of a key shared through iCloud.
+    public static let sharedSource = "icloud"
 
-    public var isSynced: Bool { source == Self.syncedSource }
+    public var isShared: Bool { source == Self.sharedSource }
 
     public init(
         name: String, kind: KeyKind, publicBlob: Data, comment: String, hosts: [String], source: String = "local", created: Date = Date(),
-        keyData: Data, wrapped: WrappedKey? = nil, vaultID: String? = nil, itemID: String? = nil, itemUpdated: Date? = nil
+        keyData: Data, wrapped: WrappedKey? = nil, recordName: String? = nil
     ) {
         self.name = name
         self.kind = kind
@@ -48,9 +45,7 @@ public struct StoredKey: Codable, Sendable, Equatable {
         self.created = created
         self.keyData = keyData
         self.wrapped = wrapped
-        self.vaultID = vaultID
-        self.itemID = itemID
-        self.itemUpdated = itemUpdated
+        self.recordName = recordName
     }
 
     public var publicKey: PublicKey? { PublicKey(blob: publicBlob) }

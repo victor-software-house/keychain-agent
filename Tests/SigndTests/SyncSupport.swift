@@ -1,147 +1,201 @@
 import CryptoKit
 import Foundation
 import KeyStore
-import OnePassword
 import SSHWire
 import Synchronization
 @testable import Sync
 
-/// A 1Password stand-in that serves recorded vaults and items, counts its requests and can be slow or fail.
-final class FakeSource: OnePasswordSource {
+/// A CloudKit stand-in: one private database with the `signd` zone, change tokens as sequence numbers, change tags as counters,
+/// and failures, delays and account changes the test sets.
+final class FakeCloud: CloudStore {
     struct Calls: Equatable {
-        var vaults = 0
-        var items = 0
-        var item = 0
-        var total: Int { vaults + items + item }
+        var account = 0
+        var prepare = 0
+        var changes = 0
+        var fetch = 0
+        var save = 0
+        var delete = 0
+    }
+
+    private struct Stored {
+        var record: CloudRecord
+        var tag: Int
+        var sequence: Int
+    }
+
+    /// One account's private database.
+    private struct Database {
+        var records: [String: Stored] = [:]
+        var deletions: [(name: String, sequence: Int)] = []
+        var sequence = 0
+        var loss: (kind: ZoneLoss, sequence: Int)?
     }
 
     private struct State {
-        var vaults: [VaultOverview] = []
-        var overviews: [String: [ItemOverview]] = [:]
-        var items: [String: Item] = [:]
-        var calls = Calls()
-        var failure: OnePasswordError?
-        var itemFailures: [String: OnePasswordError] = [:]
+        var databases: [String: Database] = [:]
+        var account = CloudAccount.available(user: "user-1")
+        var failure: CloudError?
+        var expireNextToken = false
         var delay: Duration = .zero
+        var calls = Calls()
+
+        /// The signed-in account's database.
+        var database: Database {
+            get { databases[user] ?? Database() }
+            set { databases[user] = newValue }
+        }
+
+        var user: String {
+            if case let .available(user) = account { return user }
+            return ""
+        }
     }
 
     private let state = Mutex(State())
 
     var calls: Calls { state.withLock { $0.calls } }
 
-    func resetCalls() { state.withLock { $0.calls = Calls() } }
-
-    func fail(with error: OnePasswordError?) { state.withLock { $0.failure = error } }
-
-    /// Makes one item's fetch fail, as an item the client cannot decode does.
-    func failItem(_ id: String, with error: OnePasswordError?) { state.withLock { $0.itemFailures[id] = error } }
-
+    func fail(with error: CloudError?) { state.withLock { $0.failure = error } }
     func slow(_ delay: Duration) { state.withLock { $0.delay = delay } }
+    func setAccount(_ account: CloudAccount) { state.withLock { $0.account = account } }
+    func expireNextToken() { state.withLock { $0.expireNextToken = true } }
 
-    func addVault(_ id: String) {
-        state.withLock {
-            $0.vaults.append(VaultOverview(id: id, title: id, contentVersion: 1, updatedAt: Date(timeIntervalSince1970: 0)))
-            $0.overviews[id] = []
-        }
-    }
-
-    /// Adds or replaces an item and raises its vault's content version, as 1Password does.
-    func put(_ item: Item, category: String? = nil, state itemState: String = "active") {
+    /// The user deletes signd's data in iCloud settings: every record goes, and the next fetch reports the zone as deleted by the user.
+    func deleteZoneByUser() {
         state.withLock { state in
-            let overview = ItemOverview(
-                id: item.id, title: item.title, category: category ?? item.category, vaultId: item.vaultId, updatedAt: item.updatedAt, state: itemState
-            )
-            state.overviews[item.vaultId, default: []].removeAll { $0.id == item.id }
-            state.overviews[item.vaultId, default: []].append(overview)
-            state.items[item.id] = item
-            Self.bump(&state, vault: item.vaultId)
+            state.database.sequence += 1
+            state.database.records = [:]
+            state.database.deletions = []
+            state.database.loss = (.deletedByUser, state.database.sequence)
         }
     }
 
-    func remove(itemID: String, vault: String) {
+    /// Saves a record as another signd would, with no check of its tag.
+    func put(_ type: RecordType, _ name: String, payload: Data) {
         state.withLock { state in
-            state.overviews[vault]?.removeAll { $0.id == itemID }
-            Self.bump(&state, vault: vault)
+            state.database.sequence += 1
+            let tag = (state.database.records[name]?.tag ?? 0) + 1
+            state.database.records[name] = Stored(record: CloudRecord(type: type, name: name, payload: payload), tag: tag, sequence: state.database.sequence)
         }
     }
 
-    private static func bump(_ state: inout State, vault: String) {
-        guard let index = state.vaults.firstIndex(where: { $0.id == vault }) else { return }
-        let old = state.vaults[index]
-        state.vaults[index] = VaultOverview(id: old.id, title: old.title, contentVersion: old.contentVersion + 1, updatedAt: old.updatedAt)
-    }
+    func record(_ name: String) -> CloudRecord? { state.withLock { $0.database.records[name]?.record } }
 
-    private func answer<T: Sendable>(count: (inout Calls) -> Void, value: (State) -> T) async throws(OnePasswordError) -> T {
-        let (result, failure, delay) = state.withLock { state -> (T, OnePasswordError?, Duration) in
+    private func answer<Value>(_ count: (inout Calls) -> Void, _ body: (inout State) throws(CloudError) -> Value) async throws(CloudError) -> Value {
+        let delay = state.withLock { state -> Duration in
             count(&state.calls)
-            return (value(state), state.failure, state.delay)
+            return state.delay
         }
         if delay > .zero { try? await Task.sleep(for: delay) }
-        if let failure { throw failure }
-        return result
+        return try state.withLock { state throws(CloudError) -> Value in
+            if let failure = state.failure { throw failure }
+            return try body(&state)
+        }
     }
 
-    func vaults() async throws(OnePasswordError) -> [VaultOverview] {
-        try await answer(count: { $0.vaults += 1 }, value: { $0.vaults })
+    private static func token(_ sequence: Int) -> Data { Data(String(sequence).utf8) }
+    private static func sequence(_ token: Data?) -> Int { token.flatMap { Int(String(decoding: $0, as: UTF8.self)) } ?? -1 }
+
+    func account() async throws(CloudError) -> CloudAccount {
+        try await answer({ $0.account += 1 }) { state throws(CloudError) in state.account }
     }
 
-    func items(vaultID: String) async throws(OnePasswordError) -> [ItemOverview] {
-        try await answer(count: { $0.items += 1 }, value: { $0.overviews[vaultID] ?? [] })
+    func prepare() async throws(CloudError) {
+        try await answer({ $0.prepare += 1 }) { state throws(CloudError) in state.database.loss = nil }
     }
 
-    func item(vaultID _: String, itemID: String) async throws(OnePasswordError) -> Item {
-        let found: Item? = try await answer(count: { $0.item += 1 }, value: { $0.items[itemID] })
-        if let failure = state.withLock({ $0.itemFailures[itemID] }) { throw failure }
-        guard let found else { throw OnePasswordError(kind: .other, message: "no such item") }
-        return found
+    func changes(database: Data?, zone: Data?) async throws(CloudError) -> CloudChanges {
+        try await answer({ $0.changes += 1 }) { state throws(CloudError) in
+            if state.expireNextToken, database != nil {
+                state.expireNextToken = false
+                throw CloudError(.tokenExpired, "the change token expired")
+            }
+            let since = Self.sequence(database)
+            let db = state.database
+            var changes = CloudChanges()
+            changes.requests = 1
+            changes.databaseToken = Self.token(db.sequence)
+            if let loss = db.loss, loss.sequence > since {
+                changes.zoneLoss = loss.kind
+                return changes
+            }
+            guard db.sequence > since || zone == nil else { return changes }
+            changes.requests = 2
+            changes.changed = db.records.values.filter { $0.sequence > since }.sorted { $0.sequence < $1.sequence }.map { stored in
+                var record = stored.record
+                record.system = Self.token(stored.tag)
+                return record
+            }
+            changes.deleted = db.deletions.filter { $0.sequence > since }.map(\.name)
+            changes.zoneToken = Self.token(db.sequence)
+            return changes
+        }
+    }
+
+    func fetch(_: RecordType, name: String) async throws(CloudError) -> CloudRecord? {
+        try await answer({ $0.fetch += 1 }) { state throws(CloudError) in
+            guard let stored = state.database.records[name] else { return nil }
+            var record = stored.record
+            record.system = Self.token(stored.tag)
+            return record
+        }
+    }
+
+    func save(_ record: CloudRecord) async throws(CloudError) -> CloudRecord {
+        try await answer({ $0.save += 1 }) { state throws(CloudError) in
+            let existing = state.database.records[record.name]
+            switch (existing, record.system) {
+            case (nil, nil): break
+            case let (existing?, system?) where existing.tag == Self.sequence(system): break
+            default: throw CloudError(.conflict, "the record changed on the server")
+            }
+            state.database.sequence += 1
+            let tag = (existing?.tag ?? 0) + 1
+            var saved = record
+            saved.system = nil
+            state.database.records[record.name] = Stored(record: saved, tag: tag, sequence: state.database.sequence)
+            saved.system = Self.token(tag)
+            return saved
+        }
+    }
+
+    func delete(_: RecordType, name: String) async throws(CloudError) {
+        try await answer({ $0.delete += 1 }) { state throws(CloudError) in
+            guard state.database.records.removeValue(forKey: name) != nil else { return }
+            state.database.sequence += 1
+            state.database.deletions.append((name, state.database.sequence))
+        }
     }
 }
 
 /// The time of the `n`th second of a test.
 func at(_ n: Double) -> Date { Date(timeIntervalSince1970: 1_700_000_000 + n) }
 
-/// An Ed25519 key and its PKCS#8 file, as 1Password gives it.
-func ed25519Key() -> (pem: String, key: PrivateKey) {
-    let seed = Curve25519.Signing.PrivateKey()
-    let der = Data([0x30, 0x2E, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20]) + seed.rawRepresentation
-    let body = der.base64EncodedString(options: [.lineLength64Characters, .endLineWithLineFeed])
-    let key = PrivateKey.ed25519(seed: seed.rawRepresentation, publicKey: seed.publicKey.rawRepresentation)
-    return (String(decoding: armor("PRIVATE KEY", body), as: UTF8.self), key)
-}
-
-/// An SSH Key item.
-func sshItem(
-    _ id: String, title: String, vault: String = "v1", pem: String? = nil, hosts: String? = nil, macs: String? = nil, updated: Date = at(0)
-) -> Item {
-    var fields: [Item.Field] = [Item.Field(id: "private_key", title: "private key", fieldType: "SshKey", value: pem ?? ed25519Key().pem)]
-    if let hosts { fields.append(Item.Field(id: "hosts", title: "hosts", fieldType: "Text", value: hosts)) }
-    if let macs { fields.append(Item.Field(id: "macs", title: "macs", fieldType: "Text", value: macs)) }
-    return Item(id: id, title: title, category: "SshKey", vaultId: vault, fields: fields, sections: [], notes: "", version: 1, updatedAt: updated)
-}
-
-/// The `signd` note.
-func noteItem(_ id: String = "note", vault: String = "v1", interval: String? = nil, keyLifetime: String? = nil, updated: Date = at(0)) -> Item {
-    var fields: [Item.Field] = []
-    if let interval { fields.append(Item.Field(id: "interval", title: "interval", fieldType: "Text", value: interval)) }
-    if let keyLifetime { fields.append(Item.Field(id: "key-lifetime", title: "key-lifetime", fieldType: "Text", value: keyLifetime)) }
-    return Item(id: id, title: "signd", category: "SecureNote", vaultId: vault, fields: fields, sections: [], notes: "", version: 1, updatedAt: updated)
-}
-
-/// Seals keys to a software key in place of the Secure Enclave, which the runners lack.
-let softwareWrapper: KeyWrapper = { name, key, comment, hosts throws(StoreError) in
+/// Opens a wrapped key whose `keyData` is a software P-256 key, in place of the Secure Enclave, which the runners lack.
+let softwareOpen: KeyOpener = { key throws(SignError) in
+    guard let wrapped = key.wrapped, let agreement = try? P256.KeyAgreement.PrivateKey(rawRepresentation: key.keyData) else {
+        throw .invalidKey("\(key.name) is not a software wrapped key")
+    }
     do {
-        let recipient = P256.KeyAgreement.PrivateKey().publicKey
-        let wrapped = try Wrapping.seal(key, comment: comment, to: recipient)
-        return StoredKey(
-            name: name, kind: .wrapped, publicBlob: key.publicKey.blob, comment: comment, hosts: hosts, source: StoredKey.syncedSource,
-            keyData: Data(), wrapped: wrapped
-        )
+        return try Wrapping.open(wrapped, publicBlob: key.publicBlob, with: agreement)
     } catch {
-        throw .secureEnclave("\(error)")
+        throw .invalidKey("\(error)")
     }
 }
 
-/// A clock and a sleep that the test drives: sleeps are recorded and wait until cancelled.
+/// A local wrapped key sealed to a software key, and its private key.
+func localWrappedKey(_ name: String, hosts: [String] = [], comment: String = "") throws -> (StoredKey, PrivateKey) {
+    let privateKey = memoryKey()
+    let agreement = P256.KeyAgreement.PrivateKey()
+    let wrapped = try Wrapping.seal(privateKey, comment: comment, to: agreement.publicKey)
+    let key = StoredKey(
+        name: name, kind: .wrapped, publicBlob: privateKey.publicKey.blob, comment: comment, hosts: hosts, source: "import",
+        keyData: agreement.rawRepresentation, wrapped: wrapped
+    )
+    return (key, privateKey)
+}
+
+/// A clock and a sleep that the test drives: a sleep of zero returns at once, and any other is recorded and waits until cancelled.
 final class TestClock: Sendable {
     private let time = Mutex(at(0))
     private let sleeps = Mutex<[TimeInterval]>([])
@@ -152,38 +206,10 @@ final class TestClock: Sendable {
     func advance(_ seconds: TimeInterval) { time.withLock { $0 = $0.addingTimeInterval(seconds) } }
 
     func sleep(_ seconds: TimeInterval) async throws {
+        guard seconds > 0 else { return }
         sleeps.withLock { $0.append(seconds) }
         try await Task.sleep(for: .seconds(3600))
     }
-}
-
-/// The token the test's keychain holds.
-final class TokenBox: Sendable {
-    private let storage: Mutex<String?>
-    private let deletes = Mutex(0)
-
-    init(_ token: String?) { storage = Mutex(token) }
-
-    var value: String? { storage.withLock { $0 } }
-    var deleteCount: Int { deletes.withLock { $0 } }
-
-    func set(_ token: String?) { storage.withLock { $0 = token } }
-
-    func delete() {
-        deletes.withLock { $0 += 1 }
-        set(nil)
-    }
-}
-
-/// A switch the test flips while a closure reads it.
-final class Flag: Sendable {
-    private let storage: Mutex<Bool>
-
-    init(_ value: Bool) { storage = Mutex(value) }
-
-    var value: Bool { storage.withLock { $0 } }
-
-    func set(_ value: Bool) { storage.withLock { $0 = value } }
 }
 
 /// Counts how often the agent was told to read the keys.
@@ -193,46 +219,35 @@ final class Counter: Sendable {
     func increment() { count.withLock { $0 += 1 } }
 }
 
-/// A service over `source` with an in-memory store, a temporary state file and a clock the test drives.
-struct SyncRig: ~Copyable {
-    let source: FakeSource
-    let store: MemoryStore
-    let clock: TestClock
-    let directory: TestDirectory
+/// One device: a service over a shared `FakeCloud`, with its own store, software device key, clock and state file.
+final class DeviceRig: Sendable {
+    let cloud: FakeCloud?
+    let store = MemoryStore()
+    let agreement = P256.KeyAgreement.PrivateKey()
+    let clock = TestClock()
+    let changes = Counter()
+    let stateURL: URL
     let service: SyncService
-    let changes: Counter
-    let token: TokenBox
 
-    var stateURL: URL { directory.url.appendingPathComponent("sync.json") }
+    var device: DeviceKey { DeviceKey(handle: agreement.rawRepresentation, publicKey: agreement.publicKey.x963Representation) }
 
-    init(
-        source: FakeSource, store: MemoryStore = MemoryStore(), token: String? = "token", random: Double = 0.5, hostName: String = "mac-a",
-        version: String = "1.0.0", factory: SourceFactory? = nil, changed: (@Sendable () async -> Void)? = nil
-    ) throws {
-        self.source = source
-        self.store = store
-        let clock = TestClock()
-        self.clock = clock
-        let directory = try TestDirectory()
-        let stateURL = directory.url.appendingPathComponent("sync.json")
-        self.directory = directory
-        let changes = Counter()
-        self.changes = changes
-        let box = TokenBox(token)
-        self.token = box
-        let make: SourceFactory = factory ?? { _ in source }
+    init(cloud: FakeCloud?, name: String = "mac-a", random: Double = 0.5, interval: TimeInterval = 2) {
+        self.cloud = cloud
+        stateURL = FileManager.default.temporaryDirectory.appendingPathComponent("sync-state-\(UUID().uuidString).json")
+        let device = DeviceKey(handle: agreement.rawRepresentation, publicKey: agreement.publicKey.x963Representation)
+        let clock = clock
+        let changes = changes
         service = SyncService(
             SyncService.Dependencies(
-                token: { box.value }, deleteToken: { box.delete() }, makeSource: make, store: store, wrap: softwareWrapper, hostName: { hostName }, version: version,
-                interval: { _ in 300 }, now: { clock.now }, sleep: { try await clock.sleep($0) },
-                schedule: SyncSchedule(random: { random }), stateURL: stateURL,
-                changed: {
-                    changes.increment()
-                    await changed?()
-                }
+                cloud: cloud, store: store, device: { device }, open: softwareOpen, deviceName: { name }, version: "1.0.0",
+                interval: { interval }, now: { clock.now }, sleep: { try await clock.sleep($0) },
+                schedule: SyncSchedule(random: { random }), stateURL: stateURL, changed: { changes.increment() }
             )
         )
     }
 
-    func state() -> SyncState { SyncState.load(from: stateURL) }
+    deinit { try? FileManager.default.removeItem(at: stateURL) }
+
+    /// The keys this device serves from iCloud.
+    func shared() throws -> [StoredKey] { try store.list().filter(\.isShared) }
 }

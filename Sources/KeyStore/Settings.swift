@@ -12,15 +12,15 @@ public struct Settings: Sendable {
         public var defaultValue: String {
             switch self {
             case .keyLifetime: "1h"
-            case .interval: "5m"
+            case .interval: "2s"
             }
         }
 
-        /// The shortest and longest value, in seconds: an interval of 1 minute to 24 hours, and a key lifetime of 1 second to 30 days.
+        /// The shortest and longest value, in seconds: an interval of 1 second to 1 hour, and a key lifetime of 1 second to 30 days.
         public var bounds: ClosedRange<TimeInterval> {
             switch self {
             case .keyLifetime: 1...2_592_000
-            case .interval: 60...86_400
+            case .interval: 1...3600
             }
         }
     }
@@ -29,8 +29,6 @@ public struct Settings: Sendable {
     public enum Source: String, Codable, Sendable {
         /// `signd config set` on this Mac.
         case local
-        /// The `signd` note in 1Password, for every Mac.
-        case note
         case `default`
     }
 
@@ -93,13 +91,9 @@ public struct Settings: Sendable {
         CFPreferencesAppSynchronize(Self.domain as CFString)
     }
 
-    /// A setting's value: the local one, else the `signd` note's in `fleet`, else the default.
-    /// A value that is not a valid duration for the setting is passed over.
-    public func resolve(_ key: Key, fleet: [String: String] = [:]) -> Resolved {
-        let candidates: [(String?, Source)] = [(value(key), .local), (fleet[key.rawValue], .note)]
-        for (value, source) in candidates {
-            if let value, let seconds = Self.validSeconds(key, value) { return Resolved(value: value, seconds: seconds, source: source) }
-        }
+    /// A setting's value: the local one, else the default. A local value that is not a valid duration for the setting is passed over.
+    public func resolve(_ key: Key) -> Resolved {
+        if let value = value(key), let seconds = Self.validSeconds(key, value) { return Resolved(value: value, seconds: seconds, source: .local) }
         let value = key.defaultValue
         return Resolved(value: value, seconds: Self.seconds(value)!, source: .default)
     }
