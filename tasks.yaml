@@ -18,6 +18,18 @@ queue:
     notes:
       - '2026-11-18, left: PR 19 (second-review fixes, swift-onepassword 0.0.2), then migration tasks 5.1 and 5.2 on both Macs.'
 
+  - id: SGD-009
+    title: Install without Homebrew, as flowgate does
+    scope: packaging
+    outcome: "Opening signd.pkg is the whole install: the CLI is on the PATH and the agent runs, with no other step."
+    blocked_by: []
+    acceptance:
+      - signd.pkg links /usr/local/bin/signd to the app binary, unless a file that is not a link is there.
+      - After the pkg, signd status shows the agent answering; when Login Items needs approval, signd status says so and signd service enable opens that pane.
+      - The README Install section starts from the pkg, with Homebrew as the second route.
+    notes:
+      - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
+
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
     scope: signd
