@@ -23,9 +23,12 @@ private final class Session: Sendable {
 extension KeyImport {
     /// Imports a passphrase-protected key file through the system `ssh-add`.
     ///
-    /// ssh-add asks for the passphrase on this process's terminal or through `SSH_ASKPASS`, decrypts the file
-    /// with OpenSSH's own code, and adds the key to a private agent socket that this function serves.
-    /// The key reaches this process in memory only; the socket is the only file written, in a 0700 directory removed afterwards.
+    /// ssh-add prompts for the passphrase on this process's terminal or through `SSH_ASKPASS`.
+    /// It decrypts the file with OpenSSH's own code.
+    /// Then it adds the key to a private agent socket that this function serves.
+    ///
+    /// The key reaches this process in memory only.
+    /// The socket is the only file written, in a 0700 directory removed afterwards.
     /// An ssh-add comment that is only the file's path counts as no comment.
     public static func importWithSSHAdd(file: String) throws(ImportError) -> (PrivateKey, String) {
         var template = Array((NSTemporaryDirectory() as NSString).appendingPathComponent("signd-XXXXXX").utf8CString)

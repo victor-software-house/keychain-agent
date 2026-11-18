@@ -1,8 +1,9 @@
 #!/bin/sh
 #MISE description="Run the built agent on a temporary socket and drive it with ssh-add and ssh-keygen, and check the SSH routing files with ssh -G; macOS only"
 #MISE depends=["build"]
-# The build is unsigned here, so the keychain store is unavailable and the agent serves
-# only keys that ssh-add adds; signd's Secure Enclave keys are checked by e2e:hardware.
+# The build is unsigned here, so the keychain store is unavailable.
+# The agent serves only keys that ssh-add adds.
+# signd's Secure Enclave keys are checked by e2e:hardware.
 set -eu
 
 bin=$(swift build --show-bin-path)/signd
@@ -94,12 +95,12 @@ grep -q '"agentAnswers" : true' "$work/status.json" || fail "signd status report
 # The unsigned build has no iCloud entitlement, so the agent never calls CloudKit and reports sync as off.
 grep -q '"state" : "off in this build"' "$work/status.json" || fail "signd status does not report sync as off in an unsigned build"
 
-# SSH routing. The unsigned agent has no keychain, so it holds no key with hosts; a test writes the
-# files into a temporary home, once with every key and once with one key's last host removed.
+# SSH routing. The unsigned agent has no keychain, so it has no key with hosts.
+# A test writes the files into a temporary home, once with every key and once with one key's last host removed.
 home=$work/home
 mkdir -p "$home"
 printf 'Include %s/.ssh/signd/config\n' "$home" > "$work/ssh_config"
-# ssh expands ~ from the password database, not from HOME.
+# ssh expands ~ from the password database, not from `HOME`.
 passwd_home=$(id -P | cut -d: -f9)
 
 routing() {

@@ -6,7 +6,7 @@ import KeyStore
 import SSHWire
 import Testing
 
-/// RSA keys made for these tests only, as hex numbers.
+/// Rivest-Shamir-Adleman (RSA) keys made for these tests only, as hex numbers.
 func testRSAKey(_ name: String) throws -> PrivateKey {
     let url = try #require(Bundle.module.url(forResource: "Fixtures/rsa-test-keys", withExtension: "json"))
     let keys = try JSONDecoder().decode([String: [String: String]].self, from: Data(contentsOf: url))

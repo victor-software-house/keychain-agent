@@ -21,7 +21,8 @@ public struct CloudRecord: Sendable, Equatable {
     public var name: String
     /// The record's one encrypted field.
     public var payload: Data
-    /// CloudKit's archived system fields, which carry the change tag a save checks; nil for a record never saved.
+    /// CloudKit's archived system fields, nil for a record never saved.
+    /// They carry the change tag that a save checks.
     public var system: Data?
 
     public init(type: RecordType, name: String, payload: Data, system: Data? = nil) {
@@ -32,7 +33,7 @@ public struct CloudRecord: Sendable, Equatable {
     }
 }
 
-/// What a `Device` record says about one device.
+/// What a `Device` record shows about one device.
 public struct DevicePayload: Codable, Sendable, Equatable {
     public var format = 1
     /// The device's name: a Mac's `LocalHostName`.
@@ -49,7 +50,7 @@ public struct DevicePayload: Codable, Sendable, Equatable {
     }
 }
 
-/// What a `Key` record says about one shared key.
+/// What a `Key` record shows about one shared key.
 public struct KeyPayload: Codable, Sendable, Equatable {
     public var format = 1
     public var name: String

@@ -56,8 +56,9 @@ struct SyncCheck {
         } catch where error.kind == .tokenExpired || error.kind == .zoneMissing {
             requests += 1
             if error.kind == .zoneMissing {
-                // The zone and its records are gone, so the full fetch below finds none: this Mac's own keys stay as local keys
-                // first, as after a zone loss, and only the keys other devices shared go.
+                // The zone and its records are gone, so the full fetch below finds no records.
+                // This Mac's own keys stay as local keys first, as after a zone loss.
+                // Only the keys other devices shared go.
                 try removeShared(changes: &changes)
                 try await cloud.prepare()
                 requests += 1
@@ -115,15 +116,17 @@ struct SyncCheck {
             if let local = keys.first(where: { $0.isShared && $0.recordName == name }) { try delete(local, keys: &keys, changes: &changes) }
         }
         if full {
-            // A full fetch cannot tell a record deleted on another Mac from a zone made again while this Mac was away,
-            // so a missing record never deletes this Mac's own key: it stays as a local key, and only received keys go.
+            // A full fetch cannot tell a record deleted on another Mac from a zone made again while this Mac was away.
+            // A missing record therefore never deletes this Mac's own key.
+            // It stays as a local key, and only received keys go.
             let kept = Set(state.keys.keys).union(skipped.filter { $0.kind == .invalidRecord }.map(\.record))
             for local in keys where local.isShared && !kept.contains(local.recordName ?? "") {
                 try unshare(local, keys: &keys, changes: &changes)
             }
         }
 
-        // A name that a local key held may be free now; its record did not change, so it is fetched.
+        // A name that a local key had may be free now.
+        // Its record did not change, so it is fetched.
         let freed = skipped.filter { skip in skip.kind == .nameTaken && !keys.contains { $0.name == skip.name } }
         for skip in freed {
             skipped.removeAll { $0 == skip }
@@ -203,8 +206,11 @@ struct SyncCheck {
     }
 
     /// Deletes every shared key on this device, as a change of account or a deleted zone needs.
-    /// Deletes each key another device shared with this one. A key this Mac made or imported stays as a key of this Mac only:
-    /// its sealed copy opens with this device's key, and no other copy may be left once the iCloud data is gone.
+    /// Deletes each key another device shared with this one.
+    ///
+    /// A key this Mac made or imported stays as a key of this Mac only.
+    /// Its sealed copy opens with this device's key.
+    /// No other copy may be left once the iCloud data is gone.
     func removeShared(changes: inout Changes) throws {
         var keys = try store.list()
         for key in keys where key.isShared { try unshare(key, keys: &keys, changes: &changes) }
@@ -235,7 +241,8 @@ struct SyncCheck {
         }
     }
 
-    /// Seals each shared key this device holds to every device that has no copy, as design decision 5 says. It never drops a copy.
+    /// Seals each shared key this device has to every device that has no copy, as design decision 5 requires.
+    /// It never drops a copy.
     private func sealForNewMacs(_ state: inout SyncState, keys: [StoredKey], requests: inout Int, changes: inout Changes) async throws {
         for local in keys where local.isShared {
             guard let record = local.recordName, let entry = state.keys[record] else { continue }
@@ -327,13 +334,14 @@ struct SyncCheck {
         // The copies go first, so a failure leaves the Device record, and running the command again finishes the removal.
         // Each pass reads every Key record, so a run after one that stopped halfway still finds the copies left.
         let dropped = try await dropCopies(for: id, state: &state, requests: &requests)
-        // The refusal comes before the delete, so an id this Mac has not seen yet, such as a Mac that published since the last check, keeps its record.
+        // The refusal comes before the delete, so an id this Mac has not seen yet keeps its record.
+        // An example is a Mac that published since the last check.
         guard known || dropped > 0 else { throw SyncRefusal("no device has the id \(id); see signd device list") }
         requests += 1
         try await cloud.delete(.device, name: id)
         state.devices[id] = nil
         // A device whose check started before the delete may have sealed a key to the removed one again; this pass drops that copy.
-        // Checks that start after it no longer list the device, so they seal nothing more to it.
+        // Checks that start after it do not list the device, so they seal nothing more to it.
         _ = try await dropCopies(for: id, state: &state, requests: &requests)
     }
 

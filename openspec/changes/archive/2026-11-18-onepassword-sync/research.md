@@ -10,17 +10,21 @@ Retrieved 2026-11-17, with `op` 2.42.0 against a Business account and onepasswor
 | Teams | 1,000 | 100 | 5,000 |
 
 The daily limit is shared by every service account of the account ([rate limits][op-limits]).
-Going over returns HTTP 429; the Go SDK's [rate-limit error][sdk-ratelimit] holds only a message, with no retry time.
+Going over returns HTTP 429; the Go SDK's [rate-limit error][sdk-ratelimit] has only a message, with no retry time.
 1Password support can raise the limits.
 
-Measured costs, with the CLI's cache off: listing all vaults cost 1 read, listing one vault's items 1 read, and getting one item by ID 2 reads.
+Measured costs, with the CLI's cache off:
+
+- Listing all vaults cost 1 read.
+- Listing one vault's items cost 1 read.
+- Getting one item by ID cost 2 reads.
 
 ## 2. Ways to read with only a token
 
 | Path | Verdict |
 |:--|:--|
-| `op` CLI 2.18 or later | ✘ for signd: an outside binary, and an open [report][op-js-216] of it hanging under launchd on macOS 26 while its daemon starts |
-| Official Go, JS and Python SDKs | ✔ the Go SDK: MIT, pure Go; it runs 1Password's core, a WebAssembly module, with wazero ([core][sdk-core]) |
+| `op` CLI 2.18 or later | ✘ for signd: an outside binary, and an open [report][op-js-216] of a hang while its daemon starts under launchd on macOS 26 |
+| Official Go, JavaScript (JS) and Python SDKs | ✔ the Go SDK: MIT, pure Go; it runs 1Password's core, a WebAssembly module, with wazero ([core][sdk-core]) |
 | Python SDK's native library | ✘: unsupported interface, ad-hoc signed |
 | 1Password Connect | ✘: takes Connect tokens, not service account tokens, and needs a server |
 
@@ -47,7 +51,9 @@ Retries follow [exponential backoff with full jitter][aws-backoff]; serving the 
 
 ## 5. Budget at scale
 
-One check per Mac per interval T costs one read; a changed key then costs about 3 reads per Mac.
+One check per Mac per interval T costs one read.
+A changed key then costs about 3 reads per Mac.
+
 Budget: 60% of a Business account's 50,000 daily requests for checks, 20% for changed keys, 20% for other users.
 The shortest interval is then 2.88 s times the number of Macs.
 The daily limit counts every service account in the account, so other tools' reads come out of the same 20%.
@@ -59,7 +65,8 @@ The daily limit counts every service account in the account, so other tools' rea
 | 5,000 | 4 h | 4 h | 30,000 | 15,000 |
 
 Hourly limits hold at every size when each Mac starts at a random point in its interval.
-Past about 1,000 Macs, an account needs a raised limit, or a shared service that serves only vault versions, so Macs read 1Password only when something changed.
+Past about 1,000 Macs, an account needs a raised limit or a shared service that serves only vault versions.
+Macs then read 1Password only when something changed.
 
 [op-limits]: https://developer.1password.com/docs/service-accounts/rate-limits/
 [sdk-ratelimit]: https://github.com/1password/onepassword-sdk-go/blob/223a222582e69e70a0cb7eea4d85b1942676c413/errors.go#L18-L24

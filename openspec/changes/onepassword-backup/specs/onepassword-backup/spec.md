@@ -4,13 +4,14 @@
 
 ### Requirement: The backup copies shareable keys one way
 
-With a token stored, signd SHALL keep one SSH Key item per shareable key in the backup vault, tagged `signd`, with the key's private key, hosts and comment.  
-It SHALL never change a key from the vault's content.
+With a token stored, signd SHALL keep one SSH Key item per shareable key in the backup vault.
+Each item SHALL carry the tag `signd`, the key's private key, hosts and comment.
+signd SHALL never change a key from the vault's content.
 
 #### Scenario: A new key
 
 - **WHEN** a key is shared and the backup runs
-- **THEN** the vault holds an SSH Key item with that key's name, tagged `signd`, whose public key matches the key
+- **THEN** the vault contains an SSH Key item with that key's name, tagged `signd`, whose public key matches the key
 
 ### Requirement: The backup touches only its own items
 
@@ -18,7 +19,7 @@ signd SHALL change and remove only items that carry the tag `signd` and a well-f
 
 #### Scenario: A user's item in the vault
 
-- **WHEN** the vault holds an item without the tag and the backup runs
+- **WHEN** the vault contains an item without the tag and the backup runs
 - **THEN** that item is unchanged
 
 #### Scenario: A tagged item of the user's
@@ -33,7 +34,7 @@ signd SHALL change and remove only items that carry the tag `signd` and a well-f
 
 ### Requirement: A removed key's item follows the setting
 
-A key is removed when a full CloudKit zone fetch, started with no change token and completed in the same run, no longer lists it.  
+A key is removed when a full CloudKit zone fetch, started with no change token and completed in the same run, no longer lists it.
 For a removed key, signd SHALL delete its item by default, archive it when `backupRemoved` is `archive`, and leave it when `backupRemoved` is `keep`.
 
 #### Scenario: A deleted key with the default
@@ -53,8 +54,11 @@ For a removed key, signd SHALL delete its item by default, archive it when `back
 
 ### Requirement: Runs follow the schedule and one Mac runs at a time
 
-signd SHALL run the backup `backupDelay` after the last key change, at most once per `backupInterval`, and once per `backupDailyInterval` with no change.  
-It SHALL run only while it holds the `Lease` record, SHALL renew it before each batch and stop when a renewal fails, and SHALL take over a lease past its expiry.
+signd SHALL run the backup `backupDelay` after the last key change, at most once per `backupInterval`, and once per `backupDailyInterval` with no change.
+
+It SHALL run only while it has the `Lease` record.
+It SHALL renew the lease before each batch and stop when a renewal fails.
+A lease past its expiry SHALL be taken over.
 
 #### Scenario: Two Macs at once
 
@@ -82,9 +86,11 @@ No SSH request and no key change SHALL wait on 1Password or on the lease.
 
 ### Requirement: A restore imports keys from the backup
 
-`signd backup restore` SHALL import the named items, or every tagged item with `--all`, as shared keys, or local ones with `--local`, and SHALL skip a key the store already holds.
+`signd backup restore` SHALL import the items picked by name, or every tagged item with `--all`.
+It SHALL import them as shared keys, or as local keys with `--local`.
+It SHALL skip a key the store already has.
 
 #### Scenario: A Mac with no keys
 
 - **WHEN** the store is empty and `signd backup restore --all` runs
-- **THEN** the store holds every key the vault's tagged items hold, and each signs
+- **THEN** the store contains every key that the vault's tagged items contain, and each signs

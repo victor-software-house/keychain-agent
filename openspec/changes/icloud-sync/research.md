@@ -2,7 +2,9 @@
 
 ## 1. The trial
 
-On 2026-11-18, two Macs on one Apple account ran a trial agent signed with signd's Developer ID profile, on the production CloudKit container.
+Two Macs on one Apple account ran a trial on 2026-11-18.
+The trial agent was signed with signd's Developer ID profile and used the production CloudKit container.
+
 Both clocks were within 2 ms of `time.apple.com`, by `sntp`, so the times below compare across the Macs.
 The trial wrote `Key` records with a small JSON payload into a `signd` zone, and the other Mac logged when each one arrived.
 The zone, its records and the subscription were deleted afterwards.
@@ -15,11 +17,14 @@ The zone, its records and the subscription were deleted afterwards.
 | A save seen on the other Mac, checking every 2 s | 142 of 142 over 65 minutes; median 1.6 to 2.0 s, 95th percentile 2.8 s, slowest 3.4 s |
 | A check that started after the save's time but missed it | none; one that started 0.033 s after it found it |
 | Throttle errors | none in 3,943 checks |
-| Network errors | 3, all in one outage of about 5 seconds; one request waited 18.7 s before it failed |
+| Network errors | 3, all in one outage that lasted about 5 seconds; one request waited 18.7 s before it failed |
 
-The slowest arrival, 2.64 s in one sample, was 0.23 s of save, 1.78 s of waiting for the next check, and 0.64 s of check.
-The wait for the next check is most of the delay, so a shorter interval is the only way to cut it.
-The request that waited 18.7 s is why each request gets a timeout of its own.
+The slowest arrival took 2.64 s in one sample.
+It had 0.23 s of save, 1.78 s of waiting for the next check, and 0.64 s of check.
+
+The wait for the next check is most of the delay.
+So only a shorter interval cuts it.
+The request that waited 18.7 s is why each request has its own timeout.
 
 ## 2. Pushes
 
@@ -29,8 +34,13 @@ The request that waited 18.7 s is why each request gets a timeout of its own.
 | With a badge, sent at priority 10, first Mac to second | 10 | 3 | 0.38 s, 9.2 s and 20.5 s; the rest came 31 to 107 s later or not at all |
 | With a badge, sent at priority 10, second Mac to first | 11 | 0 | none |
 
-A push is 298 bytes and names the container, the subscription and the zone; it carries no record data.
-CloudKit documents pushes as merged and throttled ([CKDatabaseSubscription], [background updates]), and the trial measured the same, so a push can only start a check early.
+A push is 298 bytes.
+It identifies the container, the subscription and the zone.
+It carries no record data.
+
+CloudKit documents pushes as merged and throttled ([CKDatabaseSubscription], [background updates]).
+The trial measured the same.
+So a push can only start a check early.
 The `apsd` log on the receiving Mac showed the badge subscription's pushes at priority 10.
 
 ## 3. Limits and costs

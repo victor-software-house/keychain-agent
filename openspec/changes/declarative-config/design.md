@@ -2,14 +2,17 @@
 
 ## Context
 
-signd keeps settings in the user defaults domain `com.victor-software-house.signd` through CFPreferences, and keys in its keychain access group.  
-flowgate already follows its TOML file with a kqueue watch on the file and its directory, two descriptors and a 50 ms debounce, and nothing runs between changes; signd takes the same pattern.
+signd keeps settings in the user defaults domain `com.victor-software-house.signd` through CFPreferences, and keys in its keychain access group.
+flowgate already follows its TOML file with a kqueue watch on the file and its directory.
+The watch uses two descriptors and a 50 ms debounce, and nothing runs between changes.
+signd takes the same pattern.
 
 ## Goals / Non-Goals
 
 **Goals:**
 
-- A Mac's signd settings and local keys follow from one file and an optional MDM profile, with no command run by hand.
+- A Mac's signd settings and local keys follow from one file and an optional Mobile Device Management (MDM) profile.
+  No command runs by hand.
 - A change to either reaches the running agent within a second, at no cost between changes.
 - `signd plan` shows what an apply would do before it does it.
 
@@ -28,10 +31,9 @@ flowgate already follows its TOML file with a kqueue watch on the file and its d
 | 2 | `~/.config/signd/config.toml` | a dotfiles tool, or `signd config set` |
 | 3 | The built-in default | signd |
 
-A value from a higher source wins over every lower one.  
-`signd status` names the source of each value.  
-CFPreferences reports a value an MDM profile sets as forced (`CFPreferencesAppValueIsForced`).  
-signd reads only forced values from the domain.  
+A value from a higher source takes precedence over every lower one.
+`signd status` shows the source of each value.
+CFPreferences reports a value an MDM profile sets as forced (`CFPreferencesAppValueIsForced`), and signd reads only forced values from the domain.
 A value an older release left in the user's own domain is therefore not read as configuration.
 
 ### 2. The file
@@ -48,18 +50,23 @@ hosts = ["git.example.com"]
 comment = "deploy key"
 ```
 
-The file holds no secret.  
-A file that does not parse, or holds an unknown key or a bad value, is rejected whole: the agent keeps the last configuration that loaded and `signd status` shows the error with its line.  
+The file contains no secret.
+The agent rejects a file that does not parse or contains an unknown key or a bad value.
+It rejects the file whole, keeps the last configuration that loaded, and shows the error with its line in `signd status`.
+
 The profile carries the same names as preference keys: `interval`, `key-lifetime`, and `keys` as an array of dictionaries.
 
 ### 3. Applying keys
 
 - An entry whose name has no key is created, and the key's source is recorded as `config`.
-- An entry whose key has source `config` and other hosts or comment is updated in place; a changed `type` is reported and not applied, because it would replace the private key.
+- An entry whose key has source `config` and other hosts or comment is updated in place.
+  A changed `type` is reported and not applied, because it would replace the private key.
 - A key with source `config` and no entry is deleted.
-- A key made by command (`local`) or shared from another Mac (`icloud`) is never changed by an apply. An entry that names one is reported as a conflict.
+- A key made by command (`local`) or shared from another Mac (`icloud`) is never changed by an apply.
+  An entry for one of them is reported as a conflict.
 
-`signd plan` prints these steps without making them, and exits non-zero when any step would run, so a dotfiles tool can show the plan before an apply.
+`signd plan` prints these steps without making them.
+It exits non-zero when any step would run, so a dotfiles tool can show the plan before an apply.
 
 ### 4. The watch
 
@@ -70,22 +77,23 @@ The agent watches two files with kqueue `DispatchSource`s:
 
 On each file it watches `write`, `extend`, `attrib`, `delete` and `rename`, and on each directory `write`.
 
-An editor or a dotfiles tool replaces the file by rename, so each event reopens the file's descriptor.  
+An editor or a dotfiles tool replaces the file by rename, so each event reopens the file's descriptor.
 Each event also schedules one reload 50 ms later, and a burst of events gives one reload.
 
-A path that does not exist yet is watched through its nearest existing parent until it appears.  
+A path that does not exist yet is watched through its nearest existing parent until it appears.
 Nothing polls.
 
-The agent also watches `~/.ssh/signd/`, which it writes for keys with hosts.  
-A change there that the agent did not make is replaced within a second by the text the agent would write, so a hand edit never lasts.
+The agent also watches `~/.ssh/signd/`, which it writes for keys with hosts.
+The agent replaces any change there that it did not make, within a second, with the text it would write.
+A hand edit therefore never lasts.
 
-The file starts with a comment that names signd as its writer, and the config file and `signd key` as the places to change hosts.  
+The file starts with a comment that shows signd as its writer and lists the config file and `signd key` as the places to change hosts.
 `signd status` reports the last edit the agent replaced.
 
 ### 5. `signd config set`
 
-It rewrites the file in one rename, and only when the new text loads; comments and order of the other lines stay as they were.  
-It refuses a key the profile manages, and names the profile as the reason.
+It rewrites the file in one rename, and only when the new text loads; comments and order of the other lines stay as they were.
+It rejects a key the profile manages, and gives the profile as the reason.
 
 ## Risks / Trade-offs
 
@@ -97,5 +105,5 @@ It refuses a key the profile manages, and names the profile as the reason.
 
 1. A release that reads the file and the profile, and moves a value found in the old domain into the file once.
 2. On each Mac, the dotfiles write the file from their data; `signd plan` shows no step.
-3. Rollback: the previous release reads the old domain again.  
+3. Rollback: the previous release reads the old domain again.
    The move left that domain empty, so the defaults apply until `signd config set` runs.

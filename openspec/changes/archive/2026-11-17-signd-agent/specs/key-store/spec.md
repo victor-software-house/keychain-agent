@@ -8,7 +8,8 @@ Where signd keeps keys, which processes can use them, and how long a private key
 
 ### Requirement: Keys stay in signd's access group
 
-signd SHALL store each key as a data-protection keychain item in its own access group, available after first unlock and on this device only, so that a process without that entitlement cannot read it.
+signd SHALL store each key as a data-protection keychain item in its own access group, available after first unlock and on this device only.
+A process without that entitlement cannot read it.
 
 #### Scenario: Another process cannot read a key
 
@@ -22,7 +23,8 @@ signd SHALL store each key as a data-protection keychain item in its own access 
 
 ### Requirement: Secure Enclave keys never leave the Secure Enclave
 
-signd SHALL generate Secure Enclave keys as ECDSA P-256 inside the Secure Enclave and SHALL sign with them there, and no command SHALL output their private key.
+signd SHALL generate each Secure Enclave key as an Elliptic Curve Digital Signature Algorithm (ECDSA) P-256 key inside the Secure Enclave.
+It SHALL sign with the key there, and no command SHALL output its private key.
 
 #### Scenario: A Secure Enclave key signs
 
@@ -31,7 +33,8 @@ signd SHALL generate Secure Enclave keys as ECDSA P-256 inside the Secure Enclav
 
 ### Requirement: Signing needs no user interaction
 
-signd SHALL sign without a password, Touch ID or confirmation prompt, while the screen is locked and over SSH, once the Mac has been unlocked after boot.
+signd SHALL sign without a password, Touch ID or confirmation prompt.
+This SHALL apply while the screen is locked and over SSH, once the Mac has been unlocked after boot.
 
 #### Scenario: A locked Mac signs
 
@@ -45,11 +48,11 @@ Before the first unlock after boot, signd SHALL list no stored keys, SHALL log w
 #### Scenario: Boot without login
 
 - **WHEN** the Mac has booted and no one has unlocked it
-- **THEN** `ssh-add -L` reports no identities and signd's log names the locked keychain
+- **THEN** `ssh-add -L` reports no identities and signd's log shows the locked keychain
 
 ### Requirement: Decrypted keys leave memory after their lifetime
 
-signd SHALL drop a private key held in memory once it has not signed for the configured key lifetime, one hour by default.
+signd SHALL drop a private key in memory once it has not signed for the configured key lifetime, one hour by default.
 
 #### Scenario: A shorter lifetime
 

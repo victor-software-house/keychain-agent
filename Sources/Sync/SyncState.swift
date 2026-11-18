@@ -1,6 +1,6 @@
 import Foundation
 
-/// What signd knows about one `Device` record.
+/// What signd stores about one `Device` record.
 public struct DeviceEntry: Codable, Sendable, Equatable {
     public var name: String
     public var publicKey: Data
@@ -8,7 +8,7 @@ public struct DeviceEntry: Codable, Sendable, Equatable {
     public var system: Data?
 }
 
-/// What signd knows about one `Key` record; it holds no sealed copy.
+/// What signd stores about one `Key` record; it contains no sealed copy.
 public struct KeyEntry: Codable, Sendable, Equatable {
     public var name: String
     public var hosts: [String]
@@ -50,7 +50,7 @@ public enum CheckOutcome: String, Codable, Sendable {
     case off
 }
 
-/// What the agent keeps about syncing, in `sync.json`. It holds no private key and no sealed copy.
+/// What the agent keeps about syncing, in `sync.json`. It contains no private key and no sealed copy.
 public struct SyncState: Codable, Sendable, Equatable {
     public static let currentFormat = 2
 
@@ -85,7 +85,8 @@ public struct SyncState: Codable, Sendable, Equatable {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/signd/sync.json")
     }
 
-    /// The state in `url`; an empty one when the file is absent, unreadable or of another format, which makes the next check read everything.
+    /// The state in `url`, or an empty one when the file is absent, unreadable or of another format.
+    /// An empty state makes the next check read everything.
     public static func load(from url: URL = defaultURL) -> SyncState {
         guard let data = try? Data(contentsOf: url), let state = try? JSONDecoder().decode(SyncState.self, from: data), state.format == currentFormat else {
             return SyncState()

@@ -17,7 +17,7 @@ func eventually(_ seconds: Double = 5, _ condition: () -> Bool) async -> Bool {
     return condition()
 }
 
-/// Two devices on one account, the first holding a local key `deploy` with a host.
+/// Two devices on one account, the first having a local key `deploy` with a host.
 func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: PrivateKey) {
     let cloud = FakeCloud()
     let a = DeviceRig(cloud: cloud, name: "mac-a")

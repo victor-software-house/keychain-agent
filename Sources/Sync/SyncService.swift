@@ -9,7 +9,8 @@ private let log = Logger(subsystem: "com.victor-software-house.signd", category:
 /// Nothing a list or sign request does awaits this actor. Checks and the commands that change shared keys run one at a time.
 public actor SyncService {
     public struct Dependencies: Sendable {
-        /// The iCloud database; nil in a build without signd's iCloud entitlement, which keeps every key local.
+        /// The iCloud database.
+        /// It is nil in a build without signd's iCloud entitlement, and that build keeps every key local.
         public var cloud: (any CloudStore)?
         public var store: any KeyStore
         public var device: @Sendable () throws(StoreError) -> DeviceKey
@@ -113,18 +114,21 @@ public actor SyncService {
         startTimer(0)
     }
 
-    /// A command changed the store: checks soon, so a name a deleted local key freed is taken.
+    /// Called when a command changed the store.
+    /// It starts a check soon, so a name that a deleted local key freed is taken.
     public func reloaded() {
         guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.stopped else { return }
         startTimer(0)
     }
 
-    /// What `signd sync` asks for: a check now, which also starts again after the zone was deleted in iCloud settings.
+    /// What `signd sync` requests: a check now.
+    /// It also starts again after the zone was deleted in iCloud settings.
     public func syncRequested() async -> CheckSummary {
         await check(forced: true)
     }
 
-    /// A check as the timer runs it, which joins one in flight; for tests.
+    /// A check as the timer runs it; for tests.
+    /// It joins one in flight.
     func checkNow() async -> CheckSummary {
         await check(forced: false)
     }

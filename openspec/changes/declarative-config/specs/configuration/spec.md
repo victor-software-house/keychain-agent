@@ -8,7 +8,11 @@ Where signd's settings and declared keys come from, in what order, and how a cha
 
 ### Requirement: Settings come from the profile, the file and the default, in that order
 
-signd SHALL take each setting from the first of these that sets it: the domain's managed preferences from an MDM profile, `~/.config/signd/config.toml`, the built-in default.
+signd SHALL take each setting from the first of these sources that sets it:
+
+1. The domain's managed preferences from a Mobile Device Management (MDM) profile.
+2. `~/.config/signd/config.toml`.
+3. The built-in default.
 
 #### Scenario: The file sets the interval
 
@@ -31,16 +35,21 @@ The agent SHALL apply a change to the file or to the profile's managed preferenc
 
 ### Requirement: A bad file is rejected whole
 
-signd SHALL reject a file that does not parse or holds an unknown name or a bad value, SHALL keep the last configuration that loaded, and SHALL report the error with its line in `signd status`.
+signd SHALL reject a file that does not parse or contains an unknown name or a bad value.
+It SHALL keep the last configuration that loaded.
+It SHALL report the error with its line in `signd status`.
 
 #### Scenario: A typo
 
 - **WHEN** the file sets `refresh = "5m"`, a name signd does not know
-- **THEN** the agent keeps its previous values and `signd status` names the unknown key and its line
+- **THEN** the agent keeps its previous values and `signd status` shows the unknown key and its line
 
 ### Requirement: Declared keys exist, and only they are removed
 
-At apply, signd SHALL create each declared key that does not exist, SHALL update the hosts and comment of a key it created from the file, and SHALL delete a key it created from the file whose entry is gone. It SHALL NOT change or delete a key made by command or shared from another Mac.
+At apply, signd SHALL create each declared key that does not exist.
+It SHALL update the hosts and comment of a key it created from the file.
+A key it created from the file whose entry is gone SHALL be deleted.
+A key made by command or shared from another Mac SHALL NOT be changed or deleted.
 
 #### Scenario: An entry is removed
 
@@ -49,5 +58,5 @@ At apply, signd SHALL create each declared key that does not exist, SHALL update
 
 #### Scenario: An entry names a command-made key
 
-- **WHEN** an entry names a key made with `signd key create`
+- **WHEN** an entry is for a key made with `signd key create`
 - **THEN** that key is unchanged and `signd status` reports the conflict

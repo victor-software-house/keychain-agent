@@ -2,24 +2,38 @@
 
 ## 1. Code
 
-- [ ] 1.1 Add batch create and delete, `put` and `archive` to `swift-onepassword`; verify its live tests create, update, archive and delete an item in its test vault.
-- [ ] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`; verify unit tests that no file, argument or log holds it.
-- [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.  
-  Verify unit tests of the plan for new, changed, removed and foreign items, and for each `backupRemoved` value.  
-  Verify unit tests for a tagged item with no section, a `--local` key, a Secure Enclave list per Mac, a failed or partial CloudKit read, which removes nothing, and a completed empty one, which removes the last key's item.  
+- [ ] 1.1 Add batch create and delete, `put` and `archive` to `swift-onepassword`.
+  Verify its live tests create, update, archive and delete an item in its test vault.
+- [ ] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`.
+  Verify unit tests that no file, argument or log contains it.
+- [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
+  Verify unit tests of the plan for new, changed, removed and foreign items, and for each `backupRemoved` value.
+  Verify unit tests for a tagged item with no section, a `--local` key, and a Secure Enclave list per Mac.
+- [ ] 1.4 Cover removals, duplicates and the cache.
+  Verify unit tests for a failed or partial CloudKit read, which removes nothing.
+  Verify a unit test for a completed empty read, which removes the last key's item.
   Verify unit tests for duplicate items and for a current cache, where a run with no difference makes only the list call.
-- [ ] 1.4 Add the schedule and the lease by design decisions 4 and 5.  
-  Verify unit tests with a fake clock for the delay, the interval, the daily run, a held lease, an expired one, and a renewal that fails mid-run.
-- [ ] 1.5 Add `signd backup restore` by design decision 7; verify a unit test that skips a key the store holds.
-- [ ] 1.6 Report the backup in `signd status`; verify a test of the JSON report's fields.
+- [ ] 1.5 Add the schedule and the lease by design decisions 4 and 5.
+  Verify unit tests with a fake clock for the delay, the interval and the daily run.
+  Verify unit tests for a lease held by another Mac, an expired lease, and a renewal that fails mid-run.
+- [ ] 1.6 Add `signd backup restore` by design decision 7.
+  Verify a unit test that skips a key the store already has.
+- [ ] 1.7 Report the backup in `signd status`.
+  Verify a test of the JSON report's fields.
 
 ## 2. Release
 
-- [ ] 2.1 Deploy the `Lease` record type to production; verify an export of production lists it.
-- [ ] 2.2 Create the `signd` vault and a service account that can write only to it; verify the account lists that vault alone.
+- [ ] 2.1 Deploy the `Lease` record type to production.
+  Verify an export of production lists it.
+- [ ] 2.2 Create the `signd` vault and a service account that can write only to it.
+  Verify the account lists that vault alone.
 
 ## 3. Integration
 
-- [ ] 3.1 Log in on one Mac; verify the other Mac's `signd backup status` shows the backup on, and the vault holds one item per shared key within `backupDelay` plus a minute.
-- [ ] 3.2 Delete a throwaway key; verify its item lands in Recently Deleted and a foreign item in the vault is unchanged.
-- [ ] 3.3 Restore the throwaway key from Recently Deleted and run `signd backup restore`; verify the key signs on both Macs.
+- [ ] 3.1 Log in on one Mac.
+  Verify the other Mac's `signd backup status` shows the backup on.
+  Verify the vault contains one item per shared key within `backupDelay` plus a minute.
+- [ ] 3.2 Delete a throwaway key.
+  Verify its item lands in Recently Deleted and a foreign item in the vault is unchanged.
+- [ ] 3.3 Restore the throwaway key from Recently Deleted and run `signd backup restore`.
+  Verify the key signs on both Macs.

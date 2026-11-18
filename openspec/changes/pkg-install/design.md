@@ -2,39 +2,43 @@
 
 ## Context
 
-`signd.pkg` installs `/Applications/Signd.app`, and its postinstall runs `signd service enable` as the console user ([pkg-postinstall]).  
-The command reaches the PATH only through the Homebrew cask's `binary` link, and SSH reaches signd only after the user edits `~/.ssh/config`.
+`signd.pkg` installs `/Applications/Signd.app`, and its postinstall runs `signd service enable` as the console user ([pkg-postinstall]).
+The command reaches the program search path (PATH) only through the Homebrew cask's `binary` link, and SSH reaches signd only after the user edits `~/.ssh/config`.
 
 ## Decisions
 
 ### 1. The package links the command into /usr/local/bin
 
-The postinstall runs as root and makes `/usr/local/bin/signd` a symbolic link to `/Applications/Signd.app/Contents/MacOS/signd`.  
-It creates `/usr/local/bin` as `root:wheel` with mode 755 when it is missing, as on a Mac without Homebrew.  
-It replaces a link already there with `ln -sfn`, which does not follow a link to a folder.  
-It leaves a regular file alone, since that file belongs to someone else.
+The postinstall runs as root and makes `/usr/local/bin/signd` a symbolic link to `/Applications/Signd.app/Contents/MacOS/signd`.
+When `/usr/local/bin` is missing, as on a Mac without Homebrew, it creates the folder as `root:wheel` with mode 755.
 
-`/usr/local/bin` is on the default PATH through `/etc/paths`, so every shell finds it.  
+A link already there is replaced with `ln -sfn`, which does not follow a link to a folder.
+A regular file is left alone, since that file belongs to someone else.
+
+`/usr/local/bin` is on the default PATH through `/etc/paths`, so every shell finds it.
 A symbolic link keeps the bundle's entitlements, as the cask's link does.
 
 ### 2. service enable adds the Include line
 
-`signd service enable` adds `Include ~/.ssh/signd/config` and a blank line at the top of `~/.ssh/config`, when no line there includes signd's file.  
-The top matters: an `Include` below a `Host` line applies only to that host.  
-A line counts when it comes before the first `Host` or `Match` line, and its keyword is `Include`, in any case, with whitespace or `=` after it.  
-One of its arguments must be `~/.ssh/signd/config`, the same path under the home directory, or `signd/config`, which SSH reads from `~/.ssh`.  
+`signd service enable` adds `Include ~/.ssh/signd/config` and a blank line at the top of `~/.ssh/config`, when no line there includes signd's file.
+The top matters: an `Include` below a `Host` line applies only to that host.
+
+A line counts when it comes before the first `Host` or `Match` line, and its keyword is `Include`, in any case, with whitespace or `=` after it.
+
+One of its arguments must be `~/.ssh/signd/config`, the same path under the home directory, or `signd/config`, which SSH reads from `~/.ssh`.
 A matching line inside a `Host` or `Match` block does not count, so `service enable` adds the line at the top.
 
 - A missing `~/.ssh` is created with mode 700, and a missing config with mode 600.
 - When `~/.ssh/config` is a symbolic link, signd writes its target, so the link stays.
 - The file is replaced whole, by the same atomic write as the routing files, and keeps its mode.
 
-`service enable` adds the line, rather than the agent at each start, so a user who removes it on purpose keeps it removed until they run the command again.
+`service enable` adds the line.
+The agent never adds it at each start, so a user who removes it on purpose keeps it removed until they run the command again.
 
 ### 3. status reports both
 
-`signd status` prints a `login item` line with the login item's state, and an `ssh config` line that says whether the Include line is there.  
-Each line that is not in order names the command that fixes it, `signd service enable`.  
+`signd status` prints a `login item` line with the login item's state, and an `ssh config` line that shows whether the Include line is there.
+Each line that is not in order shows the command that fixes it, `signd service enable`.
 `--json` carries both as `loginItem` and `sshInclude`.
 
 ### 4. Login Items on a pending approval
@@ -79,7 +83,8 @@ The `Include` line stays in `~/.ssh/config`; SSH skips an `Include` whose file i
 
 ## Risks
 
-- A user's own `/usr/local/bin/signd` that is a link, such as one to a build of their own, is replaced. A regular file is never touched.
+- A user's own `/usr/local/bin/signd` that is a link, such as one to a build of their own, is replaced.
+  A regular file is never touched.
 
 [pkg-postinstall]: https://github.com/victor-software-house/signd/commit/5276a55
 [distribution definition]: https://developer.apple.com/library/archive/documentation/DeveloperTools/Reference/DistributionDefinitionRef/Chapters/Distribution_XML_Ref.html

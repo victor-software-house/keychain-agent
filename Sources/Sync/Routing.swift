@@ -10,7 +10,7 @@ public enum Routing {
         keys.filter { !$0.hosts.isEmpty && $0.hosts.allSatisfy(StoredKey.isValidHost) }.sorted { $0.name < $1.name }
     }
 
-    /// `path` as SSH reads it: under `home` as `~/…`, quoted when it holds a space.
+    /// `path` as SSH reads it: under `home` as `~/…`, quoted when it contains a space.
     static func reference(_ path: String, home: String) -> String {
         let text = path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
         return text.contains(where: \.isWhitespace) ? "\"\(text)\"" : text
@@ -50,7 +50,7 @@ public enum Routing {
         }
     }
 
-    /// Replaces a file unless it already holds `data`.
+    /// Replaces a file unless it already contains `data`.
     private static func replace(_ data: Data, at url: URL, mode: mode_t) throws {
         if FileManager.default.contents(atPath: url.path) == data { return }
         try AtomicFile.write(data, to: url, mode: mode)

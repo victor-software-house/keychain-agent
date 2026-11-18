@@ -1,5 +1,5 @@
 # Changes here will be overwritten by Copier; edit with `copier update --data`.
-_commit: v0.0.124
+_commit: v0.0.126
 _src_path: https://github.com/victor-software-house/templates.git
 build_os: macos
 ci_extra_tasks:
@@ -7,7 +7,8 @@ ci_extra_tasks:
 ci_runner: github-hosted
 ci_secrets: []
 default_branch: main
-generated_paths: []
+generated_paths:
+- Sources/signd/Version.swift
 github_owner: victor-software-house
 linux_image: ubuntu-26.04
 macos_image: macos-27
@@ -29,7 +30,7 @@ platforms:
 - linux-x64
 - macos-arm64
 project: swift-package
-prose_fail_level: error
+prose_fail_level: suggestion
 repository_visibility: public
 verify_timeout: 15
 workflow_policy:

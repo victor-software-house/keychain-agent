@@ -1,10 +1,14 @@
 name: Release
 
-# Every push to main runs verctl's release workflow, which releases a merged Version PR's version
-# commit on GitHub (publisher none) and opens or updates the Version PR. The jobs after it build
-# signd.pkg (Developer ID, notarized, stapled) from that version's tag when its release lacks
-# the package, attach it, and point the private tap's cask at it. A manual run with publish off
-# builds the package from HEAD as a run artifact only.
+# Every push to main runs verctl's release workflow.
+# It releases a merged Version PR's version commit on GitHub (publisher none).
+# It also opens or updates the Version PR.
+#
+# The jobs after it build signd.pkg (Developer ID, notarized, stapled) from that version's tag.
+# They build it only when the release lacks the package.
+# They attach the package and point the private tap's cask at it.
+#
+# A manual run with publish off builds the package from HEAD as a run artifact only.
 #
 # The 1Password connection that releases the signing set admits this workflow by its name,
 # Release, and the job's environment, release.
@@ -130,10 +134,10 @@ jobs:
       - if: always()
         uses: victor-software-house/actions/macos-signing/delete@cb43721495406000501e460309abc1cf9f899cf7 # main, 2026-11-16
 
-  # Tells the Homebrew tap about the new package, and the tap's bump workflow points the
-  # signd cask at it. The tap is private, so its name is the secret TAP_REPOSITORY, which
-  # the logs mask. The workflow token cannot reach another repository, so the dispatch goes as
-  # the Version Packages App.
+  # Tells the Homebrew tap about the new package, and its bump workflow points the signd cask at it.
+  # The tap is private, so its name is the secret TAP_REPOSITORY, and the logs mask it.
+  # The workflow token cannot reach another repository, so the dispatch goes as the Version
+  # Packages App.
   tap:
     name: Homebrew tap
     needs: [plan, package]

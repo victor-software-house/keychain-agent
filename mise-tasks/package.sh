@@ -1,9 +1,11 @@
 #!/bin/sh
 #MISE description="Build build/signd.pkg: Signd.app signed with the Developer ID and its provisioning profile, in a signed package, notarized and stapled"
-# The Release workflow runs this on the xcode-27 runner after macos-signing has imported both
-# Developer ID identities and the notary key into a keychain that holds only them, so each
-# --sign names the identity by its certificate type. SIGND_PROVISIONING_PROFILE holds the
-# Developer ID profile, base64; the entitlements come from it, so the repository names no team.
+# The Release workflow runs this on the xcode-27 runner.
+# By then macos-signing has imported both Developer ID identities and the notary key.
+# They sit in a keychain that contains only them, so each --sign selects the identity by its certificate type.
+#
+# SIGND_PROVISIONING_PROFILE contains the Developer ID profile, base64.
+# The entitlements come from it, so the repository contains no team identifier.
 set -eu
 
 rm -rf build
@@ -18,11 +20,13 @@ cp Bundle/com.victor-software-house.signd.plist "$app/Contents/Library/LaunchAge
 ditto "$(swift build -c release --show-bin-path)/signd" "$app/Contents/MacOS/signd"
 printf '%s' "$SIGND_PROVISIONING_PROFILE" | base64 -d > "$app/Contents/embedded.provisionprofile"
 
-# The profile allows TEAM.*; signd claims one group, TEAM.com.victor-software-house.signd.
-# It also grants iCloud with wildcards; signd claims CloudKit in production on the one
-# container the App ID names, which the agent reads back from its signature, and push for the
-# container's subscription, and none of the key-value or document stores.
-# PlistBuddy steps through a key path at each colon, so an entitlement name keeps its dots;
+# The profile allows <team>.*; signd claims one group, <team>.com.victor-software-house.signd.
+# The profile also grants iCloud with wildcards.
+# signd claims CloudKit in production on the one container that the App ID lists, and the agent reads it back from its signature.
+# It also claims push for the container's subscription, and none of the key-value or document stores.
+#
+# PlistBuddy steps through a key path at each colon.
+# An entitlement name therefore keeps its dots.
 # plutil steps at each dot, and the runner's plutil finds no key under an escaped one.
 security cms -D -i "$app/Contents/embedded.provisionprofile" > build/profile.plist
 plutil -extract Entitlements xml1 -o build/signd.entitlements build/profile.plist

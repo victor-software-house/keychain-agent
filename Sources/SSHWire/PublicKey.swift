@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 
-/// An ECDSA curve SSH names, with the key type and curve names it uses.
+/// An Elliptic Curve Digital Signature Algorithm (ECDSA) curve in SSH, with the key type and curve names it uses.
 public enum Curve: String, Sendable, Codable, CaseIterable {
     case p256 = "nistp256"
     case p384 = "nistp384"
@@ -51,7 +51,7 @@ public enum PublicKey: Sendable, Equatable {
         self = key
     }
 
-    /// Reads the fields that follow a key type name, as a blob or an add-identity message holds them.
+    /// Reads the fields that follow a key type name, as a blob or an add-identity message stores them.
     public static func read(type: String, from reader: inout Reader) -> PublicKey? {
         switch type {
         case "ssh-ed25519":
@@ -79,7 +79,7 @@ public enum PublicKey: Sendable, Equatable {
         return "SHA256:" + digest.trimmingCharacters(in: CharacterSet(charactersIn: "="))
     }
 
-    /// The RSA modulus length in bits, or nil for other key types.
+    /// The Rivest-Shamir-Adleman (RSA) modulus length in bits, or nil for other key types.
     public var rsaBits: Int? {
         guard case let .rsa(_, modulus) = self, let first = modulus.first else { return nil }
         return modulus.count * 8 - first.leadingZeroBitCount

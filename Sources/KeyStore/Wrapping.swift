@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import SSHWire
 
-/// A private key sealed with HPKE to a key-agreement key, as a wrapped key's keychain item holds it.
+/// A private key sealed with Hybrid Public Key Encryption (HPKE) to a key-agreement key, as a wrapped key's keychain item stores it.
 public struct WrappedKey: Codable, Sendable, Equatable {
     /// The sender's ephemeral public key, which the recipient needs to open the ciphertext.
     public var encapsulatedKey: Data
@@ -24,7 +24,7 @@ public enum WrappingError: Error, Sendable, Equatable, CustomStringConvertible {
     }
 }
 
-/// Seals and opens private keys with HPKE, so only the holder of one key-agreement key can read them.
+/// Seals and opens private keys with HPKE, so only the owner of one key-agreement key can read them.
 public enum Wrapping {
     static let ciphersuite = HPKE.Ciphersuite.P256_SHA256_AES_GCM_256
     static let info = Data("signd wrapped key v1".utf8)

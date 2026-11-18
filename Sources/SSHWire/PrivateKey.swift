@@ -1,13 +1,14 @@
 import Foundation
 
-/// The parts of a private key in the layout an add-identity message and an unencrypted
-/// `openssh-key-v1` file share: the key type name, then type-specific fields.
+/// The parts of a private key, in the layout that an add-identity message and an unencrypted
+/// `openssh-key-v1` file share.
+/// They are the key type name, then type-specific fields.
 public enum PrivateKey: Sendable, Equatable {
     /// The 32-byte seed and the 32-byte public key.
     case ed25519(seed: Data, publicKey: Data)
     /// The curve, the uncompressed public point and the private scalar.
     case ecdsa(Curve, point: Data, scalar: Data)
-    /// The RSA numbers as unsigned big-endian magnitudes.
+    /// The Rivest-Shamir-Adleman (RSA) numbers as unsigned big-endian magnitudes.
     case rsa(n: Data, e: Data, d: Data, iqmp: Data, p: Data, q: Data)
 
     public var publicKey: PublicKey {

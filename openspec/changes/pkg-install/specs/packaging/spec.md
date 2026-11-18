@@ -2,11 +2,11 @@
 
 ## MODIFIED Requirements
 
-### Requirement: The command is on the PATH
+### Requirement: The command is on the search path
 
-The package SHALL link `/usr/local/bin/signd` to the app's binary, creating `/usr/local/bin` when it is missing.  
-It SHALL replace a symbolic link there without following it, and SHALL leave any other file.  
-The cask SHALL link `signd` onto the PATH.
+The package SHALL link `/usr/local/bin/signd` to the app's binary, creating `/usr/local/bin` when it is missing.
+It SHALL replace a symbolic link there without following it, and SHALL leave any other file.
+The cask SHALL link the command onto the program search path (PATH) under the name `signd`.
 Each linked command SHALL keep the bundle's entitlements.
 
 #### Scenario: The linked command reads the store
@@ -33,8 +33,8 @@ Each linked command SHALL keep the bundle's entitlements.
 
 ### Requirement: The package shows signd's Installer pages
 
-The package SHALL show a background for light and for dark mode, a welcome page, the AGPL-3.0 license and a conclusion page.  
-It SHALL refuse a Mac that is not arm64 or runs an older macOS than the deployment target, before the password prompt.
+The package SHALL show a background for light and for dark mode, a welcome page, the AGPL-3.0 license and a conclusion page.
+It SHALL reject a Mac that is not arm64 or runs an older macOS than the deployment target, before the password prompt.
 
 #### Scenario: An older macOS
 
@@ -52,7 +52,9 @@ The cask's `uninstall` SHALL unregister the login item before it deletes the app
 
 ### Requirement: The install points SSH at signd
 
-`signd service enable` SHALL add `Include ~/.ssh/signd/config` at the top of `~/.ssh/config` when no line before the first `Host` or `Match` line includes that file, creating the folder and the file when they are missing, and SHALL leave the file unchanged otherwise.
+`signd service enable` SHALL add `Include ~/.ssh/signd/config` at the top of `~/.ssh/config` when no line before the first `Host` or `Match` line includes that file.
+It SHALL create the folder and the file when they are missing.
+It SHALL leave the file unchanged otherwise.
 
 #### Scenario: A config without the line
 

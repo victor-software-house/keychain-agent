@@ -399,8 +399,8 @@ struct Service: ParsableCommand {
             case .enabled where Self.agentAnswers():
                 print("enabled")
             case .enabled:
-                // The cask's uninstall step, which an upgrade also runs, removes the job from
-                // launchd while the login item stays enabled; registering again restores it.
+                // The cask's uninstall step removes the job from launchd while the login item stays enabled.
+                // An upgrade also runs that step, and registering again restores the job.
                 do {
                     try Service.agent.unregister()
                     try Service.agent.register()
@@ -486,7 +486,8 @@ struct Serve: ParsableCommand {
     }
 }
 
-/// The package's postinstall step, which runs as root: starts the agent again as the user at the console.
+/// The package's postinstall step runs as root.
+/// It starts the agent again as the user at the console.
 /// A cask upgrade first removes the agent's job from launchd, so `service enable` registers the login item again.
 /// With nobody logged in, the login item starts the agent at the next login. It never fails the install.
 struct Postinstall: ParsableCommand {

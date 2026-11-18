@@ -4,7 +4,8 @@
 
 ### Requirement: The agent installs a newer verified release
 
-The agent SHALL check the latest release 60 seconds after start and every `updateInterval`, and SHALL install a newer version only when its app is notarized and signed by the running code's team with the identifier `com.victor-software-house.signd`.
+The agent SHALL check the latest release 60 seconds after start and every `updateInterval`.
+It SHALL install a newer version only when its app is notarized and signed by the running code's team with the identifier `com.victor-software-house.signd`.
 
 #### Scenario: A newer release
 
@@ -13,7 +14,7 @@ The agent SHALL check the latest release 60 seconds after start and every `updat
 
 #### Scenario: A foreign signature
 
-- **WHEN** the zip holds an app signed by another team
+- **WHEN** the zip contains an app signed by another team
 - **THEN** the installed app is unchanged, and `signd status` shows the signature error
 
 ### Requirement: Updates follow the settings

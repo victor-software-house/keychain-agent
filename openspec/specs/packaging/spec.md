@@ -2,13 +2,17 @@
 
 ## Purpose
 
-How signd ships: a signed and notarized app bundle with the provisioning profile its keychain entitlement needs, installed by a package and a Homebrew cask.
+How signd ships: a signed and notarized app bundle with the provisioning profile its keychain entitlement needs.
+A package and a Homebrew cask install it.
+The cask links the command onto the program search path (PATH).
 
 ## Requirements
 
 ### Requirement: A signed app bundle
 
-The release SHALL be `Signd.app`, identifier `com.victor-software-house.signd`, signed with a Developer ID Application identity and the hardened runtime, with an embedded Developer ID provisioning profile that authorizes its keychain access group.
+The release SHALL be `Signd.app`, identifier `com.victor-software-house.signd`.
+It SHALL be signed with a Developer ID Application identity and the hardened runtime.
+It SHALL embed a Developer ID provisioning profile that authorizes its keychain access group.
 
 #### Scenario: The bundle passes Gatekeeper
 
@@ -24,7 +28,7 @@ The release SHALL publish `signd.pkg`, signed with a Developer ID Installer iden
 - **WHEN** the package is installed with no network
 - **THEN** `spctl --assess --type install signd.pkg` accepts its stapled ticket
 
-### Requirement: The command is on the PATH
+### Requirement: The command is on the search path
 
 The cask SHALL link `signd` onto the PATH, and the linked command SHALL keep the bundle's entitlements.
 
