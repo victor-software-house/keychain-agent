@@ -487,14 +487,25 @@ struct Serve: ParsableCommand {
 }
 
 /// The package's postinstall step runs as root.
-/// It starts the agent again as the user at the console.
+/// It links `/usr/local/bin/signd` to the app, then starts the agent again as the user at the console.
 /// A cask upgrade first removes the agent's job from launchd, so `service enable` registers the login item again.
 /// With nobody logged in, the login item starts the agent at the next login. It never fails the install.
 struct Postinstall: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Start the agent as the console user after the package installs.", shouldDisplay: false)
+    static let configuration = CommandConfiguration(abstract: "Link the command and start the agent as the console user after the package installs.", shouldDisplay: false)
+    @Option(help: .hidden) var root = "/"
+    @Flag(help: .hidden) var linkOnly = false
 
-    func run() {
+    func run() throws {
         let log = Logger(subsystem: "com.victor-software-house.signd", category: "install")
+        do {
+            if try CommandLink.install(root: URL(fileURLWithPath: root, isDirectory: true)) == .kept {
+                log.notice("/usr/local/bin/signd is not a symbolic link, so it stays as it is")
+            }
+        } catch {
+            if linkOnly { throw Failure(error) }
+            log.error("cannot link /usr/local/bin/signd: \(String(describing: error), privacy: .public)")
+        }
+        if linkOnly { return }
         var uid: uid_t = 0
         guard let user = SCDynamicStoreCopyConsoleUser(nil, &uid, nil) as String?, uid != 0, user != "loginwindow" else { return }
         let signd = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
@@ -507,5 +518,39 @@ struct Postinstall: ParsableCommand {
         } catch {
             log.error("cannot start the agent for \(user, privacy: .public): \(String(describing: error), privacy: .public)")
         }
+    }
+}
+
+/// The symbolic link `/usr/local/bin/signd`, where every shell finds the command.
+enum CommandLink {
+    enum Outcome { case linked, kept }
+
+    static let target = "/Applications/Signd.app/Contents/MacOS/signd"
+
+    /// Makes `usr/local/bin/signd` under `root` a symbolic link to the app's executable.
+    /// A missing `usr/local/bin` is created with mode 755, and owned by root:wheel when this runs as root.
+    /// A symbolic link there is replaced, whatever it points to, and a link to a folder is not followed.
+    /// Anything else there is not signd's, so it stays.
+    static func install(root: URL) throws -> Outcome {
+        let manager = FileManager.default
+        let folder = root.appendingPathComponent("usr/local/bin", isDirectory: true)
+        if !manager.fileExists(atPath: folder.path) {
+            var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o755]
+            if geteuid() == 0 {
+                attributes[.ownerAccountID] = 0
+                attributes[.groupOwnerAccountID] = 0
+            }
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: attributes)
+            try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        }
+        let link = folder.appendingPathComponent("signd")
+        var info = stat()
+        if lstat(link.path, &info) == 0 {
+            guard info.st_mode & S_IFMT == S_IFLNK else { return .kept }
+            if try manager.destinationOfSymbolicLink(atPath: link.path) == target { return .linked }
+            try manager.removeItem(at: link)
+        }
+        try manager.createSymbolicLink(atPath: link.path, withDestinationPath: target)
+        return .linked
     }
 }
