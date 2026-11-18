@@ -231,6 +231,17 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(try b.store.list().isEmpty)
 }
 
+@Test(.timeLimit(.minutes(1))) func aDeviceThisMacHasNotSeenIsRefusedAndKeepsItsRecord() async throws {
+    let (cloud, a, _, _) = try twoDevices()
+    _ = await a.service.checkNow()
+    let unseen = DeviceKey.recordName(for: P256.KeyAgreement.PrivateKey().publicKey.x963Representation)
+    cloud.put(.device, unseen, payload: Data("{}".utf8))
+    let result = await a.service.removeDevice(unseen)
+    #expect(result.outcome == .failed)
+    #expect(result.message?.contains("no device has the id") == true)
+    #expect(cloud.record(unseen) != nil)
+}
+
 @Test(.timeLimit(.minutes(1))) func aRemovalReadsARecordAgainWhenAnotherDeviceSavedItFirst() async throws {
     let (cloud, a, b, _) = try twoDevices()
     _ = await b.service.checkNow()

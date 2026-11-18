@@ -326,14 +326,15 @@ struct SyncCheck {
         let known = state.devices[id] != nil
         // The copies go first, so a failure leaves the Device record, and running the command again finishes the removal.
         // Each pass reads every Key record, so a run after one that stopped halfway still finds the copies left.
-        var dropped = try await dropCopies(for: id, state: &state, requests: &requests)
+        let dropped = try await dropCopies(for: id, state: &state, requests: &requests)
+        // The refusal comes before the delete, so an id this Mac has not seen yet, such as a Mac that published since the last check, keeps its record.
+        guard known || dropped > 0 else { throw SyncRefusal("no device has the id \(id); see signd device list") }
         requests += 1
         try await cloud.delete(.device, name: id)
         state.devices[id] = nil
         // A device whose check started before the delete may have sealed a key to the removed one again; this pass drops that copy.
         // Checks that start after it no longer list the device, so they seal nothing more to it.
-        dropped += try await dropCopies(for: id, state: &state, requests: &requests)
-        guard known || dropped > 0 else { throw SyncRefusal("no device has the id \(id); see signd device list") }
+        _ = try await dropCopies(for: id, state: &state, requests: &requests)
     }
 
     /// Drops the copy sealed to `id` from every Key record, reading a record again when another device saved it first.
