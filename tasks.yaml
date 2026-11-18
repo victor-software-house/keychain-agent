@@ -38,6 +38,8 @@ queue:
       - '2026-11-18, operator asked that the install needs no UI step, and that MDM can provision signd with none: the pkg through MDM, and a managed login items profile (com.apple.servicemanagement, by team identifier) so the agent needs no approval.'
       - '2026-11-18, lead recommendation, operator asked for it: no Homebrew formula. A formula would only repackage the signed app, start a second agent next to the login item, and show a bare Login Items row; signd service gives status, restart and log the way brew services does.'
       - '2026-11-18, operator raised updates: Sparkle 2 updates the app in the background from a notarized Signd.app zip, an appcast and an EdDSA signature, which needs no admin prompt; the cask sets auto_updates true; an MDM setting can turn updates off.'
+      - '2026-11-18, correction: the pkg installs Signd.app as root:wheel 755, so Sparkle cannot replace it without an admin password. The pkg postinstall hands the app to the console user, as a drag install would, so Sparkle updates silently; under MDM the app stays root-owned and MDM ships updates. To test on portable before release.'
+      - 'signd needs no permission grant: no TCC prompt, system extension or approval. The pkg exists for /usr/local/bin, the postinstall start and MDM.'
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
