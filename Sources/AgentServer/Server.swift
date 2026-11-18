@@ -87,7 +87,8 @@ public struct Server: Sendable {
     let agent: Agent
     let sync: SyncService?
     let pool: NIOThreadPool
-    /// The file this agent runs, which a connection must run too to use a private extension; nil refuses them all.
+    /// The file this agent runs; nil refuses every private extension.
+    /// A connection must run the same file to use a private extension.
     let executable: FileIdentity?
 
     public init(agent: Agent, sync: SyncService? = nil) {
@@ -172,7 +173,7 @@ public struct Server: Sendable {
         case let .sign(blob, data, flags):
             guard let signer = await agent.signer(for: blob) else { return .failure }
             do {
-                // Signing runs on the thread pool, so a slow Secure Enclave call holds no event loop or actor.
+                // Signing runs on the thread pool, so a slow Secure Enclave call blocks no event loop or actor.
                 return .signature(try await pool.runIfActive { try signer.sign(data, flags: flags) })
             } catch {
                 log.error("signing failed: \(String(describing: error), privacy: .public)")
@@ -258,7 +259,7 @@ public struct Server: Sendable {
         return .extensionResponse(name: name, contents: contents)
     }
 
-    /// Whether a `session-bind@openssh.com` message says the connection is forwarded: its last field, after the host key,
+    /// Whether a `session-bind@openssh.com` message marks the connection as forwarded: its last field, after the host key,
     /// the session identifier and the signature.
     static func isForwarding(_ contents: Data) -> Bool {
         var reader = Reader(contents)

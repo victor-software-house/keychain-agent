@@ -59,8 +59,9 @@ public struct Settings: Sendable {
     /// Reads the local values from `local` instead of the user defaults, so a test needs no defaults.
     init(local: @escaping @Sendable (Key) -> String?) { self.local = local }
 
-    // CFPreferences names the domain explicitly: through the cask's link, signd has no bundle
-    // identifier, and UserDefaults refuses a suite named after the bundle's own identifier.
+    // CFPreferences takes the domain explicitly.
+    // Through the cask's link, signd has no bundle identifier.
+    // UserDefaults refuses a suite called by the bundle's own identifier.
     public func value(_ key: Key) -> String? { local(key) }
 
     private static func preference(_ key: Key) -> String? {

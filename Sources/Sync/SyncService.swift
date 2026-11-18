@@ -9,7 +9,8 @@ private let log = Logger(subsystem: "com.victor-software-house.signd", category:
 /// Nothing a list or sign request does awaits this actor. Checks and the commands that change shared keys run one at a time.
 public actor SyncService {
     public struct Dependencies: Sendable {
-        /// The iCloud database; nil in a build without signd's iCloud entitlement, which keeps every key local.
+        /// The iCloud database.
+        /// It is nil in a build without signd's iCloud entitlement, and that build keeps every key local.
         public var cloud: (any CloudStore)?
         public var store: any KeyStore
         public var device: @Sendable () throws(StoreError) -> DeviceKey
@@ -113,23 +114,26 @@ public actor SyncService {
         startTimer(0)
     }
 
-    /// A command changed the store: checks soon, so a name a deleted local key freed is taken.
+    /// Called when a command changed the store.
+    /// It starts a check soon, so a name that a deleted local key freed is taken.
     public func reloaded() {
         guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.stopped else { return }
         startTimer(0)
     }
 
-    /// What `signd sync` asks for: a check now, which also starts again after the zone was deleted in iCloud settings.
+    /// What `signd sync` requests: a check now.
+    /// It also starts again after the zone was deleted in iCloud settings.
     public func syncRequested() async -> CheckSummary {
         await check(forced: true)
     }
 
-    /// A check as the timer runs it, which joins one in flight; for tests.
+    /// A check as the timer runs it; for tests.
+    /// It joins one in flight.
     func checkNow() async -> CheckSummary {
         await check(forced: false)
     }
 
-    // MARK: Commands
+    // Commands
 
     public func share(_ name: String) async -> SyncResult {
         guard dependencies.cloud != nil else { return SyncResult(.off, "\(Self.offMessage); \(name) stays on this Mac") }
@@ -185,7 +189,7 @@ public actor SyncService {
         }
     }
 
-    // MARK: Checks
+    // Checks
 
     /// Runs `operation` after every check and command queued before it, so they never interleave.
     private func exclusive<Value: Sendable>(_ operation: @escaping @Sendable (isolated SyncService) async -> Value) async -> Value {
@@ -314,7 +318,7 @@ public actor SyncService {
         return summary
     }
 
-    // MARK: The state file
+    // The state file
 
     /// Writes `sync.json` when something other than the check times changed, or every five minutes, so a check every 2 seconds writes nothing.
     private func persist(force: Bool) {
@@ -336,7 +340,7 @@ public actor SyncService {
         }
     }
 
-    // MARK: The timer
+    // The timer
 
     /// Starts the next check after `delay`, replacing a timer that has not fired. The check runs on its own task, so cancelling a timer never cancels a check.
     private func startTimer(_ delay: TimeInterval) {

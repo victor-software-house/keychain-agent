@@ -19,13 +19,15 @@ public struct SyncSchedule: Sendable {
         interval * (0.8 + 0.4 * random())
     }
 
-    /// The wait after `failures` failed checks in a row: the interval doubled for each failure before, up to 60 seconds,
-    /// times a random factor from 0.5 to 1.
+    /// The wait after `failures` failed checks in a row.
+    /// It is the interval doubled for each failure before, up to 60 seconds, times a random factor from 0.5 to 1.
     public func afterFailure(interval: TimeInterval, failures: Int) -> TimeInterval {
         min(Self.longestBackoff, interval * pow(2, Double(max(0, failures - 1)))) * (0.5 + 0.5 * random())
     }
 
-    /// The wait after a throttle: the retry-after time CloudKit gave, and at least the interval; without one, the failure backoff.
+    /// The wait after a throttle.
+    /// It is the retry-after time CloudKit returned, and at least the interval.
+    /// Without a retry-after time, it is the failure backoff.
     public func afterThrottle(interval: TimeInterval, retryAfter: TimeInterval?, failures: Int) -> TimeInterval {
         guard let retryAfter else { return max(interval, afterFailure(interval: interval, failures: failures)) }
         return max(interval, retryAfter)

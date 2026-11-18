@@ -5,8 +5,8 @@ import SSHWire
 import Synchronization
 @testable import Sync
 
-/// A CloudKit stand-in: one private database with the `signd` zone, change tokens as sequence numbers, change tags as counters,
-/// and failures, delays and account changes the test sets.
+/// A CloudKit stand-in: one private database with the `signd` zone, change tokens as sequence numbers and change tags as counters.
+/// The test sets failures, delays and account changes.
 final class FakeCloud: CloudStore {
     struct Calls: Equatable {
         var account = 0

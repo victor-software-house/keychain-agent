@@ -34,7 +34,7 @@ public struct CloudError: Error, Sendable, Equatable, CustomStringConvertible {
     public enum Kind: Sendable, Equatable {
         /// The network failed or a request timed out.
         case network
-        /// CloudKit asked signd to wait; `retryAfter` says how long when it said.
+        /// CloudKit throttled signd; `retryAfter` is the wait CloudKit returned, when it returned one.
         case throttled
         /// The account is signed out or not available.
         case account

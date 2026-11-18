@@ -8,7 +8,7 @@ import Synchronization
 import SSHWire
 import Testing
 
-/// A store in memory, for tests on runners without a Secure Enclave or signd's entitlements.
+/// An in-memory store, for tests on runners that lack a Secure Enclave and signd's entitlements.
 final class MemoryStore: KeyStore {
     private let keys = Mutex<[StoredKey]>([])
 

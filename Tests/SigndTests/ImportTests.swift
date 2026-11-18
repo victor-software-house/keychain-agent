@@ -43,7 +43,7 @@ func sshKeygen(in directory: borrowing TestDirectory, _ arguments: [String], pas
     return GeneratedFile(path: path, publicBlob: blob)
 }
 
-/// PEM armor around `body`, built here so that no source line holds an armor header.
+/// PEM armor around `body`, built here so that no source line contains an armor header.
 func armor(_ label: String, _ body: String) -> Data {
     Data("-----BEGIN \(label)-----\n\(body)\n-----END \(label)-----\n".utf8)
 }

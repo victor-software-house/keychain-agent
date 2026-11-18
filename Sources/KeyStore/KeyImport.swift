@@ -35,9 +35,9 @@ public enum ImportError: Error, Sendable, Equatable, CustomStringConvertible {
     }
 }
 
-/// Reads private key files and generates keys, as the numbers a `PrivateKey` holds.
+/// Reads private key files and generates keys, as the numbers a `PrivateKey` stores.
 public enum KeyImport {
-    /// Reads an OpenSSH, PKCS#1, PKCS#8 or SEC1 private key file, as PEM text.
+    /// Reads an OpenSSH, Public-Key Cryptography Standards (PKCS) 1, PKCS 8 or SEC1 private key file, as PEM text.
     public static func parse(_ data: Data) throws(ImportError) -> ImportedKey {
         guard let text = String(data: data, encoding: .utf8), let label = pemLabel(text) else {
             throw .unreadable("not a PEM private key file")
@@ -62,7 +62,7 @@ public enum KeyImport {
         return imported
     }
 
-    /// Refuses a key signd cannot serve, such as RSA under 2048 bits, with the reason.
+    /// Refuses a key signd cannot serve, such as Rivest-Shamir-Adleman (RSA) under 2048 bits, with the reason.
     public static func validate(_ key: PrivateKey) throws(ImportError) {
         do {
             _ = try SoftwareSigner(key)
@@ -83,7 +83,7 @@ public enum KeyImport {
         }
     }
 
-    // MARK: Formats
+    // Formats
 
     private static func pemLabel(_ text: String) -> String? {
         for line in text.split(whereSeparator: \.isNewline) {
@@ -125,7 +125,7 @@ public enum KeyImport {
     }
 
     /// Reads `ECPrivateKey ::= SEQUENCE { version, privateKey, [0] parameters, [1] publicKey }` (SEC1);
-    /// the curve comes from its parameters, or from `fallback`, the PKCS#8 algorithm parameters.
+    /// the curve comes from its parameters, or from `fallback`, the PKCS 8 algorithm parameters.
     private static func ecdsa(sec1 der: [UInt8], fallback: Curve?) throws(ImportError) -> PrivateKey {
         let (scalar, named) = try wrap("EC key") {
             try DER.sequence(try DER.parse(der), identifier: .sequence) { nodes in
@@ -151,8 +151,9 @@ public enum KeyImport {
         }
     }
 
-    /// The curve an `ECParameters` node names: an OID, or the explicit parameters macOS's ssh-keygen writes,
-    /// which are told apart by their field prime.
+    /// The curve an `ECParameters` node selects: an object identifier (OID), or the explicit parameters
+    /// that macOS's ssh-keygen writes.
+    /// Their field prime tells them apart.
     private static func curve(of parameters: ASN1Node) -> Curve? {
         if let oid = try? ASN1ObjectIdentifier(derEncoded: parameters) {
             return switch oid {
@@ -191,10 +192,10 @@ public enum KeyImport {
     private static let p384Curve: ASN1ObjectIdentifier = [1, 3, 132, 0, 34]
     private static let p521Curve: ASN1ObjectIdentifier = [1, 3, 132, 0, 35]
 
-    /// The parts of a PKCS#8 `PrivateKeyInfo` that decide how to read it.
+    /// The parts of a PKCS 8 `PrivateKeyInfo` that decide how to read it.
     private struct PrivateKeyInfo {
         let algorithm: ASN1ObjectIdentifier
-        /// The curve an EC key's algorithm parameters name.
+        /// The curve that an Elliptic Curve (EC) key's algorithm parameters select.
         let curve: Curve?
         let privateKey: ASN1OctetString
 
@@ -223,7 +224,7 @@ public enum KeyImport {
         case rsaAlgorithm: return try rsa(pem: pem)
         case ecAlgorithm: return try ecdsa(sec1: Array(info.privateKey.bytes), fallback: info.curve)
         case ed25519Algorithm:
-            // The private key holds a second OCTET STRING, which holds the 32-byte seed.
+            // The private key contains a second octet string, which contains the 32-byte seed.
             let seed = try wrap("Ed25519 key") { try ASN1OctetString(derEncoded: try DER.parse(Array(info.privateKey.bytes))).bytes }
             let key = try wrap("Ed25519 key") { try Curve25519.Signing.PrivateKey(rawRepresentation: Data(seed)) }
             return .ed25519(seed: key.rawRepresentation, publicKey: key.publicKey.rawRepresentation)
@@ -232,8 +233,8 @@ public enum KeyImport {
         }
     }
 
-    /// Reads `RSAPrivateKey ::= SEQUENCE { version, n, e, d, p, q, dp, dq, qinv }` from a key's DER,
-    /// taking the PKCS#1 form or unwrapping a PKCS#8 one.
+    /// Reads `RSAPrivateKey ::= SEQUENCE { version, n, e, d, p, q, dp, dq, qinv }` from a key's Distinguished Encoding Rules (DER) bytes,
+    /// taking the PKCS 1 form or unwrapping a PKCS 8 one.
     private static func rsaNumbers(of key: _RSA.Signing.PrivateKey) throws(ImportError) -> PrivateKey {
         do {
             return try rsaNumbers(der: Array(key.derRepresentation))
@@ -248,7 +249,7 @@ public enum KeyImport {
             _ = try Int(derEncoded: &nodes)
             guard let next = nodes.next() else { throw ASN1Error.invalidASN1Object(reason: "RSA key ends after its version") }
             if next.identifier == .sequence {
-                // PKCS#8: the algorithm identifier, then an OCTET STRING that holds the PKCS#1 key.
+                // PKCS 8: the algorithm identifier, then an octet string that contains the PKCS 1 key.
                 let inner = try ASN1OctetString(derEncoded: &nodes)
                 return try rsaNumbers(der: Array(inner.bytes))
             }
