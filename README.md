@@ -1,6 +1,6 @@
 # signd
 
-An SSH agent for macOS backed by the Secure Enclave.  
+An SSH agent for macOS backed by the [Secure Enclave][secure-enclave].  
 Create new keys, import the Ed25519, ECDSA and RSA keys you already have, or sync SSH keys from a 1Password vault.
 
 ```mermaid
@@ -20,7 +20,7 @@ No command can export a private key.
 ## Install
 
 Each release attaches `signd.pkg`, signed with a Developer ID, notarized and stapled, which installs `/Applications/Signd.app`.  
-Its provisioning profile gives the app a keychain access group of its own.  
+The app's provisioning profile grants it a private keychain access group.  
 The Homebrew cask links `signd` onto the PATH.
 
 Then start the agent and point SSH at it:
@@ -54,19 +54,19 @@ signd key delete old
 | Ed25519 | wrapped key | `--type ed25519` | yes |
 | ECDSA P-384, P-521 | wrapped key | no | yes |
 | RSA, 2048 to 8192 bits | wrapped key | `--type rsa-3072`, `--type rsa-4096` | yes |
-| RSA under 2048 bits, DSA | not supported; signd names the type in its error | no | no |
+| RSA under 2048 bits, DSA | not supported | no | no |
 
 The Secure Enclave only supports P-256, so signd encrypts every other key with a Secure Enclave key:
 
 ```mermaid
 flowchart LR
-  input["key file or stdin"] -->|"signd key import"| seal["encrypted with HPKE to its own Secure Enclave key"]
+  input["key file or stdin"] -->|"signd key import"| seal["encrypted with HPKE to a dedicated Secure Enclave key"]
   seal --> item[("Keychain stores only the ciphertext")]
   item -->|first signature| open["decrypted into the agent's memory"]
   open -->|"idle for key-lifetime"| dropped["wiped from memory"]
 ```
 
-To import a key with a passphrase, pass its file path.  
+To import a key with a passphrase, pass the file path.  
 signd runs the system `ssh-add` to ask for the passphrase and decrypt the key, then receives it over a socket only you can open.  
 The decrypted key is never written to disk.
 
@@ -88,7 +88,7 @@ sequenceDiagram
   loop once per interval, at a random point in it
     A->>O: list vaults (1 request)
     alt a vault's content version changed
-      A->>O: list its items, fetch the changed SSH Key items
+      A->>O: list items in that vault, fetch changed SSH Key items
       A->>K: wrap and store each key
       A->>A: rewrite ~/.ssh/signd/config
     end
@@ -98,11 +98,12 @@ sequenceDiagram
 
 ### Set up
 
-1. Make a vault with only SSH Key items and the `signd` note, so edits to other items never change its content version.
+1. Make a vault for signd with only SSH Key items and the `signd` note.  
+   Edits to other items in the vault would trigger extra syncs.
 2. Make a service account that can read only that vault.
    > [!NOTE]
    > On a Business account, each token gets 10,000 reads an hour, and all service accounts together 50,000 requests a day.
-3. Sign in with its token, read from stdin:
+3. Sign in with the service account token, read from stdin:
 
    ```sh
    pbpaste | signd login
@@ -120,7 +121,7 @@ signd syncs every SSH Key item in every vault the token can read.
 
 signd skips an item it cannot use and lists it in `signd status` with the reason:
 
-- a local key already has its name;
+- a local key already uses the same name;
 - `hosts` contains an invalid character;
 - the key cannot be read, for example because it has a passphrase.
 
@@ -138,7 +139,7 @@ signd logout                         # delete the token and every synced key, an
 | `key-lifetime` | 1h | 1 second to 30 days | how long a decrypted key stays in memory when idle |
 
 - `signd config set interval 10m` sets a value on this Mac, and `signd config unset interval` removes it.
-- A Secure Note titled `signd` in a synced vault sets fleet values in text fields with these names, as `30s`, `5m`, `1h` or `2d`.
+- A Secure Note titled `signd` in a synced vault sets values for every Mac, in text fields named `interval` and `key-lifetime`, as `30s`, `5m`, `1h` or `2d`.
 - A value set on the Mac wins over the note.
 - signd rejects a value out of range, and ignores one in the note, showing it in `signd status`.
 
@@ -166,3 +167,5 @@ CI builds and tests on GitHub-hosted runners.
 ## License
 
 [GNU Affero General Public License v3.0](LICENSE).
+
+[secure-enclave]: https://support.apple.com/guide/security/the-secure-enclave-sec59b0b31ff/web
