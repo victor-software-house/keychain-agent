@@ -90,7 +90,7 @@ printf 'Include %s/.ssh/signd/config\n' "$home" > "$work/ssh_config"
 passwd_home=$(id -P | cut -d: -f9)
 
 routing() {
-  if ! SIGND_E2E_ROUTING_HOME="$home" SIGND_E2E_ROUTING_STEP="$1" swift test --filter RoutingForEndToEnd > "$work/routing.log" 2>&1; then
+  if ! SIGND_E2E_ROUTING_HOME="$home" SIGND_E2E_ROUTING_STEP="$1" swift test --filter writesTheFilesForTheShellScenarios > "$work/routing.log" 2>&1; then
     cat "$work/routing.log" >&2
     fail "the routing test failed at step $1"
   fi
