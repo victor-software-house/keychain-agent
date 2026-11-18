@@ -6,9 +6,9 @@ Where signd's settings and declared keys come from, in what order, and how a cha
 
 ## ADDED Requirements
 
-### Requirement: Settings come from the profile, the file, the note and the default, in that order
+### Requirement: Settings come from the profile, the file and the default, in that order
 
-signd SHALL take each setting from the first of these that sets it: the domain's managed preferences from an MDM profile, `~/.config/signd/config.toml`, the `signd` note, the built-in default.
+signd SHALL take each setting from the first of these that sets it: the domain's managed preferences from an MDM profile, `~/.config/signd/config.toml`, the built-in default.
 
 #### Scenario: The file sets the interval
 
@@ -40,7 +40,7 @@ signd SHALL reject a file that does not parse or holds an unknown name or a bad 
 
 ### Requirement: Declared keys exist, and only they are removed
 
-At apply, signd SHALL create each declared key that does not exist, SHALL update the hosts and comment of a key it created from the file, and SHALL delete a key it created from the file whose entry is gone. It SHALL NOT change or delete a key made by command or synced from 1Password.
+At apply, signd SHALL create each declared key that does not exist, SHALL update the hosts and comment of a key it created from the file, and SHALL delete a key it created from the file whose entry is gone. It SHALL NOT change or delete a key made by command or shared from another Mac.
 
 #### Scenario: An entry is removed
 
