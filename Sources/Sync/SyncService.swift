@@ -133,7 +133,7 @@ public actor SyncService {
         await check(forced: false)
     }
 
-    // Commands
+    // MARK: Commands
 
     public func share(_ name: String) async -> SyncResult {
         guard dependencies.cloud != nil else { return SyncResult(.off, "\(Self.offMessage); \(name) stays on this Mac") }
@@ -189,7 +189,7 @@ public actor SyncService {
         }
     }
 
-    // Checks
+    // MARK: Checks
 
     /// Runs `operation` after every check and command queued before it, so they never interleave.
     private func exclusive<Value: Sendable>(_ operation: @escaping @Sendable (isolated SyncService) async -> Value) async -> Value {
@@ -318,7 +318,7 @@ public actor SyncService {
         return summary
     }
 
-    // The state file
+    // MARK: The state file
 
     /// Writes `sync.json` when something other than the check times changed, or every five minutes, so a check every 2 seconds writes nothing.
     private func persist(force: Bool) {
@@ -340,7 +340,7 @@ public actor SyncService {
         }
     }
 
-    // The timer
+    // MARK: The timer
 
     /// Starts the next check after `delay`, replacing a timer that has not fired. The check runs on its own task, so cancelling a timer never cancels a check.
     private func startTimer(_ delay: TimeInterval) {

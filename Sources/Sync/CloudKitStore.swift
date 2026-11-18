@@ -167,7 +167,7 @@ public struct CloudKitStore: CloudStore {
         }
     }
 
-    // Conversions
+    // MARK: Conversions
 
     static func record(_ record: CKRecord) -> CloudRecord? {
         guard let type = RecordType(rawValue: record.recordType) else { return nil }

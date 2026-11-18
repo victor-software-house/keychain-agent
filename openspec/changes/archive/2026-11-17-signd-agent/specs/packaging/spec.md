@@ -26,7 +26,7 @@ The release SHALL publish `signd.pkg`, signed with a Developer ID Installer iden
 - **WHEN** the package is installed with no network
 - **THEN** `spctl --assess --type install signd.pkg` accepts its stapled ticket
 
-### Requirement: The command is on the `PATH`
+### Requirement: The command is on the search path
 
 The cask SHALL link `signd` onto the `PATH`, and the linked command SHALL keep the bundle's entitlements.
 

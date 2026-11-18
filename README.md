@@ -43,7 +43,7 @@ export SSH_AUTH_SOCK=~/.ssh/signd.sock   # or IdentityAgent ~/.ssh/signd.sock in
 ```sh
 signd key create work --host github.com      # a Secure Enclave P-256 key; prints its public key
 signd key create ci --type ed25519           # an Ed25519 key, sealed to the Secure Enclave; also rsa-3072 and rsa-4096
-signd key import old ~/.ssh/id_rsa           # an existing private key file in OpenSSH, Public-Key Cryptography Standards (PKCS) 1 or 8, or SEC1 format
+signd key import old ~/.ssh/id_rsa           # an existing private key file in OpenSSH, `PKCS#1`, `PKCS#8` or SEC1 format
 signd key import ci - < ci_ed25519           # the same from stdin, for a key that has no passphrase
 signd key list
 signd key delete old

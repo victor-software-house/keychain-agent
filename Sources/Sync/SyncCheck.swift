@@ -39,7 +39,7 @@ struct SyncCheck {
     /// This device's record name.
     var me: String { device.recordName }
 
-    // The check
+    // MARK: The check
 
     /// Reads the changes since the state's tokens, brings the store in line, publishes this device's record and seals keys for new devices.
     func run(from old: SyncState, requests: inout Int, changes: inout Changes) async throws -> SyncState {
@@ -276,7 +276,7 @@ struct SyncCheck {
         }
     }
 
-    // Commands
+    // MARK: Commands
 
     /// Shares a key of this device: seals it to every known device, saves its record, and keeps this device's own copy in its place.
     func share(_ name: String, state: inout SyncState, requests: inout Int) async throws -> StoredKey {
