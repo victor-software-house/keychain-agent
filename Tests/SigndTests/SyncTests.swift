@@ -103,6 +103,16 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(try b.store.list().isEmpty)
 }
 
+@Test(.timeLimit(.minutes(1))) func deletingAKeyAnotherMacDeletedFirstStillDeletesItHere() async throws {
+    let (_, a, b, _) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    #expect(await b.service.deleteShared("deploy") == SyncResult(.done))
+    #expect(await a.service.deleteShared("deploy") == SyncResult(.done))
+    #expect(try a.store.list().isEmpty)
+}
+
 @Test(.timeLimit(.minutes(1))) func aLocalKeyWithTheNameIsKeptAndTheSharedOneTakesItsPlaceOnceItIsDeleted() async throws {
     let (_, a, b, privateKey) = try twoDevices()
     let (other, _) = try localWrappedKey("deploy")
@@ -240,6 +250,27 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(result.outcome == .failed)
     #expect(result.message?.contains("no device has the id") == true)
     #expect(cloud.record(unseen) != nil)
+}
+
+@Test(.timeLimit(.minutes(1))) func aRemovalThatStopsAfterTheDeleteFinishesWhenRunAgain() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    // A copy sealed again before the delete, and a last pass that fails: the record is gone and a copy is left.
+    let resealed = try Wrapping.seal(privateKey, comment: "", to: b.agreement.publicKey)
+    cloud.beforeNextDelete {
+        guard let record = cloud.record("key-deploy"), var payload = try? Payload.decode(KeyPayload.self, from: record.payload) else { return }
+        payload.sealed[b.device.recordName] = resealed
+        cloud.put(.key, "key-deploy", payload: Payload.encode(payload))
+        cloud.failSaves(with: CloudError(.network, "offline"))
+    }
+    #expect(await a.service.removeDevice(b.device.recordName).outcome == .failed)
+    #expect(cloud.record(b.device.recordName) == nil)
+
+    cloud.failSaves(with: nil)
+    #expect(await a.service.removeDevice(b.device.recordName) == SyncResult(.done))
+    let payload = try Payload.decode(KeyPayload.self, from: try #require(cloud.record("key-deploy")).payload)
+    #expect(Array(payload.sealed.keys) == [a.device.recordName])
 }
 
 @Test(.timeLimit(.minutes(1))) func aRemovalReadsARecordAgainWhenAnotherDeviceSavedItFirst() async throws {
