@@ -8,7 +8,8 @@ The `signd` command: managing keys, the agent service and settings, with output 
 
 ### Requirement: Key commands
 
-`signd key create NAME`, `signd key list`, `signd key show NAME` and `signd key delete NAME` SHALL create a Secure Enclave key, list keys, print one key's OpenSSH public key, and delete one key, and no command SHALL print a private key.
+`signd key create NAME`, `signd key list`, `signd key show NAME` and `signd key delete NAME` SHALL create a Secure Enclave key, list keys, print one key's OpenSSH public key, and delete one key.
+No command SHALL print a private key.
 
 #### Scenario: Create, show and delete
 
@@ -18,7 +19,7 @@ The `signd` command: managing keys, the agent service and settings, with output 
 #### Scenario: Names are unique
 
 - **WHEN** `signd key create build` runs while a key named `build` exists
-- **THEN** the command fails, names the existing key, and changes nothing
+- **THEN** the command fails, shows the name of the existing key, and changes nothing
 
 ### Requirement: Key metadata
 
@@ -31,7 +32,9 @@ The `signd` command: managing keys, the agent service and settings, with output 
 
 ### Requirement: Service commands
 
-`signd service enable` SHALL register the agent to run at login and start it now, `signd service disable` SHALL stop and unregister it, and both SHALL succeed when the service is already in the requested state.
+`signd service enable` SHALL register the agent to run at login and start it now.
+`signd service disable` SHALL stop and unregister it.
+Both SHALL succeed when the service is already in the requested state.
 
 #### Scenario: Enable twice
 
@@ -49,7 +52,8 @@ The `signd` command: managing keys, the agent service and settings, with output 
 
 ### Requirement: Machine-readable output
 
-Every command that prints data SHALL accept `--json` and print one JSON document on stdout, and every failure SHALL exit non-zero with the reason on stderr.
+Every command that prints data SHALL accept `--json` and print one JSON document on stdout.
+Every failure SHALL exit non-zero with the reason on stderr.
 
 #### Scenario: List as JSON
 

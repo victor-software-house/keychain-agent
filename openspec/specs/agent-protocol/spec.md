@@ -22,16 +22,19 @@ How signd serves SSH clients: the socket it listens on, who may connect, and the
 
 ### Requirement: signd lists its identities
 
-signd SHALL answer "request identities" with the public key blob and comment of every stored key and every memory-only key, without reading any private key.
+signd SHALL answer "request identities" with the public key blob and comment of every stored key and every memory-only key.
+It SHALL NOT read any private key.
 
 #### Scenario: ssh-add lists the keys
 
-- **WHEN** the store holds two keys and `ssh-add -L` runs against the socket
+- **WHEN** the store contains two keys and `ssh-add -L` runs against the socket
 - **THEN** it prints both public keys, each with its comment
 
 ### Requirement: signd signs with the requested hash
 
-signd SHALL answer "sign" for a key it serves, and for an RSA key SHALL use SHA-512 when the flags carry 4, SHA-256 when they carry 2, and SHA-1 only when they carry neither.
+signd SHALL answer "sign" for a key it serves.
+For a Rivest-Shamir-Adleman (RSA) key, it SHALL use SHA-512 when the flags carry 4 and SHA-256 when they carry 2.
+It SHALL use SHA-1 only when the flags carry neither.
 
 #### Scenario: A signature verifies
 
@@ -45,7 +48,9 @@ signd SHALL answer "sign" for a key it serves, and for an RSA key SHALL use SHA-
 
 ### Requirement: signd accepts memory-only keys
 
-signd SHALL accept "add identity" and "add identity constrained" as keys held in memory only, SHALL drop a key when its lifetime constraint ends, and SHALL refuse a confirm constraint.
+signd SHALL accept "add identity" and "add identity constrained" as keys kept in memory only.
+It SHALL drop a key when its lifetime constraint ends.
+It SHALL reject a confirm constraint.
 
 #### Scenario: ssh-add adds a key for a while
 
@@ -63,7 +68,7 @@ signd SHALL accept "add identity" and "add identity constrained" as keys held in
 
 #### Scenario: ssh-add -D keeps stored keys
 
-- **WHEN** the store holds a key, a memory-only key was added, and `ssh-add -D` runs
+- **WHEN** the store contains a key, a memory-only key was added, and `ssh-add -D` runs
 - **THEN** `ssh-add -L` lists only the stored key
 
 ### Requirement: signd answers the extensions it supports
@@ -77,7 +82,9 @@ signd SHALL answer the `query` extension with the names of the extensions it sup
 
 ### Requirement: signd refuses what it does not support
 
-signd SHALL answer with `SSH_AGENT_FAILURE` every message it does not support, including lock and unlock, and every message it cannot parse, and SHALL close a connection that announces a message over 256 KiB.
+signd SHALL answer with `SSH_AGENT_FAILURE` every message it does not support, including lock and unlock.
+It SHALL answer the same way every message it cannot parse.
+It SHALL close a connection that announces a message over 256 KiB.
 
 #### Scenario: Lock is refused
 
