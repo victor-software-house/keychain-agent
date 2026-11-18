@@ -163,3 +163,12 @@ horizon:
       profiles.
     notes:
       - 2026-11-18, operator deferred the 1Password macs field to a later change with tags or profiles.
+
+  - id: SGD-012
+    title: Back up keys to 1Password, apart from the iCloud sync
+    scope: backup
+    outcome: A key can be restored from a backup the user keeps outside iCloud.
+    reason: research
+    open: "The design is missing: what a backup holds, when it runs, how a restore picks keys, and how it stays apart from the real-time iCloud sync."
+    notes:
+      - 2026-11-18, operator decided iCloud does the real-time sync and 1Password stays useful as a backup store, which needs its own design.
