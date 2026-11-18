@@ -32,6 +32,7 @@ queue:
       - signd service status, restart and log report and control the agent as brew services does for a formula.
       - The cask uninstalls the login item, the receipt and the app, and its zap removes the sync state and ~/.ssh/signd.
       - A release publishes a notarized Signd.app zip with a signed appcast, and an installed signd updates itself from it with no prompt.
+      - Opening signd.pkg shows the signd background, a welcome, the AGPL license and a conclusion page, and Installer refuses an Intel Mac or an older macOS before it asks for a password.
     notes:
       - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
       - 2026-11-18, operator wants every pkg script to be one line that runs a signd command, with the logic in Swift; postinstall already does.
@@ -39,6 +40,7 @@ queue:
       - 2026-11-18, operator decided the pkg is needed only for the first install and for MDM, and Sparkle updates the app after that. The pkg postinstall hands Signd.app to the console user, as a drag install would, so Sparkle swaps it from a notarized zip with no prompt; under MDM the app stays root-owned and MDM ships updates.
       - An update keeps the login item, the keychain items and the iCloud container because each is tied to the team identifier and the bundle identifier, which every release keeps; signd needs no TCC grant.
       - '2026-11-18, operator decided: no Homebrew formula. It would only repackage the signed app, start a second agent beside the login item and show a bare Login Items row; signd service status, restart and log cover what brew services gives, and the cask stays the Homebrew route.'
+      - '2026-11-18, operator decided the pkg gets a full Installer experience through a productbuild distribution file: the signd background in light and dark, a two-line welcome, the AGPL license, a conclusion page with what is ready and a first command, and checks that refuse an Intel Mac or an older macOS before the admin password.'
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
