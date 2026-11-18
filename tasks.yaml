@@ -28,9 +28,11 @@ queue:
       - After the pkg, signd status shows the agent answering; when Login Items needs approval, signd status says so and signd service enable opens that pane.
       - The README Install section starts from the pkg, with Homebrew as the second route.
       - 'After the pkg, ssh uses signd with no other step: signd adds Include ~/.ssh/signd/config at the top of ~/.ssh/config when no line includes it, creating the file when it is missing, and signd status shows whether the line is there.'
+      - An MDM profile in the repository installs signd and approves its login item by team identifier, and a Mac enrolled with it runs the agent after the pkg with no click.
     notes:
       - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
       - 2026-11-18, operator wants every pkg script to be one line that runs a signd command, with the logic in Swift; postinstall already does.
+      - '2026-11-18, operator asked that the install needs no UI step, and that MDM can provision signd with none: the pkg through MDM, and a managed login items profile (com.apple.servicemanagement, by team identifier) so the agent needs no approval.'
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
