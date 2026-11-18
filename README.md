@@ -1,7 +1,8 @@
 # signd
 
 An SSH agent for macOS backed by the [Secure Enclave][secure-enclave].
-Create new keys or import the Ed25519, ECDSA and RSA keys you already have, and share them through iCloud with every Mac on your Apple account.
+Create new keys, or import the Ed25519, Elliptic Curve Digital Signature Algorithm (ECDSA) and Rivest-Shamir-Adleman (RSA) keys you already have.
+Signed in to your Apple account, every Mac shares them through iCloud.
 
 ```mermaid
 flowchart LR
@@ -21,7 +22,7 @@ No command can export a private key.
 
 Each release attaches `signd.pkg`, signed with a Developer ID, notarized and stapled, which installs `/Applications/Signd.app`.
 The app's provisioning profile grants it a private keychain access group.
-The Homebrew cask links `signd` onto the PATH.
+The Homebrew cask links `signd` onto the `PATH`.
 
 Then start the agent and point SSH at it:
 
@@ -42,7 +43,7 @@ export SSH_AUTH_SOCK=~/.ssh/signd.sock   # or IdentityAgent ~/.ssh/signd.sock in
 ```sh
 signd key create work --host github.com      # a Secure Enclave P-256 key; prints its public key
 signd key create ci --type ed25519           # an Ed25519 key, sealed to the Secure Enclave; also rsa-3072 and rsa-4096
-signd key import old ~/.ssh/id_rsa           # an existing OpenSSH, PKCS#1, PKCS#8 or SEC1 private key file
+signd key import old ~/.ssh/id_rsa           # an existing private key file in OpenSSH, Public-Key Cryptography Standards (PKCS) 1 or 8, or SEC1 format
 signd key import ci - < ci_ed25519           # the same from stdin, for a key that has no passphrase
 signd key list
 signd key delete old
@@ -54,7 +55,7 @@ signd key delete old
 | Ed25519 | wrapped key | `--type ed25519` | yes |
 | ECDSA P-384, P-521 | wrapped key | no | yes |
 | RSA, 2048 to 8192 bits | wrapped key | `--type rsa-3072`, `--type rsa-4096` | yes |
-| RSA under 2048 bits, DSA | not supported | no | no |
+| RSA under 2048 bits, Digital Signature Algorithm (DSA) | not supported | no | no |
 
 The Secure Enclave only supports P-256, so signd encrypts every other key with a Secure Enclave key:
 
@@ -79,7 +80,9 @@ The decrypted key is never written to disk.
 ## Keys through iCloud
 
 signd shares keys between the Macs signed in to one Apple account, through that account's iCloud private database.
-Each Mac makes its own Secure Enclave key, and every shared key is sealed to each Mac's key before it leaves the Mac, so neither Apple nor the signd team can read it.
+Each Mac makes its own Secure Enclave key.
+Every shared key is sealed to each Mac's key before it leaves the Mac.
+Neither Apple nor the signd team can read it.
 
 ```mermaid
 sequenceDiagram
@@ -114,13 +117,18 @@ signd sync                                                     # check iCloud no
 signd status                                                   # iCloud state, the last and next check, keys waiting or skipped
 ```
 
-- A new Mac on the account gets every shared key at the next check of a Mac that has them, with no command on either Mac.
-- A check with no change costs one request. After a failure signd waits longer each time, up to a minute, and after a throttle it waits the time iCloud gives.
+- A new Mac on the account gets every shared key at the next check of a Mac that has them.
+  No command is needed on either Mac.
+- A check with no change costs one request.
+  After a failure signd waits longer each time, up to a minute.
+  After a throttle it waits the time iCloud gives.
 - A key whose name a key on this Mac already has is skipped and shown in `signd status` until that key is deleted.
-- Signing in to another Apple account, or deleting signd's data in iCloud settings, removes the keys other Macs shared; each key this Mac made or imported stays, as a local key.
+- Signing in to another Apple account, or deleting signd's data in iCloud settings, removes the keys other Macs shared.
+  Each key this Mac made or imported stays, as a local key.
 
 > [!NOTE]
-> Sharing needs the notarized release: only its provisioning profile grants signd's iCloud container. A build from source keeps every key on its Mac, and `signd status` shows sync as off.
+> Sharing needs the notarized release: only its provisioning profile grants signd's iCloud container.
+> A build from source keeps every key on its Mac, and `signd status` shows sync as off.
 
 ## Settings
 
