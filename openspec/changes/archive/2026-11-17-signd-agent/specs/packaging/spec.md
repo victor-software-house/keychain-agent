@@ -8,7 +8,9 @@ How signd ships: a signed and notarized app bundle with the provisioning profile
 
 ### Requirement: A signed app bundle
 
-The release SHALL be `Signd.app`, identifier `com.victor-software-house.signd`, signed with a Developer ID Application identity and the hardened runtime, with an embedded Developer ID provisioning profile that authorizes its keychain access group.
+The release SHALL be `Signd.app`, identifier `com.victor-software-house.signd`.
+It SHALL be signed with a Developer ID Application identity and the hardened runtime.
+It SHALL embed a Developer ID provisioning profile that authorizes its keychain access group.
 
 #### Scenario: The bundle passes Gatekeeper
 
@@ -24,9 +26,9 @@ The release SHALL publish `signd.pkg`, signed with a Developer ID Installer iden
 - **WHEN** the package is installed with no network
 - **THEN** `spctl --assess --type install signd.pkg` accepts its stapled ticket
 
-### Requirement: The command is on the PATH
+### Requirement: The command is on the `PATH`
 
-The cask SHALL link `signd` onto the PATH, and the linked command SHALL keep the bundle's entitlements.
+The cask SHALL link `signd` onto the `PATH`, and the linked command SHALL keep the bundle's entitlements.
 
 #### Scenario: The linked command reads the store
 
