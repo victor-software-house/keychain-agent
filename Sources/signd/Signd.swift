@@ -317,7 +317,10 @@ struct DeviceCommand: ParsableCommand {
     }
 
     struct Remove: ParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Remove a device that no longer runs signd, and drop its copies of every shared key.")
+        static let configuration = CommandConfiguration(
+            abstract: "Remove a device that no longer runs signd, and drop its copies of every shared key.",
+            discussion: "A removal that fails partway, or that runs while another Mac checks iCloud, may leave a copy. Run it again to drop it."
+        )
         @Argument(help: "The device's id, as signd device list prints it.") var id: String
 
         func run() throws {

@@ -109,7 +109,7 @@ signd key create scratch --type ed25519 --local                # stays on this M
 signd key share old                                            # share a key made before
 signd key delete deploy                                        # deleted on every Mac
 signd device list                                              # the Macs on the account
-signd device remove device-0123…                               # forget a Mac that is gone, and drop its copies
+signd device remove device-0123…                               # forget a Mac that is gone, and drop its copies; run again if it fails
 signd sync                                                     # check iCloud now, wait, and print what changed
 signd status                                                   # iCloud state, the last and next check, keys waiting or skipped
 ```
