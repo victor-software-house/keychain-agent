@@ -4,7 +4,7 @@ import SSHWire
 import Testing
 @testable import Sync
 
-/// A key with `hosts`, as the store holds it.
+/// A key with `hosts`, as the store keeps it.
 func routedKey(_ name: String, hosts: [String]) -> StoredKey {
     var key = storedSoftwareKey(name)
     key.hosts = hosts

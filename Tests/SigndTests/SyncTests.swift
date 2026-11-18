@@ -17,7 +17,7 @@ func eventually(_ seconds: Double = 5, _ condition: () -> Bool) async -> Bool {
     return condition()
 }
 
-/// Two devices on one account, the first holding a local key `deploy` with a host.
+/// Two devices on one account, the first having a local key `deploy` with a host.
 func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: PrivateKey) {
     let cloud = FakeCloud()
     let a = DeviceRig(cloud: cloud, name: "mac-a")
@@ -27,7 +27,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     return (cloud, a, b, privateKey)
 }
 
-// MARK: Records
+// Records
 
 @Test func payloadsKeepEveryFieldThroughAnEncodeAndDecode() throws {
     let wrapped = WrappedKey(encapsulatedKey: Data([1, 2]), ciphertext: Data([3, 4]))
@@ -50,7 +50,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(name == DeviceKey.recordName(for: key))
 }
 
-// MARK: Sharing
+// Sharing
 
 @Test(.timeLimit(.minutes(1))) func aSharedKeyReachesTheOtherDevice() async throws {
     let (cloud, a, b, privateKey) = try twoDevices()
@@ -302,7 +302,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(cloud.record(b.device.recordName) == nil)
 }
 
-// MARK: The check
+// The check
 
 @Test(.timeLimit(.minutes(1))) func anUnchangedZoneCostsOneRequest() async throws {
     let rig = DeviceRig(cloud: FakeCloud())
@@ -414,7 +414,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(!text.contains(secret.base64EncodedString()))
 }
 
-// MARK: The schedule
+// The schedule
 
 @Test func eachWaitAfterASuccessIsTheIntervalTimesZeroPointEightToOnePointTwo() {
     #expect(SyncSchedule(random: { 0 }).afterSuccess(interval: 2) == 1.6)
@@ -490,7 +490,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(p99(whileChecking) <= baseline * 3 + .milliseconds(5))
 }
 
-// MARK: Settings and status
+// Settings and status
 
 @Test(arguments: ["infs", "nans", "1e25s", "0s", "3601s", "2h", "-1m", "5"])
 func anIntervalOutsideItsBoundsIsRefused(text: String) {
@@ -542,7 +542,7 @@ func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
     #expect((json["skipped"] as? [[String: Any]])?.first?["kind"] as? String == "waiting")
 }
 
-// MARK: Stored keys
+// Stored keys
 
 struct LegacyKey: Codable {
     var format = 1
@@ -580,7 +580,7 @@ struct LegacyKey: Codable {
     #expect(try PropertyListDecoder().decode(StoredKey.self, from: try encoder.encode(key)) == key)
 }
 
-// MARK: Private extensions
+// Private extensions
 
 @Test func aForwardedConnectionMayUseNoPrivateExtension() async throws {
     let store = MemoryStore()
