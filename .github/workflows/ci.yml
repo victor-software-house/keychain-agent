@@ -54,7 +54,7 @@ jobs:
           workflow=${WORKFLOW%@*}
           gh workflow run "${workflow##*/}" --repo "$REPOSITORY" --ref main
 
-# Whether a pull request changes anything the build reads. Documentation is
+  # Whether a pull request changes anything the build reads. Documentation is
   # the root's Markdown files, docs/, and openspec/. A documentation file
   # still counts as a build input when a Swift source names its path.
   changes:
