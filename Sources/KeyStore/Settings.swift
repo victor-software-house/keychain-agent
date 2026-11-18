@@ -41,13 +41,44 @@ public struct Settings: Sendable {
         public let source: Source
     }
 
-    public init() {}
+    /// A local value that `resolve` passes over, and why.
+    public struct Ignored: Codable, Sendable, Equatable {
+        public let key: String
+        public let value: String
+        public let reason: String
+
+        public init(key: String, value: String, reason: String) {
+            self.key = key
+            self.value = value
+            self.reason = reason
+        }
+    }
+
+    private let local: @Sendable (Key) -> String?
+
+    public init() { local = Self.preference }
+
+    /// Reads the local values from `local` instead of the user defaults, so a test needs no defaults.
+    init(local: @escaping @Sendable (Key) -> String?) { self.local = local }
 
     // CFPreferences names the domain explicitly: through the cask's link, signd has no bundle
     // identifier, and UserDefaults refuses a suite named after the bundle's own identifier.
-    public func value(_ key: Key) -> String? {
+    public func value(_ key: Key) -> String? { local(key) }
+
+    private static func preference(_ key: Key) -> String? {
         CFPreferencesAppSynchronize(Self.domain as CFString)
         return CFPreferencesCopyAppValue(key.rawValue as CFString, Self.domain as CFString) as? String
+    }
+
+    /// The local values that are not valid durations for their setting, which `resolve` passes over.
+    public func ignored() -> [Ignored] {
+        Key.allCases.compactMap { key in
+            guard let value = value(key), Self.validSeconds(key, value) == nil else { return nil }
+            return Ignored(
+                key: key.rawValue, value: value,
+                reason: "not a duration such as 90s, 30m, 1h or 2d from \(Int(key.bounds.lowerBound)) to \(Int(key.bounds.upperBound)) seconds"
+            )
+        }
     }
 
     public func set(_ key: Key, _ value: String) throws(SettingsError) {

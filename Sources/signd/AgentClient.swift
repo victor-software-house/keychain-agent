@@ -72,9 +72,10 @@ struct AgentClient {
         decoded(PrivateExtension.logout, timeout: 60)
     }
 
-    /// Tells the agent that a new token is stored, so it starts syncing from it; does nothing when none runs.
-    func login() {
-        _ = callExtension(PrivateExtension.login)
+    /// Tells the agent that a new token is stored, so it forgets the old state and starts syncing from the token.
+    /// Returns whether an agent that knows the request answered; one that does not leaves the state to the caller.
+    func login() -> Bool {
+        callExtension(PrivateExtension.login)?.first == MessageType.success.rawValue
     }
 
     private func decoded<Value: Decodable>(_ name: String, timeout: Int) -> Value? {

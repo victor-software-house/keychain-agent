@@ -1,7 +1,7 @@
 import AgentProtocol
 @testable import AgentServer
 import Foundation
-import KeyStore
+@testable import KeyStore
 import OnePassword
 import SSHWire
 import Synchronization
@@ -416,16 +416,17 @@ func oneVault(_ items: Item...) -> FakeSource {
     #expect(opens.value >= 2)
 }
 
-@Test(.timeLimit(.minutes(1))) func aClientThatCannotOpenIsNotATokenRefusal() async throws {
+@Test(.timeLimit(.minutes(1))) func aClientThatTheTokenFailsToOpenIsATokenRefusal() async throws {
     let source = oneVault()
     let rig = try SyncRig(source: source, factory: { _ throws(OnePasswordError) in
-        throw OnePasswordError(kind: .authentication, message: "cannot start")
+        throw OnePasswordError(kind: .authentication, message: "refused")
     })
     await rig.service.start()
     let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .failed)
-    #expect(rig.state().lastResult == .failed)
-    #expect(rig.state().nextAttempt != nil)
+    #expect(summary.outcome == .tokenRefused)
+    #expect(summary.message == "1Password refused the token: refused")
+    #expect(rig.state().lastResult == .tokenRefused)
+    #expect(rig.state().nextAttempt == nil)
 }
 
 @Test(.timeLimit(.minutes(1))) func loginStartsAgainAfterARefusedToken() async throws {
@@ -435,9 +436,8 @@ func oneVault(_ items: Item...) -> FakeSource {
     #expect(await rig.service.checkNow().outcome == .tokenRefused)
     #expect(rig.state().nextAttempt == nil)
 
-    // The same token, accepted now; signd login clears the state file and tells the agent.
+    // The same token, accepted now; signd login tells the agent, which forgets the state file.
     rig.source.fail(with: nil)
-    SyncState.remove(at: rig.stateURL)
     await rig.service.login()
     rig.service.noteRequest()
     #expect(await eventually { (try? rig.store.list().count) == 1 })
@@ -506,7 +506,7 @@ func oneVault(_ items: Item...) -> FakeSource {
     #expect(keys.first { $0.name == "alpha" }?.itemID == "i2")
 }
 
-@Test(.timeLimit(.minutes(1))) func aNameTakenByALocalKeyIsReadAgainUntilItFrees() async throws {
+@Test(.timeLimit(.minutes(1))) func aLastingNameConflictCostsOneRequestACheckUntilTheNameFrees() async throws {
     let store = MemoryStore()
     var local = storedSoftwareKey("deploy")
     local.source = "local"
@@ -514,18 +514,45 @@ func oneVault(_ items: Item...) -> FakeSource {
     let rig = try SyncRig(source: oneVault(sshItem("i1", title: "Deploy")), store: store)
     await rig.service.start()
     #expect(await rig.service.checkNow().skipped == 1)
-    #expect(rig.state().vaultVersions["v1"] == nil)
-
-    rig.source.resetCalls()
-    let again = await rig.service.checkNow()
-    #expect(again.requests == 3)
-    #expect(again.skipped == 1)
-
-    try store.delete(name: "deploy")
-    #expect(await rig.service.checkNow().added == ["deploy"])
     #expect(rig.state().vaultVersions["v1"] != nil)
+
+    for _ in 0 ..< 2 {
+        rig.source.resetCalls()
+        let again = await rig.service.checkNow()
+        #expect(again.requests == 1)
+        #expect(again.skipped == 1)
+        #expect(rig.source.calls == FakeSource.Calls(vaults: 1, items: 0, item: 0))
+    }
+
+    // The name frees without the item changing: only that item is fetched.
+    try store.delete(name: "deploy")
+    rig.source.resetCalls()
+    let freed = await rig.service.checkNow()
+    #expect(freed.added == ["deploy"])
+    #expect(freed.skipped == 0)
+    #expect(freed.requests == 2)
+    #expect(rig.source.calls == FakeSource.Calls(vaults: 1, items: 0, item: 1))
     rig.source.resetCalls()
     #expect(await rig.service.checkNow().requests == 1)
+}
+
+@Test(.timeLimit(.minutes(1))) func aNameFreedByARenameInAnotherVaultIsTakenInTheSameCheck() async throws {
+    let source = FakeSource()
+    source.addVault("v1")
+    source.addVault("v2")
+    source.put(sshItem("j1", title: "deploy", vault: "v1"))
+    source.put(sshItem("i1", title: "Deploy", vault: "v2"))
+    let rig = try SyncRig(source: source)
+    await rig.service.start()
+    let first = await rig.service.checkNow()
+    #expect(first.added == ["deploy"])
+    #expect(first.skipped == 1)
+
+    source.put(sshItem("j1", title: "other", vault: "v1", updated: at(10)))
+    let second = await rig.service.checkNow()
+    #expect(second.skipped == 0)
+    #expect(try rig.store.list().map(\.name).sorted() == ["deploy", "other"])
+    #expect(try rig.store.list().first { $0.name == "deploy" }?.itemID == "i1")
 }
 
 @Test(.timeLimit(.minutes(1))) func aRestartDoesNotCutARateLimitShort() async throws {
@@ -555,7 +582,7 @@ func oneVault(_ items: Item...) -> FakeSource {
     let store = MemoryStore()
     let agent = await makeAgent(store)
     let server = Server(agent: agent)
-    let connection = Connection()
+    let connection = Connection(peerPID: getpid())
     let status = Request.extension(name: PrivateExtension.status, contents: Data())
     guard case .extensionResponse = await server.respond(to: status, on: connection) else {
         Issue.record("status was refused on a connection that is not forwarded")
@@ -571,7 +598,7 @@ func oneVault(_ items: Item...) -> FakeSource {
     #expect(await server.respond(to: .extension(name: PrivateExtension.sync, contents: Data()), on: connection) == .failure)
     #expect(await server.respond(to: .extension(name: PrivateExtension.logout, contents: Data()), on: connection) == .failure)
     // A bind that says it is not forwarded leaves a connection as it was.
-    let local = Connection()
+    let local = Connection(peerPID: getpid())
     bind.removeLast()
     bind.append(0)
     _ = await server.respond(to: .extension(name: Extension.sessionBind, contents: bind), on: local)
@@ -583,7 +610,7 @@ func oneVault(_ items: Item...) -> FakeSource {
 
 @Test(.timeLimit(.minutes(1))) func anItemTheClientCannotDecodeIsSkippedAndTheRestAreChecked() async throws {
     let source = oneVault(sshItem("bad", title: "broken"), sshItem("good", title: "fine"))
-    source.failItem("bad", with: OnePasswordError(kind: .other, message: "the reply could not be decoded"))
+    source.failItem("bad", with: OnePasswordError(kind: .decoding, message: "the reply could not be decoded"))
     let rig = try SyncRig(source: source)
     await rig.service.start()
     let summary = await rig.service.checkNow()
@@ -645,6 +672,164 @@ func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
         #expect(status.interval.source == .default)
         #expect(status.interval.seconds == 300)
     }
+}
+
+@Test(.timeLimit(.minutes(1))) func aLogoutDuringACheckLeavesNoCheckForTheNextOneToJoin() async throws {
+    let source = oneVault(sshItem("i1", title: "deploy"))
+    let rig = try SyncRig(source: source)
+    let service = rig.service
+    await service.start()
+    source.slow(.milliseconds(400))
+    let check = Task { await service.checkNow() }
+    #expect(await eventually { source.calls.item == 1 })
+    _ = await service.logout()
+    #expect(await service.checkNow().outcome == .notSignedIn)
+    #expect(await check.value.message == "the token changed during the check")
+}
+
+@Test(.timeLimit(.minutes(1))) func aLoginDuringACheckStartsAFreshCheckAndTheTimerStaysScheduled() async throws {
+    let source = oneVault(sshItem("i1", title: "deploy"))
+    let rig = try SyncRig(source: source)
+    let service = rig.service
+    await service.start()
+    #expect(await eventually { rig.clock.requestedSleeps.count == 1 })
+    source.slow(.milliseconds(400))
+    let stale = Task { await service.checkNow() }
+    #expect(await eventually { source.calls.item == 1 })
+    await service.login()
+    // The check that began under the old login is over, so this one does not join it.
+    let fresh = await service.checkNow()
+    #expect(fresh.outcome == .ok)
+    #expect(fresh.added == ["deploy"])
+    #expect(await stale.value.message == "the token changed during the check")
+    // The login's timer and the fresh check's remain; the stale check, which ended last, stopped neither.
+    #expect(await eventually { rig.clock.requestedSleeps.count >= 3 })
+}
+
+@Test(.timeLimit(.minutes(1))) func aLoginDuringTheChangeNoticeLeavesNoResultAndNoTimer() async throws {
+    let source = oneVault(sshItem("i1", title: "deploy"))
+    let slow = Flag(true)
+    let rig = try SyncRig(source: source, changed: { if slow.value { try? await Task.sleep(for: .milliseconds(400)) } })
+    let service = rig.service
+    await service.start()
+    #expect(await eventually { rig.clock.requestedSleeps.count == 1 })
+    let check = Task { await service.checkNow() }
+    #expect(await eventually { rig.changes.value == 1 })
+    await service.login()
+    slow.set(false)
+    #expect(await check.value.added == ["deploy"])
+    // Nothing of that check outlives the login: no timer of its own, and no result for `signd sync` to return.
+    try await Task.sleep(for: .milliseconds(100))
+    #expect(rig.clock.requestedSleeps.count == 2)
+    source.resetCalls()
+    _ = await service.syncRequested()
+    #expect(source.calls.vaults == 1)
+}
+
+@Test(.timeLimit(.minutes(1))) func loginForgetsTheStateTheOldTokenWrote() async throws {
+    let rig = try SyncRig(source: oneVault(sshItem("i1", title: "deploy")))
+    await rig.service.start()
+    _ = await rig.service.checkNow()
+    #expect(rig.state().vaultVersions["v1"] != nil)
+    await rig.service.login()
+    #expect(rig.state().vaultVersions.isEmpty)
+    #expect(rig.state().lastSuccess == nil)
+    rig.source.resetCalls()
+    #expect(await rig.service.checkNow().requests == 2)
+}
+
+@Test func aLocalSettingOutOfBoundsIsShownAsIgnoredWithItsReason() throws {
+    let settings = Settings(local: { key in
+        switch key {
+        case .interval: "10s"
+        case .keyLifetime: "1h"
+        }
+    })
+    let status = SyncStatus(signedIn: true, state: SyncState(), settings: settings)
+    #expect(status.interval.source == .default)
+    #expect(status.interval.seconds == 300)
+    #expect(status.ignoredSettings.map(\.key) == ["interval"])
+    #expect(status.ignoredSettings.first?.value == "10s")
+    #expect(status.ignoredSettings.first?.reason == "not a duration such as 90s, 30m, 1h or 2d from 60 to 86400 seconds")
+    let json = try #require(try JSONSerialization.jsonObject(with: JSONEncoder().encode(status)) as? [String: Any])
+    #expect((json["ignoredSettings"] as? [[String: Any]])?.count == 1)
+}
+
+@Test func aValidOrAbsentLocalSettingIsNotIgnored() {
+    let settings = Settings(local: { $0 == .keyLifetime ? "2h" : nil })
+    #expect(settings.ignored().isEmpty)
+}
+
+@Test func privateExtensionsNeedAPeerThatRunsTheAgentsOwnExecutable() async throws {
+    let server = Server(agent: await makeAgent(MemoryStore()))
+    let status = Request.extension(name: PrivateExtension.status, contents: Data())
+    guard case .extensionResponse = await server.respond(to: status, on: Connection(peerPID: getpid())) else {
+        Issue.record("status was refused to a process that runs this executable")
+        return
+    }
+    #expect(await server.respond(to: status, on: Connection(peerPID: nil)) == .failure)
+    #expect(await server.respond(to: status, on: Connection(peerPID: 1)) == .failure)
+    #expect(await server.respond(to: .extension(name: PrivateExtension.reload, contents: Data()), on: Connection(peerPID: 1)) == .failure)
+    // The other requests stay open to every process of the user.
+    #expect(await server.respond(to: .extension(name: Extension.query, contents: Data()), on: Connection(peerPID: nil)) == .query)
+    #expect(FileIdentity(executableOf: getpid()) != nil)
+    #expect(FileIdentity(executableOf: getpid()) == FileIdentity(executableOf: getpid()))
+}
+
+@Test(.timeLimit(.minutes(1))) func anItemTheClientCannotDecodeKeepsItsStoredKeyUntilAnotherVersionReadsIt() async throws {
+    let undecodable = OnePasswordError(kind: .decoding, message: "the reply could not be decoded")
+    let source = oneVault(sshItem("i1", title: "deploy"))
+    let rig = try SyncRig(source: source)
+    await rig.service.start()
+    #expect(await rig.service.checkNow().added == ["deploy"])
+    let before = try #require(try rig.store.list().first)
+
+    source.put(sshItem("i1", title: "deploy", updated: at(10)))
+    source.failItem("i1", with: undecodable)
+    let summary = await rig.service.checkNow()
+    #expect(summary.outcome == .ok)
+    #expect(summary.removed.isEmpty)
+    #expect(summary.skipped == 1)
+    #expect(try rig.store.list() == [before])
+
+    // The same version does not read it again.
+    source.resetCalls()
+    #expect(await rig.service.checkNow().requests == 1)
+
+    // Another version does, and the item decodes there.
+    source.failItem("i1", with: nil)
+    let second = try SyncRig(source: source, store: rig.store, version: "2.0.0")
+    try FileManager.default.copyItem(at: rig.stateURL, to: second.stateURL)
+    await second.service.start()
+    source.resetCalls()
+    let next = await second.service.checkNow()
+    #expect(next.replaced == ["deploy"])
+    #expect(next.skipped == 0)
+    #expect(source.calls.item == 1)
+    #expect(try rig.store.list().first?.itemUpdated == at(10))
+}
+
+@Test(.timeLimit(.minutes(1))) func aNoteTheClientCannotDecodeIsReportedAndTheDefaultsApplyUntilAnotherVersionReadsIt() async throws {
+    let source = oneVault(sshItem("i1", title: "deploy"), noteItem("note", interval: "30m"))
+    source.failItem("note", with: OnePasswordError(kind: .decoding, message: "the reply could not be decoded"))
+    let rig = try SyncRig(source: source)
+    await rig.service.start()
+    let summary = await rig.service.checkNow()
+    #expect(summary.outcome == .ok)
+    #expect(summary.added == ["deploy"])
+    #expect(summary.skipped == 1)
+    #expect(rig.service.fleet.values.isEmpty)
+    #expect(SyncStatus(signedIn: true, state: rig.state()).skipped.map(\.item) == ["signd note"])
+
+    source.resetCalls()
+    #expect(await rig.service.checkNow().requests == 1)
+
+    source.failItem("note", with: nil)
+    let second = try SyncRig(source: source, store: rig.store, version: "2.0.0")
+    try FileManager.default.copyItem(at: rig.stateURL, to: second.stateURL)
+    await second.service.start()
+    #expect(await second.service.checkNow().skipped == 0)
+    #expect(second.service.fleet.values == ["interval": "30m"])
 }
 
 /// The item format before synced keys, which the Macs already hold.

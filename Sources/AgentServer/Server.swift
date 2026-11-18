@@ -25,9 +25,35 @@ public enum PrivateExtension {
     static let all: Set<String> = [status, reload, sync, login, logout]
 }
 
+/// A file by its device and inode, so two paths to one file match.
+struct FileIdentity: Equatable, Sendable {
+    let device: dev_t
+    let inode: ino_t
+
+    init?(path: String) {
+        var info = stat()
+        guard stat(path, &info) == 0 else { return nil }
+        device = info.st_dev
+        inode = info.st_ino
+    }
+
+    /// The executable file process `pid` runs, or nil when it cannot be read.
+    init?(executableOf pid: pid_t) {
+        // PROC_PIDPATHINFO_MAXSIZE is 4 * MAXPATHLEN.
+        var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let length = proc_pidpath(pid, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        self.init(path: String(decoding: buffer.prefix(Int(length)), as: UTF8.self))
+    }
+}
+
 /// What the agent knows about one connection.
 final class Connection: Sendable {
+    /// The process on the other end, from `LOCAL_PEERPID`.
+    let peerPID: pid_t?
     private let forwarded = Mutex(false)
+
+    init(peerPID: pid_t?) { self.peerPID = peerPID }
 
     var isForwarded: Bool { forwarded.withLock { $0 } }
 
@@ -55,11 +81,24 @@ public struct Server: Sendable {
     let agent: Agent
     let sync: SyncService?
     let pool: NIOThreadPool
+    /// The file this agent runs, which a connection must run too to use a private extension; nil refuses them all.
+    let executable: FileIdentity?
 
     public init(agent: Agent, sync: SyncService? = nil) {
+        self.init(agent: agent, sync: sync, executable: FileIdentity(executableOf: getpid()))
+    }
+
+    init(agent: Agent, sync: SyncService?, executable: FileIdentity?) {
         self.agent = agent
         self.sync = sync
         pool = .singleton
+        self.executable = executable
+    }
+
+    /// An accepted connection, with the process that opened it.
+    private struct Accepted: Sendable {
+        let channel: NIOAsyncChannel<ByteBuffer, ByteBuffer>
+        let peerPID: pid_t
     }
 
     struct OtherUser: Error {}
@@ -87,25 +126,26 @@ public struct Server: Sendable {
     }
 
     /// Accepts a connection only from a process of this user.
-    private static func accept(_ channel: any Channel) -> EventLoopFuture<NIOAsyncChannel<ByteBuffer, ByteBuffer>> {
+    private static func accept(_ channel: any Channel) -> EventLoopFuture<Accepted> {
         guard let provider = channel as? any SocketOptionProvider else {
             return channel.eventLoop.makeFailedFuture(OtherUser())
         }
         let credentials: EventLoopFuture<xucred> = provider.unsafeGetSocketOption(level: SOL_LOCAL, name: LOCAL_PEERCRED)
-        return credentials.flatMapThrowing { credentials in
+        let peer: EventLoopFuture<pid_t> = provider.unsafeGetSocketOption(level: SOL_LOCAL, name: LOCAL_PEERPID)
+        return credentials.and(peer).flatMapThrowing { credentials, pid in
             guard credentials.cr_uid == getuid() else {
                 log.error("refused a connection from uid \(credentials.cr_uid)")
                 throw OtherUser()
             }
             try channel.pipeline.syncOperations.addHandler(ByteToMessageHandler(FrameDecoder()))
-            return try NIOAsyncChannel<ByteBuffer, ByteBuffer>(wrappingChannelSynchronously: channel)
+            return Accepted(channel: try NIOAsyncChannel<ByteBuffer, ByteBuffer>(wrappingChannelSynchronously: channel), peerPID: pid)
         }
     }
 
-    private func serve(_ connection: NIOAsyncChannel<ByteBuffer, ByteBuffer>) async {
+    private func serve(_ accepted: Accepted) async {
         do {
-            try await connection.executeThenClose { inbound, outbound in
-                let state = Connection()
+            try await accepted.channel.executeThenClose { inbound, outbound in
+                let state = Connection(peerPID: accepted.peerPID)
                 for try await frame in inbound {
                     let body = await respond(to: Request(body: Data(buffer: frame)), on: state).body
                     var reply = ByteBuffer()
@@ -119,7 +159,7 @@ public struct Server: Sendable {
         }
     }
 
-    func respond(to request: Request, on connection: Connection = Connection()) async -> Response {
+    func respond(to request: Request, on connection: Connection = Connection(peerPID: nil)) async -> Response {
         switch request {
         case .identities:
             sync?.noteRequest()
@@ -148,7 +188,9 @@ public struct Server: Sendable {
     }
 
     private func respond(toExtension name: String, contents: Data, on connection: Connection) async -> Response {
-        if PrivateExtension.all.contains(name), connection.isForwarded { return .failure }
+        if PrivateExtension.all.contains(name), connection.isForwarded || !isSigndCommand(connection) {
+            return .failure
+        }
         switch name {
         case Extension.query:
             return .query
@@ -180,6 +222,12 @@ public struct Server: Sendable {
         default:
             return .failure
         }
+    }
+
+    /// Whether the connection's process runs the same executable file as this agent, as `signd`'s own commands do.
+    private func isSigndCommand(_ connection: Connection) -> Bool {
+        guard let executable, let pid = connection.peerPID, let peer = FileIdentity(executableOf: pid) else { return false }
+        return peer == executable
     }
 
     private static func json(_ value: some Encodable, name: String) -> Response {

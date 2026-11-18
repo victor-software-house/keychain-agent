@@ -9,8 +9,15 @@
 
 ## 2. Token and sync
 
-- [ ] 2.1 Implement `signd login` and `signd logout`; verify the token scenarios with the live test account.
-  - 2026-11-17 (UTC): not verified. `TokenStore` and the commands are in [PR 16][signd#16], and a bad token is refused with the stored one kept; storing, `signd status` and the file check need a signed Mac and stay with the hardware run.
+- [x] 2.1 Implement `signd login` and `signd logout`; verify the token scenarios with the live test account.
+  - 2026-11-18 00:20 (UTC): on a signed Mac with signd 0.0.5 ([PR 16][signd#16]).  
+    A malformed token piped to `signd login` exits 1 with "1Password refused the token: ... service account token had invalid format", and `signd status` stays not signed in.  
+    The test account's token signs in ("the token reads 1 vault").
+  - 2026-11-18 00:20 (UTC): in the same run, `signd sync` reports "ok: 3 requests, 1 items fetched, added test-key".  
+    `ssh-add -l` through the socket lists test-key (ED25519), `~/.ssh/signd/config` gets a Host `example.invalid` block, and `ssh-keygen -Y sign` with `test-key.pub` exits 0.
+  - 2026-11-18 00:20 (UTC): in the same run, `signd logout` prints "signed out; removed 1 synced key".  
+    The key and its Host block are gone, local keys stay, and the state folder is empty.  
+    Not verified: a revoked token.
 - [x] 2.2 Implement the check of design decision 5, with item selection and naming from decision 3; verify unit tests against a recorded 1Password fake for add, replace, delete, the `macs` field and the one-read case.
   - 2026-11-17 (UTC): on a Mac, [`Checks`][sync-tests] passed against a recorded fake: add, replace in place, hosts-only change, rename, delete, archived item, deleted vault, `macs`, bad host and name taken. Unchanged vaults cost 1 request and no fetch ([PR 16][signd#16]).
 - [x] 2.3 Implement the schedule and failures of decisions 6 and 7, and `signd sync`; verify unit tests with an injected clock for phase, jitter, backoff and the rate-limit wait.
@@ -33,8 +40,9 @@
 
 ## 4. Documentation
 
-- [ ] 4.1 Document the vault, the service account, the item fields and the `signd` note in README.md; verify each documented command runs as written.
-  - 2026-11-17 (UTC): the README section is in [PR 16][signd#16]. `login`, `logout`, `sync` and `status` parse and print help, and `config set interval` ran; commands that need the signed app have not run.
+- [x] 4.1 Document the vault, the service account, the item fields and the `signd` note in README.md; verify each documented command runs as written.
+  - 2026-11-18 00:20 (UTC): on a signed Mac with signd 0.0.5, in the same run as 2.1, every command in the README's "Keys from 1Password" block ran as written ([PR 16][signd#16]).  
+    That includes `signd config set interval 10m`, after which `signd status` shows "10m (local)", and `signd config unset interval`, which reverts it.
 
 ## 5. Integration
 
