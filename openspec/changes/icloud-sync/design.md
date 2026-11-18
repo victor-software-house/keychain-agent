@@ -56,9 +56,9 @@ A shared key's source is `icloud`, and its item records the record name.
 ### 4. Sharing
 
 - `signd key create` with a wrapped type and `signd key import` store the key, then ask the agent to share it, unless `--local` is given.
-- The agent opens the key, seals it to every device record it knows, and saves a new Key record. It then replaces the local item with this device's sealed copy.
+- The agent opens the key, seals it to every device record in its state, and saves a new Key record. It then replaces the local item with this device's sealed copy.
 - A record of the same name fails the share with "a shared key named NAME exists".
-- When sync is off, because the build has no iCloud entitlement or the Mac has no iCloud account, the key stays local and the command says so and exits 0.
+- When sync is off, because the build has no iCloud entitlement or the Mac has no iCloud account, the key stays local, and the command prints a note on stderr and exits 0.
   Any other failure leaves the key local and exits 1 with the reason and the `signd key share NAME` command to retry.
 - `signd key share NAME` shares an existing key; it refuses a Secure Enclave key, which cannot leave its Mac.
 - `signd key delete NAME` on a shared key deletes its record through the agent, then the local item; every other Mac deletes its copy at its next check.
@@ -81,7 +81,7 @@ The operator chose that a new Mac gets every key with no approval step (operator
 
 1. Ask for database changes since the last token: one request, and nothing more when the `signd` zone did not change.
 2. Ask for the zone's changes since its token until none are left: the changed and deleted `Device` and `Key` records.
-3. Bring the store in line: add or replace each key whose record carries a copy for this Mac, and delete each shared key whose record is gone.
+3. Bring the store in line: add or replace each key whose record holds a copy for this Mac, and delete each shared key whose record is gone.
    A key with no copy for this Mac yet is reported as waiting; a key whose name a local key already has is skipped and reported.
 4. Seal keys to new devices, as decision 5 says, and publish this device's record.
 5. When a key changed, the agent reads the store again, which rewrites the SSH routing files of the `ssh-routing` capability.
@@ -94,7 +94,7 @@ An expired change token starts again with a full fetch.
 
 - Every `interval`, 2 seconds by default, times a random factor from 0.8 to 1.2, with a quarter second of timer leeway.
 - A push from the database subscription `signd-changes` starts a check at once.
-  The subscription asks for a content-available push with a badge, which CloudKit sends at high priority; it sends none to the Mac that saved.
+  The subscription requests a content-available push with a badge, which CloudKit sends at high priority; it sends none to the Mac that saved.
 - `signd sync` runs a check now and waits for it.
 - One check runs at a time, and a list or sign request neither starts nor waits for one.
 
@@ -125,7 +125,7 @@ The container is named once, in the App ID's iCloud settings, and the provisioni
 The agent reads `com.apple.developer.icloud-container-identifiers` from its own signature with `SecTaskCopyValueForEntitlement` and uses the one container listed there, so the code names none.
 Without a container there, it never calls CloudKit, which stops a process that lacks the entitlement, and `signd status` shows sync as off in this build.
 `cloudkit/schema.ckdb` declares the schema; `mise run cloudkit:schema` imports it into development, and the CloudKit console deploys it to production.
-The command line never calls CloudKit: it asks the agent.
+The command line never calls CloudKit: it sends those requests to the agent.
 
 ### 11. Commands and status
 

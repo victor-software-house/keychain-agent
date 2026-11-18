@@ -8,7 +8,7 @@ How signd keeps shared SSH keys in step across the Macs of one Apple account thr
 
 ### Requirement: Shared keys are sealed to each device
 
-signd SHALL store a shared key in the `signd` zone of the user's private database as a `Key` record whose encrypted payload holds the public key and one HPKE copy of the private key per device, each sealed to that device's Secure Enclave key-agreement key, and SHALL NOT store a private key in the clear anywhere outside the device.
+signd SHALL store a shared key in the `signd` zone of the user's private database as a `Key` record. Its encrypted payload SHALL hold the public key and one HPKE copy of the private key per device, sealed to that device's Secure Enclave key-agreement key. signd SHALL NOT store a private key in the clear anywhere outside the device.
 
 #### Scenario: A record holds only sealed copies
 
@@ -72,7 +72,7 @@ signd SHALL answer list and sign requests from its local store, and SHALL NOT st
 
 #### Scenario: iCloud unreachable
 
-- **WHEN** the network is down and a client asks for a signature with a shared key
+- **WHEN** the network is down and `ssh-keygen -Y sign` runs with a shared key
 - **THEN** the signature verifies, and `signd status` shows the failed check and the next one
 
 ### Requirement: Failures back off

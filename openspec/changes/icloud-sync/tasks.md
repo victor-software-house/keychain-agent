@@ -7,17 +7,27 @@
 
 ## 2. Store and records
 
-- [ ] 2.1 Add the device key of design decision 2 to `KeyStore`, remove the token store, and give shared keys the source `icloud` and a record name; verify that a key item written by an older release still decodes.
-- [ ] 2.2 Write the `Key` and `Device` payloads of decision 1; verify an encode and decode keeps every field, and a payload of another format is reported, not read.
-- [ ] 2.3 Write the CloudKit store with the timeouts and error kinds of decision 8; verify unit tests that map each CloudKit error to its kind.
+- [x] 2.1 Add the device key of design decision 2 to `KeyStore`, remove the token store, and give shared keys the source `icloud` and a record name; verify that a key item written by an older release still decodes.
+  - 2026-11-18 UTC: `anItemAnOlderReleaseWroteStillDecodes` decodes a 1Password-era item with no record name and not shared; `aSharedKeySurvivesAnEncodeAndDecode` passed. Both ran in `swift test` on a Mac with macOS 27.2.1 and Xcode 27.2, 98 of 98 tests, five runs in a row.
+- [x] 2.2 Write the `Key` and `Device` payloads of decision 1; verify an encode and decode keeps every field, and a payload of another format is reported, not read.
+  - 2026-11-18 UTC: `payloadsKeepEveryFieldThroughAnEncodeAndDecode` and `aPayloadOfAnotherFormatIsReportedAndNotRead` passed in the same runs.
+- [x] 2.3 Write the CloudKit store with the timeouts and the error mapping of decision 8; verify unit tests that map each CloudKit error code to the action signd takes.
+  - 2026-11-18 UTC: `eachCloudKitErrorMapsToItsKind` covers 15 codes; the retry-after, partial-failure and timeout tests passed in the same runs.
 
-## 3. The check and its schedule
+## 3. Checks and the schedule
 
-- [ ] 3.1 Implement the check of decision 6 against a CloudKit stand-in; verify tests for a new key, a replaced key, a deleted record, a key waiting for this device, a name a local key has, sealing to a new device, a removed device, publishing this device's record, an expired token and a deleted zone.
-- [ ] 3.2 Verify that a check with no change makes one request.
-- [ ] 3.3 Implement the schedule of decisions 7 and 8 and the push hint; verify tests with an injected clock for the interval, the backoff, a retry-after time and a push during a backoff.
-- [ ] 3.4 Verify that list and sign requests keep their p99 while a check waits on a slow store.
-- [ ] 3.5 Read the iCloud entitlement from the signature, as decision 10 says; verify `mise run ci:e2e` with the unsigned build reports sync off and serves keys.
+- [x] 3.1 Implement the check of decision 6 against a CloudKit stand-in.
+  Verify tests for a new key, a deleted record, a key waiting for this device, a name a local key has, and sealing to a new device.
+  Verify also a removed device, publishing this device's record, an expired token and a deleted zone.
+  - 2026-11-18 UTC: each has a test in `SyncTests.swift`, run against `FakeCloud` with two or three devices on one account; all passed in the same runs.
+- [x] 3.2 Verify that a check with no change makes one request.
+  - 2026-11-18 UTC: `anUnchangedZoneCostsOneRequest` passed: the second check reads back this device's own record, two requests, and the third makes one.
+- [x] 3.3 Implement the schedule of decisions 7 and 8 and the push hint; verify tests with an injected clock for the interval, the backoff, a retry-after time and a push during a backoff.
+  - 2026-11-18 UTC: the schedule tests and `aPushStartsACheckUnlessTheServiceIsBackingOff` passed; a race they found, a finished check whose handle stayed set, is fixed.
+- [x] 3.4 Verify that list and sign requests keep their p99 while a check waits on a slow store.
+  - 2026-11-18 UTC: `listAndSignKeepTheirP99WhileACheckWaitsOnASlowCloud` passed with each CloudKit call taking 2 s.
+- [x] 3.5 Read the iCloud entitlement from the signature, as decision 10 says; verify `mise run ci:e2e` with the unsigned build reports sync off and serves keys.
+  - 2026-11-18 UTC: `mise run ci:e2e` passed on that Mac; the unsigned agent's status reports `off in this build`.
 
 ## 4. Commands
 

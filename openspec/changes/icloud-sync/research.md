@@ -30,7 +30,7 @@ The request that waited 18.7 s is why each request gets a timeout of its own.
 | With a badge, sent at priority 10, second Mac to first | 11 | 0 | none |
 
 A push is 298 bytes and names the container, the subscription and the zone; it carries no record data.
-CloudKit documents pushes as merged and throttled ([CKDatabaseSubscription], [background updates]), and the trial agrees, so a push can only start a check early.
+CloudKit documents pushes as merged and throttled ([CKDatabaseSubscription], [background updates]), and the trial measured the same, so a push can only start a check early.
 The `apsd` log on the receiving Mac showed the badge subscription's pushes at priority 10.
 
 ## 3. Limits and costs
