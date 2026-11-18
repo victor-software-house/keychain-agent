@@ -396,9 +396,23 @@ struct Config: ParsableCommand {
 }
 
 struct Service: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Run the agent at login, or stop doing so.", subcommands: [Enable.self, Disable.self])
+    static let configuration = CommandConfiguration(
+        abstract: "Run the agent at login, or stop doing so.",
+        subcommands: [Enable.self, Disable.self, Status.self, Restart.self, Log.self]
+    )
     static var agent: SMAppService { .agent(plistName: "com.victor-software-house.signd.plist") }
     static var loginItem: LoginItemState { LoginItemState(agent.status) }
+
+    /// Whether an agent answers within `seconds`, one other than process `old` when it is given.
+    /// That covers an agent that launchd is starting.
+    static func agentAnswers(within seconds: Double = 2, replacing old: Int32? = nil) -> Bool {
+        let deadline = Date.now.addingTimeInterval(seconds)
+        repeat {
+            if let status = AgentClient(path: defaultSocketPath).status(), status.pid != old { return true }
+            usleep(100_000)
+        } while Date.now < deadline
+        return false
+    }
 
     struct Enable: ParsableCommand {
         func run() throws {
@@ -408,7 +422,7 @@ struct Service: ParsableCommand {
                 throw Failure("cannot add the Include line to ~/.ssh/config: \(error)")
             }
             switch Service.agent.status {
-            case .enabled where Self.agentAnswers():
+            case .enabled where Service.agentAnswers():
                 print("enabled")
             case .enabled:
                 // The cask's uninstall step removes the job from launchd while the login item stays enabled.
@@ -428,15 +442,6 @@ struct Service: ParsableCommand {
                 print(Service.agent.status == .enabled ? "enabled" : "registered; approve signd in System Settings, General, Login Items")
             }
         }
-
-        /// Whether the agent answers within two seconds, which covers one that launchd is starting.
-        static func agentAnswers() -> Bool {
-            for _ in 0 ..< 20 {
-                if AgentClient(path: defaultSocketPath).status() != nil { return true }
-                usleep(100_000)
-            }
-            return false
-        }
     }
 
     struct Disable: ParsableCommand {
@@ -444,6 +449,54 @@ struct Service: ParsableCommand {
             guard Service.agent.status != .notRegistered else { return print("not registered") }
             do { try Service.agent.unregister() } catch { throw Failure("cannot unregister the agent: \(error)") }
             print("disabled")
+        }
+    }
+
+    struct Status: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show the login item and whether the agent answers.")
+
+        func run() {
+            print("login item  \(Service.loginItem.text)")
+            if let agent = AgentClient(path: defaultSocketPath).status() {
+                print("agent  answers (\(agent.version))")
+            } else {
+                print("agent  does not answer")
+            }
+        }
+    }
+
+    struct Restart: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Restart the agent and wait for it to answer; exits non-zero when it does not answer within 5 seconds.")
+
+        func run() throws {
+            let old = AgentClient(path: defaultSocketPath).status()?.pid
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            process.arguments = ["kickstart", "-k", "gui/\(getuid())/com.victor-software-house.signd"]
+            do { try process.run() } catch { throw Failure("cannot run launchctl: \(error)") }
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw Failure("launchctl kickstart failed with status \(process.terminationStatus)") }
+            guard Service.agentAnswers(within: 5, replacing: old) else { throw Failure("the agent does not answer after the restart") }
+            print("restarted")
+        }
+    }
+
+    struct Log: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show the agent's log of the last hour, or follow it.")
+        @Flag(help: "Stream new entries until interrupted, instead of showing the last hour.") var follow = false
+
+        /// The arguments of `/usr/bin/log` for the agent's subsystem.
+        static func arguments(follow: Bool) -> [String] {
+            (follow ? ["stream"] : ["show", "--last", "1h"]) + ["--predicate", "subsystem == \"com.victor-software-house.signd\""]
+        }
+
+        func run() throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
+            process.arguments = Self.arguments(follow: follow)
+            do { try process.run() } catch { throw Failure("cannot run log: \(error)") }
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw ExitCode(process.terminationStatus) }
         }
     }
 }
