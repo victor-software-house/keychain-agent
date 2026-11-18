@@ -29,6 +29,11 @@ fail() {
   exit 1
 }
 
+# One line as each stage starts, so a slow stage shows where the run is.
+stage() {
+  echo "· $1"
+}
+
 start() {
   "$bin" serve --socket "$socket" 2>> "$work/agent.log" &
   pid=$!
@@ -41,12 +46,14 @@ start() {
 }
 
 export SSH_AUTH_SOCK="$socket"
+stage "starting the agent on a temporary socket"
 start
 
 [ "$(stat -f %Lp "$socket")" = 600 ] || fail "the socket mode is $(stat -f %Lp "$socket"), not 600"
 
 printf 'e2e\n' > "$work/message"
 for type in ed25519 ecdsa rsa; do
+  stage "adding, listing and signing with an $type key"
   ssh-keygen -q -t "$type" -N '' -C "e2e-$type" -f "$work/$type"
   ssh-add -q "$work/$type" 2> /dev/null || fail "ssh-add refused the $type key"
   ssh-add -L | grep -q "e2e-$type" || fail "ssh-add -L does not list the $type key"
@@ -57,6 +64,7 @@ for type in ed25519 ecdsa rsa; do
   rm "$work/message.sig"
 done
 
+stage "refusing lock and confirm, and removing keys with ssh-add -D"
 if ssh-add -x < /dev/null > /dev/null 2>&1; then fail "the agent accepted lock"; fi
 ssh-keygen -Y sign -f "$work/ed25519.pub" -n e2e "$work/message" 2> /dev/null || fail "signing stopped after a refused lock"
 rm "$work/message.sig"
@@ -65,11 +73,13 @@ ssh-add -D > /dev/null 2>&1 || fail "ssh-add -D failed"
 if ssh-add -L > /dev/null 2>&1; then fail "ssh-add -D left keys"; fi
 
 if ssh-add -c "$work/ed25519" > /dev/null 2>&1; then fail "the agent accepted a confirm constraint"; fi
+stage "dropping a key after its 2-second lifetime"
 ssh-add -q -t 2 "$work/ed25519" 2> /dev/null || fail "ssh-add -t refused the key"
 ssh-add -L | grep -q e2e-ed25519 || fail "the key with a lifetime is not listed"
 sleep 3
 if ssh-add -L > /dev/null 2>&1; then fail "the key outlived its 2-second lifetime"; fi
 
+stage "surviving an oversized message and a restart"
 # A length prefix of 300 KiB closes that connection; the agent keeps serving others.
 perl -e 'print pack("N", 300 * 1024)' | nc -U "$socket" > /dev/null 2>&1 || true
 ssh-add -q "$work/ed25519" 2> /dev/null || fail "the agent stopped serving after an oversized message"
@@ -78,6 +88,7 @@ stop
 start
 ssh-add -l > /dev/null 2>&1 || [ $? -eq 1 ] || fail "the agent did not restart over its stale socket"
 
+stage "reading signd status from the agent"
 "$bin" status --socket "$socket" --json > "$work/status.json" || fail "signd status did not reach the agent"
 grep -q '"agentAnswers" : true' "$work/status.json" || fail "signd status reports no agent"
 # The unsigned build has no iCloud entitlement, so the agent never calls CloudKit and reports sync as off.
@@ -92,6 +103,7 @@ printf 'Include %s/.ssh/signd/config\n' "$home" > "$work/ssh_config"
 passwd_home=$(id -P | cut -d: -f9)
 
 routing() {
+  stage "writing the routing files, step $1 (swift test, output in routing.log)"
   if ! SIGND_E2E_ROUTING_HOME="$home" SIGND_E2E_ROUTING_STEP="$1" swift test --filter writesTheFilesForTheShellScenarios > "$work/routing.log" 2>&1; then
     cat "$work/routing.log" >&2
     fail "the routing test failed at step $1"
@@ -106,6 +118,7 @@ routing 1
 [ "$(stat -f %Lp "$home/.ssh/signd")" = 700 ] || fail "~/.ssh/signd is not mode 700"
 [ "$(stat -f %Lp "$home/.ssh/signd/config")" = 600 ] || fail "~/.ssh/signd/config is not mode 600"
 [ "$(stat -f %Lp "$home/.ssh/signd/deploy.pub")" = 644 ] || fail "a public file is not mode 644"
+stage "checking the routing with ssh -G"
 ssh_g git.example.com > "$work/g1"
 grep -q "^identityagent $passwd_home/.ssh/signd.sock$" "$work/g1" || fail "ssh -G does not name signd's socket for a routed host"
 grep -q '^identityfile .*/.ssh/signd/deploy.pub$' "$work/g1" || fail "ssh -G does not name the first key's public file"
