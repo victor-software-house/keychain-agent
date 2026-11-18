@@ -3,7 +3,7 @@
 ## Purpose
 
 How signd keeps SSH keys from 1Password on each Mac.
-This covers the token it needs and the items it takes.
+This covers the service account token it needs and the items it takes.
 It also covers when it checks and how it behaves when 1Password fails.
 
 ## Requirements
