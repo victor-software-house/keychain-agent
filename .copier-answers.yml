@@ -12,7 +12,7 @@ generated_paths: []
 github_owner: victor-software-house
 linux_image: ubuntu-26.04
 macos_image: macos-27
-merge_queue: false
+merge_queue: true
 merge_queue_cancel_lower: true
 mise_version: 2026.11.6
 pieces:
