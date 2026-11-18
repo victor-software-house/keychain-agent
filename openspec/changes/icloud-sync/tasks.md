@@ -33,13 +33,16 @@
 
 - [ ] 4.1 Share by default on `key create` and `key import`, with `--local`; add `key share`, the shared `key delete`, `device list`, `device remove`; remove `login` and `logout`; verify the command scenarios of the `icloud-sync` spec on two Macs.
 - [ ] 4.2 Run the agent's `NSApplication` and pass pushes to the sync service; verify on a Mac that `signd status` shows a push received.
-- [ ] 4.3 Show the sync in `signd status`; verify `--json` carries the account state, the last result, the next check and every waiting and skipped key.
+- [x] 4.3 Show the sync in `signd status`; verify `--json` carries the account state, the last result, the next check and every waiting and skipped key.
+  - 2026-11-18 UTC: `statusJSONCarriesTheStateTheLastResultTheNextCheckAndEverySkippedKey` passed in the `swift test` runs of task 2.1.
 
 ## 5. Release and documentation
 
 - [ ] 5.1 Sign the release with the profile's iCloud and push entitlements; verify `codesign -d --entitlements -` on the released app lists them.
 - [ ] 5.2 Drop `swift-onepassword` and the 1Password test secret from the template answers; verify CI passes with neither.
 - [ ] 5.3 Rewrite the README's 1Password sections for iCloud; verify each documented command runs as written.
+- [x] 5.4 Deploy `cloudkit/schema.ckdb` to the production environment; verify an export of production lists the `Device` type.
+  - 2026-11-18 UTC: the CloudKit console's deploy created `Device` and its index and updated the three security roles for it; `cktool export-schema --environment production` lists `Device`, `Key`, `Mac` and `Users`.
 
 ## 6. Integration
 
