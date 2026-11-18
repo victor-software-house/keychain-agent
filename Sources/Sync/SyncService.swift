@@ -375,7 +375,7 @@ public actor SyncService {
                 switch error.kind {
                 case .authentication: ended = .failed(.tokenRefused, "1Password refused the token: \(error.message)")
                 case .rateLimited: ended = .failed(.rateLimited, "1Password rate limited the check")
-                case .other: ended = .failed(.failed, error.message)
+                case .decoding, .other: ended = .failed(.failed, error.message)
                 }
             } catch let error as StoreError {
                 ended = .failed(.failed, error.description)
@@ -384,7 +384,11 @@ public actor SyncService {
             }
         } else {
             let reason = opening?.message ?? "the client did not open"
-            ended = .failed(opening?.kind == .rateLimited ? .rateLimited : .failed, "cannot open the 1Password client: \(reason)")
+            switch opening?.kind {
+            case .authentication?: ended = .failed(.tokenRefused, "1Password refused the token: \(reason)")
+            case .rateLimited?: ended = .failed(.rateLimited, "cannot open the 1Password client: \(reason)")
+            case .decoding?, .other?, nil: ended = .failed(.failed, "cannot open the 1Password client: \(reason)")
+            }
         }
         if epoch.value != started { ended = .stale }
 

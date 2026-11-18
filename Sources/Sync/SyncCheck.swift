@@ -36,11 +36,9 @@ struct SyncCheck {
     /// The running signd's version: an item its client could not read is read again by another version.
     let version: String
 
-    /// What 1Password's client says when it cannot read an item's reply; that item is skipped and the rest are checked.
-    static let undecodable = "the reply could not be decoded"
-
+    /// Whether 1Password's client could not read an item's reply; that item is skipped and the rest are checked.
     static func isUndecodable(_ error: OnePasswordError) -> Bool {
-        error.kind == .other && error.message == undecodable
+        error.kind == .decoding
     }
 
     /// An item whose fetch has been read and whose key name another key may hold until this vault's renames and removals are done.

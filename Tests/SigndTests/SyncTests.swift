@@ -416,16 +416,17 @@ func oneVault(_ items: Item...) -> FakeSource {
     #expect(opens.value >= 2)
 }
 
-@Test(.timeLimit(.minutes(1))) func aClientThatCannotOpenIsNotATokenRefusal() async throws {
+@Test(.timeLimit(.minutes(1))) func aClientThatTheTokenFailsToOpenIsATokenRefusal() async throws {
     let source = oneVault()
     let rig = try SyncRig(source: source, factory: { _ throws(OnePasswordError) in
-        throw OnePasswordError(kind: .authentication, message: "cannot start")
+        throw OnePasswordError(kind: .authentication, message: "refused")
     })
     await rig.service.start()
     let summary = await rig.service.checkNow()
-    #expect(summary.outcome == .failed)
-    #expect(rig.state().lastResult == .failed)
-    #expect(rig.state().nextAttempt != nil)
+    #expect(summary.outcome == .tokenRefused)
+    #expect(summary.message == "1Password refused the token: refused")
+    #expect(rig.state().lastResult == .tokenRefused)
+    #expect(rig.state().nextAttempt == nil)
 }
 
 @Test(.timeLimit(.minutes(1))) func loginStartsAgainAfterARefusedToken() async throws {
@@ -609,7 +610,7 @@ func oneVault(_ items: Item...) -> FakeSource {
 
 @Test(.timeLimit(.minutes(1))) func anItemTheClientCannotDecodeIsSkippedAndTheRestAreChecked() async throws {
     let source = oneVault(sshItem("bad", title: "broken"), sshItem("good", title: "fine"))
-    source.failItem("bad", with: OnePasswordError(kind: .other, message: "the reply could not be decoded"))
+    source.failItem("bad", with: OnePasswordError(kind: .decoding, message: "the reply could not be decoded"))
     let rig = try SyncRig(source: source)
     await rig.service.start()
     let summary = await rig.service.checkNow()
@@ -776,7 +777,7 @@ func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
 }
 
 @Test(.timeLimit(.minutes(1))) func anItemTheClientCannotDecodeKeepsItsStoredKeyUntilAnotherVersionReadsIt() async throws {
-    let undecodable = OnePasswordError(kind: .other, message: "the reply could not be decoded")
+    let undecodable = OnePasswordError(kind: .decoding, message: "the reply could not be decoded")
     let source = oneVault(sshItem("i1", title: "deploy"))
     let rig = try SyncRig(source: source)
     await rig.service.start()
@@ -810,7 +811,7 @@ func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
 
 @Test(.timeLimit(.minutes(1))) func aNoteTheClientCannotDecodeIsReportedAndTheDefaultsApplyUntilAnotherVersionReadsIt() async throws {
     let source = oneVault(sshItem("i1", title: "deploy"), noteItem("note", interval: "30m"))
-    source.failItem("note", with: OnePasswordError(kind: .other, message: "the reply could not be decoded"))
+    source.failItem("note", with: OnePasswordError(kind: .decoding, message: "the reply could not be decoded"))
     let rig = try SyncRig(source: source)
     await rig.service.start()
     let summary = await rig.service.checkNow()
