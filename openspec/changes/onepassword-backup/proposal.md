@@ -2,7 +2,7 @@
 
 ## Why
 
-iCloud shares each key between the Macs of one Apple account, and it is the source of truth.
+iCloud shares each key between the Macs of one Apple account, and it decides which keys exist.
 A key lost with every Mac, or deleted by mistake, needs a copy outside iCloud (operator, 2026-11-18).
 1Password can also sign with an SSH Key item, so the copy works even when no Mac is left.
 
@@ -12,7 +12,9 @@ A key lost with every Mac, or deleted by mistake, needs a copy outside iCloud (o
 - The backup touches only the items it created, which carry the tag `signd`, and leaves every other item in the vault alone.
 - A run comes 5 minutes after the last key change, at most once an hour, and once a day with no change.
 - A `Lease` record in the signd zone keeps two Macs from running at once; it expires on its own and blocks no request.
-- A removed key's item is deleted by default, which 1Password keeps in Recently Deleted for 30 days; a setting archives it or keeps it instead.
+- A removed key's item is deleted by default.
+  1Password keeps a deleted item in Recently Deleted for 30 days.
+  A setting archives it or keeps it instead.
 - `signd backup login` stores a service account token from stdin; `signd backup status`, `run` and `restore` show, start and undo a backup.
 - Secure Enclave keys cannot leave the chip, so one Secure Note lists them for recreation.
 
