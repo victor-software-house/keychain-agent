@@ -42,7 +42,7 @@ Syncing keys from 1Password and writing the SSH host configuration is the `onepa
 - Code: `Sources/` is restructured into SwiftPM targets for the message format, the protocol, the store, the server and the executable.
   New dependencies: SwiftNIO, swift-crypto (`CryptoExtras`) and swift-argument-parser.
 - Release: the package job builds and signs an app bundle.
-  The bundle has an embedded Developer ID provisioning profile, which the job takes from the signing secrets.
+  The bundle has an embedded Developer ID provisioning profile, which the job takes from the signing secrets at build time.
   The cask changes from a binary in `/usr/local/bin` to an app in `/Applications` plus a linked command.
 - Tests: protocol tests run on GitHub-hosted runners.
   The runners have no Secure Enclave, so Secure Enclave and keychain tests run on a physical Mac before each release.
