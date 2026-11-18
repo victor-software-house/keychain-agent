@@ -155,6 +155,51 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(await a.service.removeDevice(a.device.recordName).outcome == .failed)
 }
 
+@Test(.timeLimit(.minutes(1))) func aCopyAnotherDeviceSealsDuringARemovalIsDroppedToo() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    // Another device's check, started before the Device record went, seals the key to b again.
+    let resealed = try Wrapping.seal(privateKey, comment: "", to: b.agreement.publicKey)
+    cloud.beforeNextDelete {
+        guard let record = cloud.record("key-deploy"), var payload = try? Payload.decode(KeyPayload.self, from: record.payload) else { return }
+        payload.sealed[b.device.recordName] = resealed
+        cloud.put(.key, "key-deploy", payload: Payload.encode(payload))
+    }
+    #expect(await a.service.removeDevice(b.device.recordName) == SyncResult(.done))
+    let payload = try Payload.decode(KeyPayload.self, from: try #require(cloud.record("key-deploy")).payload)
+    #expect(Array(payload.sealed.keys) == [a.device.recordName])
+}
+
+@Test(.timeLimit(.minutes(1))) func aKeyThisMacMadeStaysItsOwnAfterAnotherDeviceSealsItAndTheZoneGoes() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    #expect(await a.service.checkNow().sealed == ["deploy"])
+    // a reads back its own write, a changed record for a key it made.
+    _ = await a.service.checkNow()
+    #expect(try a.store.list().first?.isReceived == false)
+
+    cloud.deleteZoneByUser()
+    _ = await a.service.checkNow()
+    let own = try #require(try a.store.list().first)
+    #expect(!own.isShared)
+    #expect(try softwareOpen(own).0.publicKey.blob == privateKey.publicKey.blob)
+}
+
+@Test(.timeLimit(.minutes(1))) func aZoneThatIsMissingKeepsThisMacsOwnKeys() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    cloud.removeZone()
+    #expect(await a.service.checkNow().outcome == .ok)
+    #expect(try a.store.list().map(\.isShared) == [false])
+    #expect(try softwareOpen(try #require(try a.store.list().first)).0.publicKey.blob == privateKey.publicKey.blob)
+    #expect(await b.service.checkNow().outcome == .ok)
+    #expect(try b.store.list().isEmpty)
+}
+
 @Test(.timeLimit(.minutes(1))) func aRemovalThatFailsKeepsTheDeviceRecordAndFinishesWhenRunAgain() async throws {
     let (cloud, a, b, _) = try twoDevices()
     _ = await b.service.checkNow()

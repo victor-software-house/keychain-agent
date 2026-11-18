@@ -27,8 +27,12 @@ plutil -extract Entitlements xml1 -o build/signd.entitlements build/profile.plis
 team=$(plutil -extract TeamIdentifier.0 raw build/profile.plist)
 plutil -replace keychain-access-groups -json "[\"$team.com.victor-software-house.signd\"]" build/signd.entitlements
 plutil -replace com.apple.developer.icloud-services -json '["CloudKit"]' build/signd.entitlements
-containers=$(plutil -extract com.apple.developer.icloud-container-identifiers json -o - build/signd.entitlements)
-container=$(plutil -extract com.apple.developer.icloud-container-identifiers.0 raw -o - build/signd.entitlements)
+containers=$(plutil -extract com.apple.developer.icloud-container-identifiers json -o - build/signd.entitlements 2> /dev/null) || containers=none
+container=$(plutil -extract com.apple.developer.icloud-container-identifiers.0 raw -o - build/signd.entitlements 2> /dev/null) || container=
+if [ -z "$container" ]; then
+  echo "✘ the profile must name exactly one iCloud container, not $containers" >&2
+  exit 1
+fi
 if plutil -extract com.apple.developer.icloud-container-identifiers.1 raw -o - build/signd.entitlements > /dev/null 2>&1; then
   echo "✘ the profile must name exactly one iCloud container, not $containers" >&2
   exit 1

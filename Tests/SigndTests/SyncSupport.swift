@@ -29,6 +29,9 @@ final class FakeCloud: CloudStore {
         var deletions: [(name: String, sequence: Int)] = []
         var sequence = 0
         var loss: (kind: ZoneLoss, sequence: Int)?
+        var zoneMissing = false
+        /// Tokens older than this belong to a zone that is gone, so CloudKit reports them expired.
+        var tokensFrom = 0
     }
 
     private struct State {
@@ -37,6 +40,7 @@ final class FakeCloud: CloudStore {
         var failure: CloudError?
         var expireNextToken = false
         var saveFailure: CloudError?
+        var beforeDelete: (@Sendable () -> Void)?
         var delay: Duration = .zero
         var calls = Calls()
 
@@ -59,6 +63,8 @@ final class FakeCloud: CloudStore {
     func fail(with error: CloudError?) { state.withLock { $0.failure = error } }
     /// Fails only saves, so a test can stop a command between its reads and its writes.
     func failSaves(with error: CloudError?) { state.withLock { $0.saveFailure = error } }
+    /// Runs `action` before the next delete, as another device's write that lands while a command runs.
+    func beforeNextDelete(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.beforeDelete = action } }
     func slow(_ delay: Duration) { state.withLock { $0.delay = delay } }
     func setAccount(_ account: CloudAccount) { state.withLock { $0.account = account } }
     func expireNextToken() { state.withLock { $0.expireNextToken = true } }
@@ -70,6 +76,17 @@ final class FakeCloud: CloudStore {
             state.database.records = [:]
             state.database.deletions = []
             state.database.loss = (.deletedByUser, state.database.sequence)
+        }
+    }
+
+    /// The zone goes with no notice to any device, as when CloudKit drops it: the next fetch reports it missing.
+    func removeZone() {
+        state.withLock { state in
+            state.database.sequence += 1
+            state.database.records = [:]
+            state.database.deletions = []
+            state.database.zoneMissing = true
+            state.database.tokensFrom = state.database.sequence
         }
     }
 
@@ -104,16 +121,21 @@ final class FakeCloud: CloudStore {
     }
 
     func prepare() async throws(CloudError) {
-        try await answer({ $0.prepare += 1 }) { state throws(CloudError) in state.database.loss = nil }
+        try await answer({ $0.prepare += 1 }) { state throws(CloudError) in
+            state.database.loss = nil
+            state.database.zoneMissing = false
+        }
     }
 
     func changes(database: Data?, zone: Data?) async throws(CloudError) -> CloudChanges {
         try await answer({ $0.changes += 1 }) { state throws(CloudError) in
+            if state.database.zoneMissing { throw CloudError(.zoneMissing, "the zone does not exist") }
             if state.expireNextToken, database != nil {
                 state.expireNextToken = false
                 throw CloudError(.tokenExpired, "the change token expired")
             }
             let since = Self.sequence(database)
+            if database != nil, since < state.database.tokensFrom { throw CloudError(.tokenExpired, "the change token is from a zone that is gone") }
             let db = state.database
             var changes = CloudChanges()
             changes.requests = 1
@@ -164,6 +186,11 @@ final class FakeCloud: CloudStore {
     }
 
     func delete(_: RecordType, name: String) async throws(CloudError) {
+        let action = state.withLock { state -> (@Sendable () -> Void)? in
+            defer { state.beforeDelete = nil }
+            return state.beforeDelete
+        }
+        action?()
         try await answer({ $0.delete += 1 }) { state throws(CloudError) in
             guard state.database.records.removeValue(forKey: name) != nil else { return }
             state.database.sequence += 1

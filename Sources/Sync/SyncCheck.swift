@@ -56,6 +56,9 @@ struct SyncCheck {
         } catch where error.kind == .tokenExpired || error.kind == .zoneMissing {
             requests += 1
             if error.kind == .zoneMissing {
+                // The zone and its records are gone, so the full fetch below finds none: this Mac's own keys stay as local keys
+                // first, as after a zone loss, and only the keys other devices shared go.
+                try removeShared(changes: &changes)
                 try await cloud.prepare()
                 requests += 1
             }
@@ -173,7 +176,8 @@ struct SyncCheck {
         }
         var key = StoredKey(
             name: payload.name, kind: .wrapped, publicBlob: payload.publicKey, comment: Display.clean(payload.comment), hosts: payload.hosts,
-            source: StoredKey.receivedSource, keyData: device.handle, wrapped: sealed, recordName: record
+            // A key this Mac made keeps its source when its record changes, as when another device seals it for a new one.
+            source: existing?.source ?? StoredKey.receivedSource, keyData: device.handle, wrapped: sealed, recordName: record
         )
         if let existing {
             key.created = existing.created
@@ -208,6 +212,7 @@ struct SyncCheck {
                 var own = key
                 own.recordName = nil
                 try store.replace(own)
+                changes.replaced.append(own.name)
             }
         }
     }
@@ -329,5 +334,17 @@ struct SyncCheck {
         requests += 1
         try await cloud.delete(.device, name: id)
         state.devices[id] = nil
+        // A device whose check started before the delete may have sealed a key to the removed one again; this pass drops that copy.
+        // Checks that start after it no longer list the device, so they seal nothing more to it.
+        for record in state.keys.keys.sorted() {
+            requests += 1
+            guard let current = try await cloud.fetch(.key, name: record), var payload = try? Payload.decode(KeyPayload.self, from: current.payload),
+                  payload.sealed[id] != nil
+            else { continue }
+            payload.sealed[id] = nil
+            requests += 1
+            _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload), system: current.system))
+            state.keys[record]?.sealedFor = payload.sealed.keys.sorted()
+        }
     }
 }
