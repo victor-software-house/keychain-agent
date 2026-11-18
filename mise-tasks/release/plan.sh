@@ -1,8 +1,8 @@
 #!/bin/sh
 #MISE description="Write the version on HEAD, the commit to package and whether to build signd.pkg, to GITHUB_OUTPUT"
-# A published run builds the package only when the version's GitHub release exists and holds
-# no package yet, so a push that releases nothing costs no macOS job; a run with publish off always
-# builds HEAD, as a run artifact.
+# A published run builds the package only when the version's GitHub release exists and has no package yet.
+# A push that releases nothing then costs no macOS job.
+# With publish off, a run always builds HEAD, as a run artifact.
 set -eu
 read -r version < VERSION
 ref=v$version
