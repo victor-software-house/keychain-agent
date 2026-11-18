@@ -19,7 +19,7 @@ queue:
       - 2026-11-18, operator picked automatic sharing to new Macs, sharing by default with --local, and no per-Mac limit for now.
 
   - id: SGD-009
-    title: Install without Homebrew, as flowgate does
+    title: 'Install, run and update signd through each route: pkg, cask, MDM, self-update'
     scope: packaging
     outcome: "Opening signd.pkg is the whole install: the CLI is on the PATH and the agent runs, with no other step."
     blocked_by: []
@@ -28,9 +28,20 @@ queue:
       - After the pkg, signd status shows the agent answering; when Login Items needs approval, signd status says so and signd service enable opens that pane.
       - The README Install section starts from the pkg, with Homebrew as the second route.
       - 'After the pkg, ssh uses signd with no other step: signd adds Include ~/.ssh/signd/config at the top of ~/.ssh/config when no line includes it, creating the file when it is missing, and signd status shows whether the line is there.'
+      - An MDM profile in the repository installs signd and approves its login item by team identifier, and a Mac enrolled with it runs the agent after the pkg with no click.
+      - signd service status, restart and log report and control the agent as brew services does for a formula.
+      - The cask uninstalls the login item, the receipt and the app, and its zap removes the sync state and ~/.ssh/signd.
+      - Opening signd.pkg shows the signd background, a welcome, the AGPL license and a conclusion page, and Installer refuses an Intel Mac or an older macOS before it asks for a password.
+      - An installed signd checks the latest release at start and every 6 hours by default, installs a notarized zip whose signature matches its team and bundle identifier, and restarts on the new version with no prompt; a setting or an MDM profile changes the interval or turns it off, and the updater makes no request when the console user does not own Signd.app.
     notes:
       - 2026-11-18, operator asked for an install as smooth as flowgate; signd needs no privacy permission, only its login item.
       - 2026-11-18, operator wants every pkg script to be one line that runs a signd command, with the logic in Swift; postinstall already does.
+      - '2026-11-18, operator asked that the install needs no UI step, and that MDM can provision signd with none: the pkg through MDM, and a managed login items profile (com.apple.servicemanagement, by team identifier) so the agent needs no approval.'
+      - An update keeps the login item, the keychain items and the iCloud container because each is tied to the team identifier and the bundle identifier, which every release keeps; signd needs no TCC grant.
+      - '2026-11-18, operator decided: no Homebrew formula. It would only repackage the signed app, start a second agent beside the login item and show a bare Login Items row; signd service status, restart and log cover what brew services gives, and the cask stays the Homebrew route.'
+      - '2026-11-18, operator decided the pkg gets a full Installer experience through a productbuild distribution file: the signd background in light and dark, a two-line welcome, the AGPL license, a conclusion page with what is ready and a first command, and checks that refuse an Intel Mac or an older macOS before the admin password.'
+      - '2026-11-18, operator decided signd updates itself with its own updater, not Sparkle: Sparkle finds the running app through NSRunningApplication, which does not list a launchd agent, so it would install under the agent and never restart it; it prompts a standard user because /Applications is root:admin 775; and its framework links AppKit and WebKit into the agent. The cask sets auto_updates true, so brew upgrade leaves the app to the updater.'
+      - 2026-11-18, operator decided the pkg is needed only for the first install and for MDM, and signd updates itself after that. The pkg postinstall hands Signd.app to the console user, as a drag install would, so the updater can swap it with no prompt. Under MDM the app stays root-owned, the updater stays off because it cannot swap a root-owned app, and MDM ships updates.
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
@@ -86,20 +97,20 @@ queue:
       - The PR records the binary size before and after Noora.
     notes:
       - 2026-11-18, operator picked Noora 0.57.7 to match qctl and verctl.
-
+archive:
   - id: SGD-012
     title: Stop the slow signatures once the list request is measured
     scope: tests
     outcome: >-
       The test suite finishes in about the time of its slowest test that needs it, on
       the 3-core CI runner.
-    blocked_by: []
-    acceptance:
-      - slowSignaturesDoNotDelayAListRequest cancels its signing tasks after it measures the list request, and still measures it while every task is signing.
-      - On the CI runner, aWrappedKeySignsFastOnceOpen and slowSignaturesDoNotDelayAListRequest each pass in under 3 seconds.
     notes:
       - 2026-11-18, on portable aWrappedKeySignsFastOnceOpen took 0.18 s alone and 1.99 s beside slowSignaturesDoNotDelayAListRequest, whose 3,200 queued 5 ms signatures held the thread pool; on the 3-core runner both took 21 s.
-archive:
+    completed: 2026-11-18T14:35:44
+    evidence:
+      - '#38 merged: on the CI runner the test run took 4.35 s, down from 21.3 s (run 44318137485 against 44315790198); aWrappedKeySignsFastOnceOpen took 3.8 s beside the RSA test, and slowSignaturesDoNotDelayAListRequest no longer appears among the five slowest. On portable, three runs: 0.17 to 0.18 s and 0.06 to 0.07 s.'
+    disposition: completed
+
   - id: SGD-006
     title: "Guided first sign-in: signd setup"
     scope: onepassword-sync
@@ -163,3 +174,19 @@ horizon:
       profiles.
     notes:
       - 2026-11-18, operator deferred the 1Password macs field to a later change with tags or profiles.
+
+  - id: SGD-013
+    title: Back up keys to 1Password, apart from the iCloud sync
+    scope: backup
+    outcome: A key can be restored from a backup the user keeps outside iCloud.
+    reason: research
+    open: "The design is missing: what a backup holds, when it runs, how a restore picks keys, and how it stays apart from the real-time iCloud sync."
+    notes:
+      - 2026-11-18, operator decided iCloud does the real-time sync and 1Password stays useful as a backup store, which needs its own design.
+      - '2026-11-18, operator direction: iCloud is the source of truth, and a backup copies it one way into 1Password.'
+      - '2026-11-18, operator direction: any live device runs the backup, hourly or daily or after a batch of changes, throttled, with a light lock so two devices never run it at once.'
+      - 'Candidate lock: a lease record in the signd zone (holder device, expiry) taken with a save that fails when another device changed it first; it is a new production record type, so its name needs a review before deploy.'
+      - 2026-11-18, operator decided the backup writes each shareable key as a 1Password SSH Key item in one vault, through a service account, so 1Password can sign with it when no Mac is left and a restore is an import. Secure Enclave keys cannot leave the chip, so the backup lists them for recreation. The rule that no private key leaves signd gains this one exception, for that vault only.
+      - "2026-11-18, operator asked that the service account token be stored safely: it lives in the data-protection keychain in signd's access group, this device only, reaches other Macs only sealed to their Secure Enclave keys as keys do, never appears in a file, an argument, the environment or a log, and its service account can write only to the backup vault."
+      - '2026-11-18, operator picked the schedule: a run 5 minutes after the last key change, at most once an hour, and once a day with no change. Each is a setting with that default, which the config file or an MDM profile can override (SGD-004).'
+      - 2026-11-18, operator named the lock record type Lease and asked that it block nothing and expire on its own. CloudKit has no record expiry in its public API, so a Mac claims the lease by a conditional save (ifServerRecordUnchanged) with its device and an expiry 10 minutes out; a claim past its expiry counts as free and is taken over by the same save, and only the backup reads it.

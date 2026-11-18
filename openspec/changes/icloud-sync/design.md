@@ -150,8 +150,9 @@ The `signd` note goes; the `declarative-config` change carries settings for ever
 
 ## Migration Plan
 
-1. On each Mac, run `signd logout` with the installed 1Password release, which deletes the token and the synced keys, then install this release.
-2. On one Mac, import each key that 1Password held, which shares it; and run `signd key share` for each key imported by hand.
+1. Install this release on each Mac with no `signd logout` first. This release reads a key that the 1Password sync stored as a local key, so ssh through it keeps working (operator, 2026-11-18).
+2. On one Mac, run `signd key share` for each such key and each key imported by hand.
 3. On every other Mac, delete the local copy of each such key; the shared copy arrives within seconds.
-4. Remove the dotfiles step that signs signd in to 1Password.
-5. Rollback: install the previous release and run `signd login` again.
+4. Remove the dotfiles step that signs signd in to 1Password, and move the key items back to the vault the other SSH keys use, where they stay as a backup; delete the vault signd read.
+5. The token item that the 1Password release stored stays in signd's keychain group, unread; revoke its service account in 1Password.
+6. Rollback: before step 4, install the previous release and run `signd login` again. After step 4, also put the key items back in a vault, create a service account with access to that vault, and run `signd login` with its token, which replaces the revoked token item.
