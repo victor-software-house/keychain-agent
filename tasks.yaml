@@ -172,3 +172,6 @@ horizon:
     open: "The design is missing: what a backup holds, when it runs, how a restore picks keys, and how it stays apart from the real-time iCloud sync."
     notes:
       - 2026-11-18, operator decided iCloud does the real-time sync and 1Password stays useful as a backup store, which needs its own design.
+      - '2026-11-18, operator direction: iCloud is the source of truth, and a backup copies it one way into 1Password.'
+      - '2026-11-18, operator direction: any live device runs the backup, hourly or daily or after a batch of changes, throttled, with a light lock so two devices never run it at once.'
+      - 'Candidate lock: a lease record in the signd zone (holder device, expiry) taken with a save that fails when another device changed it first; it is a new production record type, so its name needs a review before deploy.'
