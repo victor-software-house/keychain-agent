@@ -2,19 +2,27 @@
 
 ## Why
 
-The `onepassword-sync` change brings a key change to every Mac within one interval of five minutes, and each check costs a read from a daily 1Password quota.
-The operator wants a change to reach every Mac within a few seconds, with no account beyond the Apple account each Mac already has, and asked to drop 1Password (operator, 2026-11-18).
-A trial on two Macs measured CloudKit's private database: a check every 2 seconds saw 142 of 142 saves from the other Mac within 3.4 seconds, with no throttling in 3,943 checks ([research.md](research.md)).
+The `onepassword-sync` change brings a key change to every Mac within one interval of five minutes.
+Each check costs a read from a daily 1Password quota.
+
+The operator wants a change to reach every Mac within a few seconds, with no account beyond the Apple account each Mac already has.
+The operator asked to drop 1Password (operator, 2026-11-18).
+
+A trial on two Macs measured CloudKit's private database ([research.md](research.md)).
+A check every 2 seconds saw 142 of 142 saves from the other Mac within 3.4 seconds.
+There was no throttling in 3,943 checks.
 
 ## What Changes
 
 - New: signd keeps shared keys in the user's own iCloud private database, in a zone named `signd`, as `Key` records.
   Each device publishes a `Device` record with the public half of its own Secure Enclave key-agreement key; today every device is a Mac.
-- New: a shared key's private part is sealed with HPKE to each device's key, inside CloudKit's encrypted field, so neither Apple nor the signd team can read it.
+- New: a shared key's private part is sealed with Hybrid Public Key Encryption (HPKE) to each device's key.
+  The sealed part is stored in CloudKit's encrypted field, so neither Apple nor the signd team can read it.
 - New: keys sync by default.
   `signd key create` and `signd key import` share every key that can leave the Mac, and `--local` keeps a key on its Mac; a Secure Enclave P-256 key never leaves it.
   `signd key share NAME` shares an existing key, and `signd key delete` on a shared key deletes it on every Mac.
-- New: a Mac that has a shared key seals it to each new Mac on the account at its next check, with no step on either Mac.
+- New: a Mac that has a shared key seals it to each new Mac on the account at its next check.
+  Neither Mac needs a step.
 - New: the agent checks for changes every 2 seconds, one request when nothing changed, and a push from CloudKit starts a check at once.
   Each request times out after 10 seconds, failures back off, and a throttled check waits the time CloudKit gives.
 - New: `signd device list` and `signd device remove`.
@@ -39,6 +47,8 @@ A trial on two Macs measured CloudKit's private database: a check every 2 second
 
 ## Impact
 
-- Code: the `Sync` module moves to CloudKit; `KeyStore` gains the device key and loses the token store; the agent runs an `NSApplication` to receive pushes.
+- Code: the `Sync` module moves to CloudKit.
+  `KeyStore` gains the device key and loses the token store.
+  The agent runs an `NSApplication` to receive pushes.
 - CI: the 1Password test secret leaves the template answers, and the tests run against a CloudKit stand-in.
 - Each Mac: the dotfiles step that signs signd in to 1Password goes.

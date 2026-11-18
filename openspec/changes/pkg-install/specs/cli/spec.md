@@ -4,12 +4,14 @@
 
 ### Requirement: Status shows the install
 
-`signd status` SHALL print the login item's state and whether `~/.ssh/config` includes signd's file, and SHALL name `signd service enable` on each line that is not in order; `--json` SHALL carry both.
+`signd status` SHALL print the login item's state and whether `~/.ssh/config` includes signd's file.
+On each line that is not in order, it SHALL show `signd service enable`.
+`--json` SHALL carry both.
 
 #### Scenario: Approval pending
 
 - **WHEN** the login item needs approval
-- **THEN** `signd status` shows the pending approval and names `signd service enable`
+- **THEN** `signd status` shows the pending approval and shows `signd service enable`
 
 ### Requirement: service reports and controls the agent
 

@@ -2,23 +2,27 @@
 
 ## Purpose
 
-How signd keeps SSH keys from 1Password on each Mac: the service account token it needs, which items it takes, when it checks, and how it behaves when 1Password fails.
+How signd keeps SSH keys from 1Password on each Mac.
+This covers the service account token it needs and the items it takes.
+It also covers when it checks and how it behaves when 1Password fails.
 
 ## Requirements
 
 ### Requirement: The token comes from stdin and stays in signd's access group
 
-`signd login` SHALL read a service account token from stdin, SHALL refuse a token 1Password rejects, and SHALL store an accepted token only in signd's access group.
+`signd login` SHALL read a service account token from stdin.
+It SHALL refuse a token that 1Password rejects.
+It SHALL store an accepted token only in signd's access group.
 
 #### Scenario: Log in
 
 - **WHEN** a valid token is piped into `signd login`
-- **THEN** the command exits 0, `signd status` shows the account as signed in, and no file under the home directory holds the token
+- **THEN** the command exits 0, `signd status` shows the account as signed in, and no file under the home directory contains the token
 
 #### Scenario: A bad token
 
 - **WHEN** a revoked token is piped into `signd login`
-- **THEN** the command fails, says 1Password refused the token, and keeps any token stored before
+- **THEN** the command fails, reports that 1Password refused the token, and keeps any token stored before
 
 ### Requirement: Log out removes synced keys
 
@@ -26,21 +30,24 @@ How signd keeps SSH keys from 1Password on each Mac: the service account token i
 
 #### Scenario: Log out
 
-- **WHEN** signd holds one synced and one local key and `signd logout` runs
+- **WHEN** signd has one synced and one local key and `signd logout` runs
 - **THEN** `signd key list` shows only the local key
 
 ### Requirement: signd serves the SSH Key items its token reads
 
-signd SHALL sync every SSH Key item in every vault the token reads, except an item whose `macs` field does not name this Mac's local host name.
+signd SHALL sync every SSH Key item in every vault the token reads.
+It SHALL skip an item whose `macs` field does not list this Mac's local host name.
 
 #### Scenario: A key limited to other Macs
 
-- **WHEN** an item's `macs` field names only another Mac
+- **WHEN** an item's `macs` field lists only another Mac
 - **THEN** this Mac's `signd key list` does not show it
 
 ### Requirement: Changes reach every Mac within one interval
 
-signd SHALL check 1Password at a random point within each interval, 5 minutes unless a setting changes it, and SHALL add, replace and remove synced keys to match their items.
+signd SHALL check 1Password at a random point within each interval.
+The interval is 5 minutes unless a setting changes it.
+signd SHALL add, replace and remove synced keys to match their items.
 
 #### Scenario: A key is replaced
 
@@ -59,7 +66,8 @@ signd SHALL check 1Password at a random point within each interval, 5 minutes un
 
 ### Requirement: Requests never wait for 1Password
 
-signd SHALL answer list and sign requests from the keys it already holds, and SHALL NOT wait for a 1Password call or for the 1Password client to start before it answers.
+signd SHALL answer list and sign requests from the keys it already has.
+It SHALL NOT wait for a 1Password call or for the 1Password client to start before it answers.
 
 #### Scenario: A request during a check
 
@@ -68,7 +76,7 @@ signd SHALL answer list and sign requests from the keys it already holds, and SH
 
 ### Requirement: An unchanged vault costs one read
 
-signd SHALL NOT list a vault's items or get an item when the vault's content version has not changed since the last successful check.
+signd SHALL NOT list a vault's items or get an item when the vault's content version is unchanged since the last successful check.
 
 #### Scenario: Nothing changed
 
@@ -86,7 +94,8 @@ signd SHALL answer list and sign requests from its store while a check runs, fai
 
 ### Requirement: Failed checks back off
 
-signd SHALL retry a failed check after a random wait that grows with each failure, and after a rate-limit answer SHALL wait at least one hour.
+signd SHALL retry a failed check after a random wait that grows with each failure.
+After a rate-limit answer it SHALL wait at least one hour.
 
 #### Scenario: Rate limited
 
@@ -95,7 +104,8 @@ signd SHALL retry a failed check after a random wait that grows with each failur
 
 ### Requirement: The signd note sets fleet settings
 
-signd SHALL read `interval` and `key-lifetime` from a Secure Note titled `signd` in a synced vault, and a value set with `signd config` SHALL win over it.
+signd SHALL read `interval` and `key-lifetime` from a Secure Note titled `signd` in a synced vault.
+A value set with `signd config` SHALL take precedence over it.
 
 #### Scenario: A fleet interval
 
