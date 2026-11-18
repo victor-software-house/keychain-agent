@@ -1,6 +1,7 @@
 # onepassword-sync Specification
 
 ## Purpose
+
 How signd keeps SSH keys from 1Password on each Mac: the service account token it needs, which items it takes, when it checks, and how it behaves when 1Password fails.
 
 ## Requirements
