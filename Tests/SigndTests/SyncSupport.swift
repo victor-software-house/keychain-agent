@@ -36,6 +36,7 @@ final class FakeCloud: CloudStore {
         var account = CloudAccount.available(user: "user-1")
         var failure: CloudError?
         var expireNextToken = false
+        var saveFailure: CloudError?
         var delay: Duration = .zero
         var calls = Calls()
 
@@ -56,6 +57,8 @@ final class FakeCloud: CloudStore {
     var calls: Calls { state.withLock { $0.calls } }
 
     func fail(with error: CloudError?) { state.withLock { $0.failure = error } }
+    /// Fails only saves, so a test can stop a command between its reads and its writes.
+    func failSaves(with error: CloudError?) { state.withLock { $0.saveFailure = error } }
     func slow(_ delay: Duration) { state.withLock { $0.delay = delay } }
     func setAccount(_ account: CloudAccount) { state.withLock { $0.account = account } }
     func expireNextToken() { state.withLock { $0.expireNextToken = true } }
@@ -143,6 +146,7 @@ final class FakeCloud: CloudStore {
 
     func save(_ record: CloudRecord) async throws(CloudError) -> CloudRecord {
         try await answer({ $0.save += 1 }) { state throws(CloudError) in
+            if let failure = state.saveFailure { throw failure }
             let existing = state.database.records[record.name]
             switch (existing, record.system) {
             case (nil, nil): break

@@ -117,7 +117,7 @@ signd status                                                   # iCloud state, t
 - A new Mac on the account gets every shared key at the next check of a Mac that has them, with no command on either Mac.
 - A check with no change costs one request. After a failure signd waits longer each time, up to a minute, and after a throttle it waits the time iCloud gives.
 - A key whose name a key on this Mac already has is skipped and shown in `signd status` until that key is deleted.
-- Signing in to another Apple account, or deleting signd's data in iCloud settings, removes the shared keys from the Mac; local keys stay.
+- Signing in to another Apple account, or deleting signd's data in iCloud settings, removes the keys other Macs shared; each key this Mac made or imported stays, as a local key.
 
 > [!NOTE]
 > Sharing needs the notarized release: only its provisioning profile grants signd's iCloud container. A build from source keeps every key on its Mac, and `signd status` shows sync as off.

@@ -18,7 +18,8 @@ public struct StoredKey: Codable, Sendable, Equatable {
     public var publicBlob: Data
     public var comment: String
     public var hosts: [String]
-    /// Where the key came from: `local` for a key made on this Mac, `import` for an imported one, `icloud` for a shared one.
+    /// Where the key came from: `local` for a key made on this Mac, `import` for an imported one, `icloud` for one another device shared.
+    /// Sharing a key keeps its source, so a key this Mac made stays this Mac's own when the iCloud data goes.
     public var source: String
     public var created: Date
     public var keyData: Data
@@ -27,10 +28,14 @@ public struct StoredKey: Codable, Sendable, Equatable {
     /// The `Key` record of a shared key; nil for a key that is not shared.
     public var recordName: String?
 
-    /// The `source` of a key shared through iCloud.
-    public static let sharedSource = "icloud"
+    /// The `source` of a key another device shared with this one.
+    public static let receivedSource = "icloud"
 
-    public var isShared: Bool { source == Self.sharedSource }
+    /// Whether a `Key` record shares the key between devices.
+    public var isShared: Bool { recordName != nil }
+
+    /// Whether another device shared the key with this one, so this Mac has no copy of its own.
+    public var isReceived: Bool { source == Self.receivedSource }
 
     public init(
         name: String, kind: KeyKind, publicBlob: Data, comment: String, hosts: [String], source: String = "local", created: Date = Date(),

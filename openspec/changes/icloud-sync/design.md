@@ -105,8 +105,8 @@ An expired change token starts again with a full fetch.
 | A network error, or a request past its timeout of 10 seconds | waits the interval times 2 to the power of the failures before, up to 60 seconds, times a random factor from 0.5 to 1 |
 | A throttle, a busy zone or an unavailable service with a retry-after time | waits that time, and at least the interval |
 | No iCloud account, or a restricted one | checks the account every 60 seconds and when macOS reports an account change |
-| Another Apple account signed in | deletes the shared keys and the state, and starts again |
-| The zone deleted from iCloud settings | deletes the shared keys and stops until `signd sync`, which makes the zone again |
+| Another Apple account signed in | deletes the keys other devices shared, keeps this Mac's own keys as local ones, clears the state, and starts again |
+| The zone deleted from iCloud settings | deletes the keys other devices shared, keeps this Mac's own keys as local ones, and stops until `signd sync`, which makes the zone again |
 | The zone missing for another reason | makes it again at the next check |
 | An expired change token | fetches everything again |
 | iCloud storage full when a key is saved | fails that share with the reason; checks go on |

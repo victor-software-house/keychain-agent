@@ -173,7 +173,7 @@ struct SyncCheck {
         }
         var key = StoredKey(
             name: payload.name, kind: .wrapped, publicBlob: payload.publicKey, comment: Display.clean(payload.comment), hosts: payload.hosts,
-            source: StoredKey.sharedSource, keyData: device.handle, wrapped: sealed, recordName: record
+            source: StoredKey.receivedSource, keyData: device.handle, wrapped: sealed, recordName: record
         )
         if let existing {
             key.created = existing.created
@@ -197,9 +197,19 @@ struct SyncCheck {
     }
 
     /// Deletes every shared key on this device, as a change of account or a deleted zone needs.
+    /// Deletes each key another device shared with this one. A key this Mac made or imported stays as a key of this Mac only:
+    /// its sealed copy opens with this device's key, and no other copy may be left once the iCloud data is gone.
     func removeShared(changes: inout Changes) throws {
         var keys = try store.list()
-        for key in keys where key.isShared { try delete(key, keys: &keys, changes: &changes) }
+        for key in keys where key.isShared {
+            if key.isReceived {
+                try delete(key, keys: &keys, changes: &changes)
+            } else {
+                var own = key
+                own.recordName = nil
+                try store.replace(own)
+            }
+        }
     }
 
     /// Saves this device's record when the zone has none for its key, or one with another name.
@@ -280,7 +290,6 @@ struct SyncCheck {
             throw SyncRefusal("your iCloud storage is full, so \(name) was not shared")
         }
         var shared = local
-        shared.source = StoredKey.sharedSource
         shared.keyData = device.handle
         shared.wrapped = sealed[me]
         shared.recordName = record
@@ -304,10 +313,11 @@ struct SyncCheck {
     /// Deletes a device's record and drops its copies from every key.
     func removeDevice(_ id: String, state: inout SyncState, requests: inout Int) async throws {
         guard id != me else { throw SyncRefusal("\(id) is this Mac, which would publish its record again at its next check") }
-        guard state.devices[id] != nil else { throw SyncRefusal("no device has the id \(id); see signd device list") }
-        requests += 1
-        try await cloud.delete(.device, name: id)
-        state.devices[id] = nil
+        // A removal that stopped after its Device record went still finds the copies to drop.
+        guard state.devices[id] != nil || state.keys.values.contains(where: { $0.sealedFor.contains(id) }) else {
+            throw SyncRefusal("no device has the id \(id); see signd device list")
+        }
+        // The copies go first, so a failure leaves the Device record, and running the command again finishes the removal.
         for (record, entry) in state.keys.sorted(by: { $0.key < $1.key }) where entry.sealedFor.contains(id) {
             requests += 1
             guard let current = try await cloud.fetch(.key, name: record), var payload = try? Payload.decode(KeyPayload.self, from: current.payload) else { continue }
@@ -316,5 +326,8 @@ struct SyncCheck {
             _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload), system: current.system))
             state.keys[record]?.sealedFor = payload.sealed.keys.sorted()
         }
+        requests += 1
+        try await cloud.delete(.device, name: id)
+        state.devices[id] = nil
     }
 }

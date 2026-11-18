@@ -70,7 +70,8 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     let received = try #require(try b.shared().first)
     #expect(received.hosts == ["git.example.com"])
     #expect(received.comment == "deploy key")
-    #expect(received.source == StoredKey.sharedSource)
+    #expect(received.isReceived)
+    #expect(!own.isReceived)
     #expect(try softwareOpen(received).0.publicKey.blob == privateKey.publicKey.blob)
     #expect(b.changes.value == 1)
 }
@@ -154,6 +155,21 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(await a.service.removeDevice(a.device.recordName).outcome == .failed)
 }
 
+@Test(.timeLimit(.minutes(1))) func aRemovalThatFailsKeepsTheDeviceRecordAndFinishesWhenRunAgain() async throws {
+    let (cloud, a, b, _) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    cloud.failSaves(with: CloudError(.network, "offline"))
+    #expect(await a.service.removeDevice(b.device.recordName).outcome == .failed)
+    #expect(cloud.record(b.device.recordName) != nil)
+
+    cloud.failSaves(with: nil)
+    #expect(await a.service.removeDevice(b.device.recordName) == SyncResult(.done))
+    let payload = try Payload.decode(KeyPayload.self, from: try #require(cloud.record("key-deploy")).payload)
+    #expect(Array(payload.sealed.keys) == [a.device.recordName])
+    #expect(cloud.record(b.device.recordName) == nil)
+}
+
 // MARK: The check
 
 @Test(.timeLimit(.minutes(1))) func anUnchangedZoneCostsOneRequest() async throws {
@@ -193,8 +209,8 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(skipped.reason.contains("ProxyCommand"))
 }
 
-@Test(.timeLimit(.minutes(1))) func aZoneDeletedInSettingsRemovesSharedKeysAndWaitsForSync() async throws {
-    let (cloud, a, b, _) = try twoDevices()
+@Test(.timeLimit(.minutes(1))) func aZoneDeletedInSettingsRemovesReceivedKeysKeepsOwnKeysAndWaitsForSync() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
     let (local, _) = try localWrappedKey("mine")
     try b.store.add(local)
     _ = await b.service.checkNow()
@@ -205,6 +221,12 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     cloud.deleteZoneByUser()
     #expect(await b.service.checkNow().outcome == .stopped)
     #expect(try b.store.list().map(\.name) == ["mine"])
+    // The Mac that made the key keeps it, as its own key.
+    #expect(await a.service.checkNow().outcome == .stopped)
+    let own = try #require(try a.store.list().first)
+    #expect(own.name == "deploy")
+    #expect(!own.isShared)
+    #expect(try softwareOpen(own).0.publicKey.blob == privateKey.publicKey.blob)
     let calls = cloud.calls.changes
     #expect(await b.service.checkNow().outcome == .stopped)
     #expect(cloud.calls.changes == calls)
@@ -420,7 +442,6 @@ struct LegacyKey: Codable {
 
 @Test func aSharedKeySurvivesAnEncodeAndDecode() throws {
     var key = try localWrappedKey("k").0
-    key.source = StoredKey.sharedSource
     key.recordName = "key-k"
     let encoder = PropertyListEncoder()
     encoder.outputFormat = .binary

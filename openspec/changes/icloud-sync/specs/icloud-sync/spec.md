@@ -84,14 +84,14 @@ signd SHALL give each CloudKit request a timeout of 10 seconds, SHALL wait longe
 - **WHEN** CloudKit answers a check with a rate limit and a retry-after time of 30 seconds
 - **THEN** `signd status` shows the next check at least 30 seconds later
 
-### Requirement: A change of account leaves no keys behind
+### Requirement: A change of account keeps only this Mac's own keys
 
-When another Apple account signs in, or the user deletes signd's data in iCloud settings, signd SHALL delete every shared key on the Mac and keep its local keys.
+When another Apple account signs in, or the user deletes signd's data in iCloud settings, signd SHALL delete every key another device shared with the Mac. It SHALL keep each key the Mac made or imported, shared or not, as a key of this Mac only.
 
 #### Scenario: Data deleted in iCloud settings
 
 - **WHEN** the user deletes signd's iCloud data in System Settings
-- **THEN** `signd key list` shows only local keys, and signd makes no zone until `signd sync` runs
+- **THEN** `signd key list` shows only the keys this Mac made or imported, none of them shared, and signd makes no zone until `signd sync` runs
 
 ### Requirement: Builds without iCloud keep local keys
 
