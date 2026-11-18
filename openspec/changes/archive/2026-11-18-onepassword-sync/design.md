@@ -72,7 +72,7 @@ A failed step leaves the stored keys as they were; signd serves them until the n
 
 ### 6. When signd checks
 
-- The agent opens the 1Password client in the background as soon as it starts with a stored token, and keeps it for its whole run.  
+- The agent opens the 1Password client in the background as soon as it starts with a stored token, and keeps it for its whole run.
   The client takes about 1.2 s to start, nearly all of it compiling the WebAssembly core, so that time never falls on a check or a request.
 - At start, each Mac draws a random phase within the interval; each later wait is the interval times a random factor from 0.8 to 1.2.
 - A list or sign request on a Mac whose last success is older than the interval starts a check in the background, which covers a Mac that slept.

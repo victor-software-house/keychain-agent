@@ -2,9 +2,9 @@
 
 ## Why
 
-The operator decided that signd updates itself after the first install, with no prompt, and with its own updater rather than Sparkle (operator, 2026-11-18).  
-Sparkle finds the running app through `NSRunningApplication`, and that API does not list a launchd agent.  
-Sparkle would therefore install under the agent and never restart it.  
+The operator decided that signd updates itself after the first install, with no prompt, and with its own updater rather than Sparkle (operator, 2026-11-18).
+Sparkle finds the running app through `NSRunningApplication`, and that API does not list a launchd agent.
+Sparkle would therefore install under the agent and never restart it.
 It also prompts a standard user, since `/Applications` is `root:admin 775`, and its framework links AppKit and WebKit into the agent.
 
 ## What Changes

@@ -2,8 +2,8 @@
 
 ## Why
 
-iCloud shares each key between the Macs of one Apple account, and it is the source of truth.  
-A key lost with every Mac, or deleted by mistake, needs a copy outside iCloud (operator, 2026-11-18).  
+iCloud shares each key between the Macs of one Apple account, and it is the source of truth.
+A key lost with every Mac, or deleted by mistake, needs a copy outside iCloud (operator, 2026-11-18).
 1Password can also sign with an SSH Key item, so the copy works even when no Mac is left.
 
 ## What Changes

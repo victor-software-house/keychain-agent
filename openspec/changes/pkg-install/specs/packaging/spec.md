@@ -4,8 +4,8 @@
 
 ### Requirement: The command is on the PATH
 
-The package SHALL link `/usr/local/bin/signd` to the app's binary, creating `/usr/local/bin` when it is missing.  
-It SHALL replace a symbolic link there without following it, and SHALL leave any other file.  
+The package SHALL link `/usr/local/bin/signd` to the app's binary, creating `/usr/local/bin` when it is missing.
+It SHALL replace a symbolic link there without following it, and SHALL leave any other file.
 The cask SHALL link `signd` onto the PATH.
 Each linked command SHALL keep the bundle's entitlements.
 
@@ -33,7 +33,7 @@ Each linked command SHALL keep the bundle's entitlements.
 
 ### Requirement: The package shows signd's Installer pages
 
-The package SHALL show a background for light and for dark mode, a welcome page, the AGPL-3.0 license and a conclusion page.  
+The package SHALL show a background for light and for dark mode, a welcome page, the AGPL-3.0 license and a conclusion page.
 It SHALL refuse a Mac that is not arm64 or runs an older macOS than the deployment target, before the password prompt.
 
 #### Scenario: An older macOS

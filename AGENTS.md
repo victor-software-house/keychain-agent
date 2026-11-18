@@ -1,8 +1,8 @@
 # AGENTS.md
 
-signd is an SSH agent for macOS whose keys only its signed app can use.  
-It is a Swift 6.4 package. `SSHWire` and `AgentProtocol` hold the SSH encoding and the agent messages, with no platform code.  
-`KeyStore` holds keys and signing, `Sync` shares keys between devices through CloudKit, `AgentServer` holds the agent's state and the SwiftNIO socket server, and the `signd` executable is both the command line and the agent.  
+signd is an SSH agent for macOS whose keys only its signed app can use.
+It is a Swift 6.4 package. `SSHWire` and `AgentProtocol` hold the SSH encoding and the agent messages, with no platform code.
+`KeyStore` holds keys and signing, `Sync` shares keys between devices through CloudKit, `AgentServer` holds the agent's state and the SwiftNIO socket server, and the `signd` executable is both the command line and the agent.
 `README.md` says what it does; `openspec/` says what it must do.
 
 ## 1. Critical invariants

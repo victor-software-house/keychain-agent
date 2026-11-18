@@ -1,6 +1,6 @@
 # signd
 
-An SSH agent for macOS backed by the [Secure Enclave][secure-enclave].  
+An SSH agent for macOS backed by the [Secure Enclave][secure-enclave].
 Create new keys or import the Ed25519, ECDSA and RSA keys you already have, and share them through iCloud with every Mac on your Apple account.
 
 ```mermaid
@@ -14,13 +14,13 @@ flowchart LR
   routes -->|Include| sshconfig["~/.ssh/config"]
 ```
 
-Listing keys takes under a millisecond, and a Secure Enclave signature about 5 ms.  
+Listing keys takes under a millisecond, and a Secure Enclave signature about 5 ms.
 No command can export a private key.
 
 ## Install
 
-Each release attaches `signd.pkg`, signed with a Developer ID, notarized and stapled, which installs `/Applications/Signd.app`.  
-The app's provisioning profile grants it a private keychain access group.  
+Each release attaches `signd.pkg`, signed with a Developer ID, notarized and stapled, which installs `/Applications/Signd.app`.
+The app's provisioning profile grants it a private keychain access group.
 The Homebrew cask links `signd` onto the PATH.
 
 Then start the agent and point SSH at it:
@@ -66,8 +66,8 @@ flowchart LR
   open -->|"idle for key-lifetime"| dropped["wiped from memory"]
 ```
 
-To import a key with a passphrase, pass the file path.  
-signd runs the system `ssh-add` to ask for the passphrase and decrypt the key, then receives it over a socket only you can open.  
+To import a key with a passphrase, pass the file path.
+signd runs the system `ssh-add` to ask for the passphrase and decrypt the key, then receives it over a socket only you can open.
 The decrypted key is never written to disk.
 
 | Added with | Stored in | Removed with |
@@ -143,7 +143,7 @@ signd status                                                   # iCloud state, t
 
 ## Development
 
-`openspec/` contains the requirements and the planned changes, and `tasks.yaml` is the work queue.  
+`openspec/` contains the requirements and the planned changes, and `tasks.yaml` is the work queue.
 CI builds and tests on GitHub-hosted runners.
 
 > [!NOTE]

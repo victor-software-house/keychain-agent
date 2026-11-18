@@ -51,13 +51,13 @@
 ## 7. Integration
 
 - [x] 7.1 Release signd 0.0.2, the first signd release after keychain-agent 0.0.1, and install it over an earlier signd build on a physical Mac. Verify that a key created under the earlier build still signs after the upgrade with no prompt.
-  2026-11-17 UTC: `brew upgrade --cask signd` replaced the 0.1.0 build with [v0.0.2][v0.0.2] on a locked Mac, and the 0.0.2 binary listed the key the 0.1.0 build made.  
-  The agent then did not answer: the cask's `uninstall launchctl` step, which an upgrade runs, removed the job while the login item stayed enabled, and `service enable` reported `enabled`.  
-  After `service disable` and `service enable` the key signed and verified with no prompt, so the requirement's "no command run" fails until the upgrade restores the agent by itself.  
-  The fix: `service enable` registers again when the agent does not answer.  
-  2026-11-17 UTC: the upgrade to [v0.0.3][v0.0.3] ran `service enable` from the cask's `postflight_steps`, where Homebrew's step sandbox refused `SMAppService` with error 57, "Socket is not connected", and the agent stayed down.  
+  2026-11-17 UTC: `brew upgrade --cask signd` replaced the 0.1.0 build with [v0.0.2][v0.0.2] on a locked Mac, and the 0.0.2 binary listed the key the 0.1.0 build made.
+  The agent then did not answer: the cask's `uninstall launchctl` step, which an upgrade runs, removed the job while the login item stayed enabled, and `service enable` reported `enabled`.
+  After `service disable` and `service enable` the key signed and verified with no prompt, so the requirement's "no command run" fails until the upgrade restores the agent by itself.
+  The fix: `service enable` registers again when the agent does not answer.
+  2026-11-17 UTC: the upgrade to [v0.0.3][v0.0.3] ran `service enable` from the cask's `postflight_steps`, where Homebrew's step sandbox refused `SMAppService` with error 57, "Socket is not connected", and the agent stayed down.
   The same command run from root through `launchctl asuser` registered the agent, so the package's `postinstall` now runs it as the console user, and the cask runs nothing.
-  2026-11-17 UTC: on a locked Mac, `brew upgrade --cask signd` from v0.0.3 to [v0.0.4][v0.0.4] left the 0.0.4 agent answering with a new pid and no command run.  
+  2026-11-17 UTC: on a locked Mac, `brew upgrade --cask signd` from v0.0.3 to [v0.0.4][v0.0.4] left the 0.0.4 agent answering with a new pid and no command run.
   The key the 0.1.0 build created signed and verified with no prompt, and a login through the wrapped RSA key still worked; the upgrade on a second Mac gave the same result.
 
 ## Workflow follow-up

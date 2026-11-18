@@ -2,11 +2,11 @@
 
 ## Why
 
-signd's state on a Mac comes from commands today: `signd config set` and `signd key create`.  
-A Mac set up by a dotfiles tool, or a fleet set up by MDM, needs that state to follow from a file.  
+signd's state on a Mac comes from commands today: `signd config set` and `signd key create`.
+A Mac set up by a dotfiles tool, or a fleet set up by MDM, needs that state to follow from a file.
 The tool can then write and compare it, with no command run by hand.
 
-The operator asked for signd to be as declarative as it can be (operator, 2026-11-17).  
+The operator asked for signd to be as declarative as it can be (operator, 2026-11-17).
 A file and an MDM profile configure it together, and the agent watches both at the lowest overhead.
 
 ## What Changes

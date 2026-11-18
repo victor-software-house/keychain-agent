@@ -4,7 +4,7 @@
 
 ### Requirement: The backup copies shareable keys one way
 
-With a token stored, signd SHALL keep one SSH Key item per shareable key in the backup vault, tagged `signd`, with the key's private key, hosts and comment.  
+With a token stored, signd SHALL keep one SSH Key item per shareable key in the backup vault, tagged `signd`, with the key's private key, hosts and comment.
 It SHALL never change a key from the vault's content.
 
 #### Scenario: A new key
@@ -33,7 +33,7 @@ signd SHALL change and remove only items that carry the tag `signd` and a well-f
 
 ### Requirement: A removed key's item follows the setting
 
-A key is removed when a full CloudKit zone fetch, started with no change token and completed in the same run, no longer lists it.  
+A key is removed when a full CloudKit zone fetch, started with no change token and completed in the same run, no longer lists it.
 For a removed key, signd SHALL delete its item by default, archive it when `backupRemoved` is `archive`, and leave it when `backupRemoved` is `keep`.
 
 #### Scenario: A deleted key with the default
@@ -53,7 +53,7 @@ For a removed key, signd SHALL delete its item by default, archive it when `back
 
 ### Requirement: Runs follow the schedule and one Mac runs at a time
 
-signd SHALL run the backup `backupDelay` after the last key change, at most once per `backupInterval`, and once per `backupDailyInterval` with no change.  
+signd SHALL run the backup `backupDelay` after the last key change, at most once per `backupInterval`, and once per `backupDailyInterval` with no change.
 It SHALL run only while it holds the `Lease` record, SHALL renew it before each batch and stop when a renewal fails, and SHALL take over a lease past its expiry.
 
 #### Scenario: Two Macs at once
