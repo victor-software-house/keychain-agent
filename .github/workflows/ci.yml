@@ -173,13 +173,11 @@ jobs:
         timeout-minutes: 15
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OP_TEST_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TEST_SERVICE_ACCOUNT_TOKEN }}
         run: mise run check
       - name: Run ci:e2e
         timeout-minutes: 15
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          OP_TEST_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_TEST_SERVICE_ACCOUNT_TOKEN }}
         run: mise run ci:e2e
       # Only a run on the default branch saves: a pull request, a merge group
       # and a run on another branch restore and never write, so no entry

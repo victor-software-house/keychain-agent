@@ -5,8 +5,7 @@ build_os: macos
 ci_extra_tasks:
 - ci:e2e
 ci_runner: github-hosted
-ci_secrets:
-- OP_TEST_SERVICE_ACCOUNT_TOKEN
+ci_secrets: []
 default_branch: main
 generated_paths: []
 github_owner: victor-software-house
