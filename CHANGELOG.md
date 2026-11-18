@@ -1,5 +1,9 @@
 # Changelog
 
+## signd 0.0.7
+
+- signd shares keys between the Macs of one Apple account through iCloud, in place of 1Password. A key created or imported on one Mac is sealed to every Mac's Secure Enclave key and reaches the others within a few seconds; `--local` keeps a key on its Mac. New commands: `signd key share`, `signd device list` and `signd device remove`. `signd login` and `signd logout` are gone, and the `interval` setting now defaults to 2 seconds ([`46fa782`](https://github.com/victor-software-house/signd/commit/46fa7820fc09a101894be29077f17b690e82c4c6)).
+
 ## signd 0.0.6
 
 - signd keeps a synced key when 1Password's reply for its item cannot be read, reads such an item again after an upgrade, and reports a local setting that is out of bounds in `signd status`.
