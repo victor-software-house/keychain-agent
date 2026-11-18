@@ -133,9 +133,17 @@ struct SlowSigner: Signer {
         try await withThrowingTaskGroup { group in
             for _ in 0..<32 {
                 group.addTask {
-                    for _ in 0..<100 {
+                    // Each task keeps one signature in flight until the list
+                    // request is measured, then stops, so the queued
+                    // signatures delay no other test.
+                    for _ in 0..<100 where !Task.isCancelled {
                         let response = await server.respond(to: .sign(keyBlob: stored.publicBlob, data: Data([1]), flags: []))
-                        guard case .signature = response else { throw SignError.failed("no signature") }
+                        // A signature still in flight when the test stops
+                        // the tasks ends in a failure, as a cancelled one should.
+                        guard case .signature = response else {
+                            if Task.isCancelled { return }
+                            throw SignError.failed("no signature")
+                        }
                     }
                 }
             }
@@ -143,6 +151,7 @@ struct SlowSigner: Signer {
             let start = ContinuousClock.now
             _ = await server.respond(to: .identities)
             #expect(ContinuousClock.now - start < .milliseconds(10))
+            group.cancelAll()
             try await group.waitForAll()
         }
     }

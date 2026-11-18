@@ -86,6 +86,19 @@ queue:
       - The PR records the binary size before and after Noora.
     notes:
       - 2026-11-18, operator picked Noora 0.57.7 to match qctl and verctl.
+
+  - id: SGD-012
+    title: Stop the slow signatures once the list request is measured
+    scope: tests
+    outcome: >-
+      The test suite finishes in about the time of its slowest test that needs it, on
+      the 3-core CI runner.
+    blocked_by: []
+    acceptance:
+      - slowSignaturesDoNotDelayAListRequest cancels its signing tasks after it measures the list request, and still measures it while every task is signing.
+      - On the CI runner, aWrappedKeySignsFastOnceOpen and slowSignaturesDoNotDelayAListRequest each pass in under 3 seconds.
+    notes:
+      - 2026-11-18, on portable aWrappedKeySignsFastOnceOpen took 0.18 s alone and 1.99 s beside slowSignaturesDoNotDelayAListRequest, whose 3,200 queued 5 ms signatures held the thread pool; on the 3-core runner both took 21 s.
 archive:
   - id: SGD-006
     title: "Guided first sign-in: signd setup"
