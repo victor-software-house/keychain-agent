@@ -1,14 +1,12 @@
 # packaging
 
-This change keeps the command on the program search path (PATH) and points SSH at signd.
-
 ## MODIFIED Requirements
 
-### Requirement: The command is on the PATH
+### Requirement: The command is on the search path
 
 The package SHALL link `/usr/local/bin/signd` to the app's binary, creating `/usr/local/bin` when it is missing.
 It SHALL replace a symbolic link there without following it, and SHALL leave any other file.
-The cask SHALL link `signd` onto the PATH.
+The cask SHALL link the command onto the program search path (PATH) under the name `signd`.
 Each linked command SHALL keep the bundle's entitlements.
 
 #### Scenario: The linked command reads the store
