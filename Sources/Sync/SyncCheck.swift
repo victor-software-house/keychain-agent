@@ -115,9 +115,11 @@ struct SyncCheck {
             if let local = keys.first(where: { $0.isShared && $0.recordName == name }) { try delete(local, keys: &keys, changes: &changes) }
         }
         if full {
+            // A full fetch cannot tell a record deleted on another Mac from a zone made again while this Mac was away,
+            // so a missing record never deletes this Mac's own key: it stays as a local key, and only received keys go.
             let kept = Set(state.keys.keys).union(skipped.filter { $0.kind == .invalidRecord }.map(\.record))
             for local in keys where local.isShared && !kept.contains(local.recordName ?? "") {
-                try delete(local, keys: &keys, changes: &changes)
+                try unshare(local, keys: &keys, changes: &changes)
             }
         }
 
@@ -205,16 +207,18 @@ struct SyncCheck {
     /// its sealed copy opens with this device's key, and no other copy may be left once the iCloud data is gone.
     func removeShared(changes: inout Changes) throws {
         var keys = try store.list()
-        for key in keys where key.isShared {
-            if key.isReceived {
-                try delete(key, keys: &keys, changes: &changes)
-            } else {
-                var own = key
-                own.recordName = nil
-                try store.replace(own)
-                changes.replaced.append(own.name)
-            }
-        }
+        for key in keys where key.isShared { try unshare(key, keys: &keys, changes: &changes) }
+    }
+
+    /// Takes a key out of sharing: deletes a key another device shared, and keeps one this Mac made or imported as a local key.
+    private func unshare(_ key: StoredKey, keys: inout [StoredKey], changes: inout Changes) throws {
+        guard !key.isReceived else { return try delete(key, keys: &keys, changes: &changes) }
+        var own = key
+        own.recordName = nil
+        try store.replace(own)
+        keys.removeAll { $0.name == own.name }
+        keys.append(own)
+        changes.replaced.append(own.name)
     }
 
     /// Saves this device's record when the zone has none for its key, or one with another name.
@@ -318,33 +322,41 @@ struct SyncCheck {
     /// Deletes a device's record and drops its copies from every key.
     func removeDevice(_ id: String, state: inout SyncState, requests: inout Int) async throws {
         guard id != me else { throw SyncRefusal("\(id) is this Mac, which would publish its record again at its next check") }
-        // A removal that stopped after its Device record went still finds the copies to drop.
-        guard state.devices[id] != nil || state.keys.values.contains(where: { $0.sealedFor.contains(id) }) else {
-            throw SyncRefusal("no device has the id \(id); see signd device list")
-        }
+        guard id.hasPrefix(RecordType.device.prefix) else { throw SyncRefusal("no device has the id \(id); see signd device list") }
+        let known = state.devices[id] != nil
         // The copies go first, so a failure leaves the Device record, and running the command again finishes the removal.
-        for (record, entry) in state.keys.sorted(by: { $0.key < $1.key }) where entry.sealedFor.contains(id) {
-            requests += 1
-            guard let current = try await cloud.fetch(.key, name: record), var payload = try? Payload.decode(KeyPayload.self, from: current.payload) else { continue }
-            payload.sealed[id] = nil
-            requests += 1
-            _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload), system: current.system))
-            state.keys[record]?.sealedFor = payload.sealed.keys.sorted()
-        }
+        // Each pass reads every Key record, so a run after one that stopped halfway still finds the copies left.
+        var dropped = try await dropCopies(for: id, state: &state, requests: &requests)
         requests += 1
         try await cloud.delete(.device, name: id)
         state.devices[id] = nil
         // A device whose check started before the delete may have sealed a key to the removed one again; this pass drops that copy.
         // Checks that start after it no longer list the device, so they seal nothing more to it.
+        dropped += try await dropCopies(for: id, state: &state, requests: &requests)
+        guard known || dropped > 0 else { throw SyncRefusal("no device has the id \(id); see signd device list") }
+    }
+
+    /// Drops the copy sealed to `id` from every Key record, reading a record again when another device saved it first.
+    private func dropCopies(for id: String, state: inout SyncState, requests: inout Int) async throws -> Int {
+        var dropped = 0
         for record in state.keys.keys.sorted() {
-            requests += 1
-            guard let current = try await cloud.fetch(.key, name: record), var payload = try? Payload.decode(KeyPayload.self, from: current.payload),
-                  payload.sealed[id] != nil
-            else { continue }
-            payload.sealed[id] = nil
-            requests += 1
-            _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload), system: current.system))
-            state.keys[record]?.sealedFor = payload.sealed.keys.sorted()
+            for attempt in 1 ... 3 {
+                requests += 1
+                guard let current = try await cloud.fetch(.key, name: record), var payload = try? Payload.decode(KeyPayload.self, from: current.payload),
+                      payload.sealed[id] != nil
+                else { break }
+                payload.sealed[id] = nil
+                requests += 1
+                do {
+                    _ = try await cloud.save(CloudRecord(type: .key, name: record, payload: Payload.encode(payload), system: current.system))
+                } catch where error.kind == .conflict && attempt < 3 {
+                    continue
+                }
+                state.keys[record]?.sealedFor = payload.sealed.keys.sorted()
+                dropped += 1
+                break
+            }
         }
+        return dropped
     }
 }

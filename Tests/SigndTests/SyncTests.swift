@@ -187,6 +187,37 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(try softwareOpen(own).0.publicKey.blob == privateKey.publicKey.blob)
 }
 
+@Test(.timeLimit(.minutes(1))) func aMacAwayWhileTheZoneIsMadeAgainKeepsItsOwnKeys() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    _ = await b.service.checkNow()
+    // a is away: the zone goes, b makes it again, and a's tokens expire.
+    cloud.removeZone()
+    _ = await b.service.checkNow()
+    #expect(await a.service.checkNow().outcome == .ok)
+    let own = try #require(try a.store.list().first)
+    #expect(!own.isShared)
+    #expect(try softwareOpen(own).0.publicKey.blob == privateKey.publicKey.blob)
+}
+
+@Test(.timeLimit(.minutes(1))) func anOwnKeyWhoseRecordAnotherMacChangedStillOpensAfterTheZoneGoes() async throws {
+    let (cloud, a, b, privateKey) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    var payload = try Payload.decode(KeyPayload.self, from: try #require(cloud.record("key-deploy")).payload)
+    payload.hosts = ["other.example.com"]
+    cloud.put(.key, "key-deploy", payload: Payload.encode(payload))
+    #expect(await a.service.checkNow().replaced == ["deploy"])
+    #expect(try a.store.list().first?.hosts == ["other.example.com"])
+
+    cloud.deleteZoneByUser()
+    _ = await a.service.checkNow()
+    let own = try #require(try a.store.list().first)
+    #expect(!own.isShared)
+    #expect(try softwareOpen(own).0.publicKey.blob == privateKey.publicKey.blob)
+}
+
 @Test(.timeLimit(.minutes(1))) func aZoneThatIsMissingKeepsThisMacsOwnKeys() async throws {
     let (cloud, a, b, privateKey) = try twoDevices()
     _ = await b.service.checkNow()
@@ -198,6 +229,20 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(try softwareOpen(try #require(try a.store.list().first)).0.publicKey.blob == privateKey.publicKey.blob)
     #expect(await b.service.checkNow().outcome == .ok)
     #expect(try b.store.list().isEmpty)
+}
+
+@Test(.timeLimit(.minutes(1))) func aRemovalReadsARecordAgainWhenAnotherDeviceSavedItFirst() async throws {
+    let (cloud, a, b, _) = try twoDevices()
+    _ = await b.service.checkNow()
+    _ = await a.service.share("deploy")
+    // Another device saves the record between the removal's read and its write.
+    cloud.beforeNextSave {
+        guard let record = cloud.record("key-deploy") else { return }
+        cloud.put(.key, "key-deploy", payload: record.payload)
+    }
+    #expect(await a.service.removeDevice(b.device.recordName) == SyncResult(.done))
+    let payload = try Payload.decode(KeyPayload.self, from: try #require(cloud.record("key-deploy")).payload)
+    #expect(Array(payload.sealed.keys) == [a.device.recordName])
 }
 
 @Test(.timeLimit(.minutes(1))) func aRemovalThatFailsKeepsTheDeviceRecordAndFinishesWhenRunAgain() async throws {

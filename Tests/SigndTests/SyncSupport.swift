@@ -41,6 +41,7 @@ final class FakeCloud: CloudStore {
         var expireNextToken = false
         var saveFailure: CloudError?
         var beforeDelete: (@Sendable () -> Void)?
+        var beforeSave: (@Sendable () -> Void)?
         var delay: Duration = .zero
         var calls = Calls()
 
@@ -65,6 +66,8 @@ final class FakeCloud: CloudStore {
     func failSaves(with error: CloudError?) { state.withLock { $0.saveFailure = error } }
     /// Runs `action` before the next delete, as another device's write that lands while a command runs.
     func beforeNextDelete(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.beforeDelete = action } }
+    /// Runs `action` before the next save, as another device's write that lands between a command's read and its write.
+    func beforeNextSave(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.beforeSave = action } }
     func slow(_ delay: Duration) { state.withLock { $0.delay = delay } }
     func setAccount(_ account: CloudAccount) { state.withLock { $0.account = account } }
     func expireNextToken() { state.withLock { $0.expireNextToken = true } }
@@ -167,7 +170,12 @@ final class FakeCloud: CloudStore {
     }
 
     func save(_ record: CloudRecord) async throws(CloudError) -> CloudRecord {
-        try await answer({ $0.save += 1 }) { state throws(CloudError) in
+        let action = state.withLock { state -> (@Sendable () -> Void)? in
+            defer { state.beforeSave = nil }
+            return state.beforeSave
+        }
+        action?()
+        return try await answer({ $0.save += 1 }) { state throws(CloudError) in
             if let failure = state.saveFailure { throw failure }
             let existing = state.database.records[record.name]
             switch (existing, record.system) {
