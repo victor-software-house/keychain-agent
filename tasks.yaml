@@ -72,21 +72,6 @@ queue:
       - 'Starts when the templates tag with the Swift ci piece and xcode_settings defaults exists (templates #242).'
     plan: openspec/changes/xcode-build/tasks.md
 
-  - id: SGD-008
-    title: Terminal output with Noora
-    scope: cli
-    outcome: >-
-      signd marks results with colour and symbols on a terminal and stays plain
-      everywhere else.
-    blocked_by: []
-    acceptance:
-      - On a terminal signd prints colour and the ✔ ✘ ▲ symbols; piped, under NO_COLOR or with --color never it prints plain text.
-      - CLICOLOR_FORCE and --color always force colour, and --json output is never coloured.
-      - The PR records the binary size before and after Noora.
-    notes:
-      - 2026-11-18, operator picked Noora 0.57.7 to match qctl and verctl.
-    plan: openspec/changes/terminal-output/proposal.md
-
   - id: SGD-014
     title: Update signd itself from each release
     scope: packaging
@@ -121,7 +106,32 @@ queue:
       - Deleting a throwaway key puts its item in Recently Deleted, leaves a foreign item unchanged, and signd backup restore brings the key back so it signs on both Macs.
       - No SSH request waits on 1Password or on the lease.
     plan: openspec/changes/onepassword-backup/proposal.md
+
+  - id: SGD-019
+    title: Say when signd update repeats a recorded result
+    scope: cli
+    outcome: signd update tells a fresh check from a result it repeats.
+    blocked_by: []
+    acceptance:
+      - Within 5 minutes of an install, signd update says the update was installed at its time, and does not read as a new install.
+    notes:
+      - '2026-11-19: the updater answers a request within 5 minutes of a check with the recorded result. After the update to 0.0.18 at 23:10:59 UTC, each later signd update printed installed 0.0.18; the agents restart on it, though no new install ran.'
 archive:
+  - id: SGD-008
+    title: Terminal output with Noora
+    scope: cli
+    outcome: >-
+      signd marks results with colour and symbols on a terminal and stays plain
+      everywhere else.
+    notes:
+      - 2026-11-18, operator picked Noora 0.57.7 to match qctl and verctl.
+    plan: openspec/changes/archive/2026-11-19-terminal-output/proposal.md
+    completed: 2026-11-19T23:13:00
+    evidence:
+      - '2026-11-19 UTC: 0.0.18 ships Noora terminal output (pull request 99): coloured ✔ ✘ ▲ on a terminal, plain text piped or under NO_COLOR and --color never, colour forced by CLICOLOR_FORCE and --color always, and JSON never coloured.'
+      - The binary grew from 28,875,616 to 29,461,744 bytes.
+    disposition: completed
+
   - id: SGD-017
     title: Apply a changed backup setting to the waiting run
     scope: backup
