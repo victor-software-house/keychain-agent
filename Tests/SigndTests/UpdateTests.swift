@@ -374,6 +374,31 @@ func stagingRefusesAComponentThatTheExpectedOwnerDoesNotOwn() throws {
     #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "update").path))
 }
 
+@Test func sealingFixesAFileWritableByOthers() throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let app = try makeApp(in: directory, version: "0.0.14", marker: "new")
+    let writable = app.url.appending(path: "Contents/marker.txt")
+    let setuid = app.url.appending(path: "Contents/Info.plist")
+    #expect(chmod(writable.path, 0o666) == 0)
+    #expect(chmod(setuid.path, 0o4777) == 0)
+    let staging = Staging(root: directory.appending(path: "update", directoryHint: .isDirectory), owner: getuid(), group: getgid())
+    #expect(throws: UpdateError.self) { try staging.check(app.url) }
+    try staging.seal(app.url)
+    try staging.check(app.url)
+    #expect(try FileManager.default.attributesOfItem(atPath: writable.path)[.posixPermissions] as? Int == 0o644)
+    #expect(try FileManager.default.attributesOfItem(atPath: setuid.path)[.posixPermissions] as? Int == 0o755)
+}
+
+@Test(.enabled(if: getuid() != 0))
+func aStagedFileOfAnotherOwnerIsRefused() throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let app = try makeApp(in: directory, version: "0.0.14", marker: "new")
+    let staging = Staging(root: directory.appending(path: "update", directoryHint: .isDirectory), owner: getuid() + 1, group: getgid())
+    #expect(throws: UpdateError.self) { try staging.check(app.url) }
+}
+
 // MARK: Swap
 
 @Test func theSwapInstallsTheNewContentsAndDeletesTheOldOnes() throws {

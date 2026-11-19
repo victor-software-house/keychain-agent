@@ -78,8 +78,10 @@ public struct UpdateRun: Sendable {
         let zip = try await dependencies.feed.download(release, to: directory)
         try dependencies.staging.unpack(zip, into: directory)
         let new = AppBundle(url: directory.appending(path: "Signd.app", directoryHint: .isDirectory))
+        try dependencies.staging.seal(new.url)
         try new.verify(team: team)
         try new.requireVersion(release.version)
+        try dependencies.staging.check(new.url)
         let users = dependencies.agents.users(running: installed.executable.path)
         try installed.swapContents(with: new)
         state.installed = release.version

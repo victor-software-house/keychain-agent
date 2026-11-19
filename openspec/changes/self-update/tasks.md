@@ -10,9 +10,14 @@
 - [x] 1.2 Verify a download by design decision 4.
   Verify tests that reject an app of another team, an unnotarized app, another identifier, and an app whose version is not the tag.
   Verify a test that refuses a staging path with a symlink or a component not owned by root.
-  - 2026-11-19 UTC: `Staging` and `AppBundle.verify` are written, with tests in `UpdateTests.swift`; CI has not run yet.
+  - 2026-11-19 UTC: `Staging` and `AppBundle.verify` are written, with tests in `UpdateTests.swift`.
+    CI has not run yet.
     A runner has no Developer ID, so the tests reject a copy of an Apple app and an ad-hoc signed copy.
     The version check has its own test.
+  - 2026-11-19 UTC: before the signature check, the updater sets the staged app to the expected owner and group.
+    It also clears the group and other write bits.
+    It checks the app again before the swap.
+    Tests cover both steps, and CI has not run yet.
 - [x] 1.3 Swap the bundle and restart the agents by design decision 5.
   Verify a test that swaps a temporary bundle and leaves the old one whole when the swap fails.
   - 2026-11-19 UTC: `AppBundle.swapContents` and `AgentRestart` are written, with tests in `UpdateTests.swift`; CI has not run yet.

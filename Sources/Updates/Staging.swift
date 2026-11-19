@@ -7,13 +7,16 @@ public struct Staging: Sendable {
     public static let defaultRoot = URL(filePath: "/Library/Application Support/signd/update", directoryHint: .isDirectory)
 
     public let root: URL
-    /// The user that may own a component of the path besides root.
+    /// The user that may own a component of the path besides root, and that owns every file of a staged app.
     /// It is 0 in production, and tests pass the CI user.
     public let owner: uid_t
+    /// The group of every file of a staged app: wheel, 0, in production.
+    public let group: gid_t
 
-    public init(root: URL = Staging.defaultRoot, owner: uid_t = 0) {
+    public init(root: URL = Staging.defaultRoot, owner: uid_t = 0, group: gid_t = 0) {
         self.root = root
         self.owner = owner
+        self.group = group
     }
 
     /// Makes a fresh directory in the root, which is created with mode 0700 when it is missing.
@@ -37,6 +40,45 @@ public struct Staging: Sendable {
         process.waitUntilExit()
         guard process.terminationStatus == 0 else {
             throw UpdateError("ditto cannot unpack \(zip.lastPathComponent): \(String(decoding: output, as: UTF8.self))")
+        }
+    }
+
+    /// Gives `app` and every file in it the expected owner and group, and clears the setuid and setgid bits and the group and other write bits.
+    ///
+    /// A zip records the owners of the machine that built it, and `ditto` run as root keeps them.
+    /// Neither owners nor modes are part of the code signature, so this does not change the signature check.
+    public func seal(_ app: URL) throws {
+        try visit(app) { path, info in
+            guard lchown(path, owner, group) == 0 else { throw UpdateError("cannot change the owner of \(path): \(Self.reason())") }
+            // A symbolic link has no mode of its own, and chmod would follow it.
+            guard info.st_mode & S_IFMT != S_IFLNK else { return }
+            guard chmod(path, info.st_mode & 0o755) == 0 else { throw UpdateError("cannot change the mode of \(path): \(Self.reason())") }
+        }
+    }
+
+    /// Checks that `app` and every file in it have the expected owner and group.
+    /// None may have a setuid or setgid bit or be writable by group or others.
+    public func check(_ app: URL) throws {
+        try visit(app) { path, info in
+            guard info.st_uid == owner, info.st_gid == group else {
+                throw UpdateError("\(path) belongs to user \(info.st_uid) and group \(info.st_gid), so the updater does not install it")
+            }
+            // 0o6022 is the setuid, setgid, group write and other write bits.
+            guard info.st_mode & 0o6022 == 0 else {
+                throw UpdateError("\(path) is writable by group or others, or has a setuid or setgid bit, so the updater does not install it")
+            }
+        }
+    }
+
+    /// Calls `body` with the path and the `lstat` result of `app` and of everything in it, without following a symbolic link.
+    private func visit(_ app: URL, _ body: (_ path: String, _ info: stat) throws -> Void) throws {
+        guard let enumerator = FileManager.default.enumerator(atPath: app.path) else { throw UpdateError("cannot read \(app.lastPathComponent)") }
+        var paths = [app.path]
+        while let relative = enumerator.nextObject() as? String { paths.append(app.path + "/" + relative) }
+        for path in paths {
+            var info = stat()
+            guard lstat(path, &info) == 0 else { throw UpdateError("cannot read \(path): \(Self.reason())") }
+            try body(path, info)
         }
     }
 
