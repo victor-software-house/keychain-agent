@@ -102,3 +102,38 @@ private func loggedInAndWaiting() async throws -> (cloud: FakeCloud, a: DeviceRi
     _ = await b.service.checkNow()
     #expect(try b.tokens.read() == token)
 }
+
+private let newerToken = Data("ops_second-service-account-token".utf8)
+
+private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
+    try Payload.decode(BackupPayload.self, from: try #require(cloud.record(BackupPayload.recordName)).payload)
+}
+
+@Test(.timeLimit(.minutes(1))) func aMacWithNoCopyInTheRecordDeletesItsOldTokenAndSealsNothingWithIt() async throws {
+    let cloud = FakeCloud()
+    let a = DeviceRig(cloud: cloud, name: "mac-a")
+    let b = DeviceRig(cloud: cloud, name: "mac-b")
+    let c = DeviceRig(cloud: cloud, name: "mac-c")
+    for rig in [a, b, c] { _ = await rig.service.checkNow() }
+    _ = await a.service.checkNow()
+    #expect(await a.service.backupLogin(token: token, vault: "signd") == SyncResult(.done))
+    for rig in [b, c] { _ = await rig.service.checkNow() }
+    for rig in [a, b, c] { #expect(try rig.tokens.read() == token) }
+
+    // Mac c is missing from mac a's list of devices when mac a logs in again, so the new record has no copy for it.
+    try await cloud.delete(.device, name: c.device.recordName)
+    _ = await a.service.checkNow()
+    #expect(await a.service.backupLogin(token: newerToken, vault: "signd") == SyncResult(.done))
+
+    #expect(await c.service.checkNow().outcome == .ok)
+    #expect(try c.tokens.read() == nil)
+    let payload = try backupPayload(cloud)
+    #expect(Set(payload.sealed.keys) == [a.device.recordName, b.device.recordName])
+    for rig in [a, b] {
+        #expect(try Wrapping.open(try #require(payload.sealed[rig.device.recordName]), with: rig.agreement) == newerToken)
+    }
+
+    #expect(await a.service.checkNow().outcome == .ok)
+    #expect(await c.service.checkNow().outcome == .ok)
+    #expect(try c.tokens.read() == newerToken)
+}

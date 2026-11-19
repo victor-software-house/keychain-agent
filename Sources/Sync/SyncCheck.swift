@@ -182,10 +182,12 @@ struct SyncCheck {
     }
 
     /// Stores the token this device's sealed copy opens to, when it differs from the stored one.
-    /// Deletes the stored token when the record is gone.
+    /// Deletes the stored token when the record is gone, or when the record has no copy for this device.
+    /// The stored token is then older than the record's, as after a login made while this device was unknown.
     private func receiveToken(_ payload: BackupPayload?, gone: Bool) throws {
         if gone { return try tokens.delete() }
-        guard let sealed = payload?.sealed[me] else { return }
+        guard let payload else { return }
+        guard let sealed = payload.sealed[me] else { return try tokens.delete() }
         var token: Data
         do {
             token = try openSecret(sealed, device)
@@ -322,17 +324,26 @@ struct SyncCheck {
         }
     }
 
-    /// Seals the backup token to every device that has no copy, when this device has the token.
+    /// Seals the token that this device's own copy in the `Backup` record opens to, to every device that has no copy.
+    /// A device with no copy in the record seals nothing, as the token it stored may be an older login's.
     /// It never drops a copy.
     private func sealTokenForNewMacs(_ state: inout SyncState, requests: inout Int) async throws {
-        guard let entry = state.backup, var token = try tokens.read() else { return }
-        defer { token.resetBytes(in: 0..<token.count) }
+        guard let entry = state.backup, entry.sealedFor.contains(me) else { return }
         let missing = state.devices.keys.filter { !entry.sealedFor.contains($0) }.sorted()
         guard !missing.isEmpty else { return }
         requests += 1
         guard let current = try await cloud.fetch(.backup, name: BackupPayload.recordName),
-              var payload = try? Payload.decode(BackupPayload.self, from: current.payload)
+              var payload = try? Payload.decode(BackupPayload.self, from: current.payload),
+              let own = payload.sealed[me]
         else { return }
+        var token: Data
+        do {
+            token = try openSecret(own, device)
+        } catch {
+            log.error("cannot open this Mac's copy of the backup token to share it: \(String(describing: error), privacy: .public)")
+            return
+        }
+        defer { token.resetBytes(in: 0..<token.count) }
         var added = false
         for device in missing where payload.sealed[device] == nil {
             guard let recipient = state.devices[device].flatMap({ try? P256.KeyAgreement.PublicKey(x963Representation: $0.publicKey) }) else { continue }
