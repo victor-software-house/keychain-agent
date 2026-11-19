@@ -16,6 +16,12 @@
 
 ## 2. Release
 
-- [ ] 2.1 Record the size of the `signd` binary before Noora and with it, from the two releases.
-- [ ] 2.2 On a Mac, run `signd status` on a terminal, piped, and with `NO_COLOR`, `--color always` and `--json`.
+- [x] 2.1 Record the size of the `signd` binary before Noora and with it, from the two releases.
+  - 2026-11-19 UTC: `Signd.app/Contents/MacOS/signd` is 28,875,616 bytes in 0.0.17 and 29,461,744 bytes in 0.0.18.
+    Noora, Rainbow, swift-log and Path add 586,128 bytes, 2.0%.
+- [x] 2.2 On a Mac, run `signd status` on a terminal, piped, and with `NO_COLOR`, `--color always` and `--json`.
   Verify the output of each matches the spec.
+  - 2026-11-19 UTC: on 0.0.18, `signd status | cat` printed no escape sequence and no symbol.
+    Under `script`, a terminal, `signd update` printed a green `✔` line, and `NO_COLOR=1` printed the plain line.
+  - `--color always` and `CLICOLOR_FORCE=1` piped through `cat` gave the green `✔`, and `CLICOLOR_FORCE=0` gave the plain line.
+    `signd status --json --color always` parsed as JSON with no escape sequence.
