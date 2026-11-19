@@ -11,7 +11,7 @@ struct UpdateNow: ParsableCommand {
     func run() throws {
         let out = colorOption.standardOutput
         let asked = Date()
-        guard let state = Updater.requestCheck() else { throw Failure("the updater does not answer; install signd from its package") }
+        guard let state = Updater.requestCheck() else { throw Failure("cannot reach the updater; reinstall signd from signd.pkg") }
         switch state.outcome {
         case .upToDate?:
             print(out.success("signd is up to date (\(state.installed ?? "unknown version"))"))
@@ -23,7 +23,7 @@ struct UpdateNow: ParsableCommand {
         case .failed?:
             throw Failure(state.error ?? "the update failed")
         case nil:
-            throw Failure("the updater answered with no result")
+            throw Failure("the updater returned no result")
         }
     }
 
@@ -33,9 +33,9 @@ struct UpdateNow: ParsableCommand {
     static func installedLine(_ state: UpdateState, asked: Date) -> String {
         let version = state.installed ?? "the new version"
         if let at = state.lastCheck, at < asked.addingTimeInterval(-1) {
-            return "signd is up to date (\(version)), installed at \(at.formatted(.iso8601))"
+            return "signd is up to date (\(version), updated at \(at.formatted(.iso8601)))"
         }
-        return "installed \(version); the agents restart on it"
+        return "updated signd to \(version) and restarted the agent"
     }
 }
 
@@ -46,7 +46,7 @@ struct UpdaterDaemon: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "updater", abstract: "Run the updater as the launch daemon does.", shouldDisplay: false)
 
     func run() throws {
-        guard geteuid() == 0 else { throw Failure("the updater runs as root") }
+        guard geteuid() == 0 else { throw Failure("run the updater as root") }
         signal(SIGPIPE, SIG_IGN)
         let run = UpdateRun()
         let updater = Updater(run: { await run.perform() })

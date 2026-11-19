@@ -61,10 +61,10 @@ fileprivate func theColourFollowsTheFlagThenTheEnvironmentThenTheTerminal(_ test
     let style = TerminalStyle(isColored: false)
     #expect(!style.isColored)
     #expect(style.success("enabled") == "enabled")
-    #expect(style.failure("the agent does not answer") == "the agent does not answer")
+    #expect(style.failure("cannot reach the agent") == "cannot reach the agent")
     #expect(style.warning("not registered") == "not registered")
-    #expect(style.value("answers (pid 1, 0.0.0)", .inOrder) == "answers (pid 1, 0.0.0)")
-    #expect(style.value("does not answer", .failed) == "does not answer")
+    #expect(style.value("running (pid 1, 0.0.0)", .inOrder) == "running (pid 1, 0.0.0)")
+    #expect(style.value("not running", .failed) == "not running")
     #expect(style.value("waiting", .waiting) == "waiting")
     #expect(style.value("on", nil) == "on")
 }
@@ -79,7 +79,7 @@ fileprivate func theColourFollowsTheFlagThenTheEnvironmentThenTheTerminal(_ test
 
 @Test func aFailureAndAWarningWithColourCarryTheirSymbols() throws {
     let style = TerminalStyle(isColored: true)
-    let failure = style.failure("the agent does not answer")
+    let failure = style.failure("cannot reach the agent")
     #expect(failure.contains("\u{1B}["))
     let failureSymbol = try #require(failure.range(of: "✘"))
     let failureText = try #require(failure.range(of: "the agent"))

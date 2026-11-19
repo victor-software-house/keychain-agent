@@ -119,9 +119,9 @@ struct KeyCommand: ParsableCommand {
         if !local && key.kind == .wrapped {
             switch client.share(key.name) {
             case nil:
-                failure = Failure("created \(key.name) on this Mac, but the agent does not answer, so it is not shared; run signd key share \(key.name)")
+                failure = Failure("created \(key.name) on this Mac only, since signd cannot reach the agent; to share it, run signd key share \(key.name)")
             case let result? where result.outcome == .failed:
-                failure = Failure("created \(key.name) on this Mac, but did not share it: \(result.message ?? "unknown reason"); run signd key share \(key.name)")
+                failure = Failure("created \(key.name) on this Mac only: \(result.message ?? "the share failed for an unknown reason"); to share it, run signd key share \(key.name)")
             case let result? where result.outcome == .off:
                 note(result.message ?? "sync is off; \(key.name) stays on this Mac")
             case _:
@@ -212,7 +212,7 @@ struct KeyCommand: ParsableCommand {
         @OptionGroup var colorOption: ColorOption
 
         func run() throws {
-            guard let result = AgentClient(path: defaultSocketPath).share(name) else { throw Failure("the agent does not answer") }
+            guard let result = AgentClient(path: defaultSocketPath).share(name) else { throw Failure("cannot reach the agent") }
             switch result.outcome {
             case .done: print(colorOption.standardOutput.success("shared \(name)"))
             case .off: throw Failure(result.message ?? "sync is off")
@@ -254,7 +254,7 @@ struct KeyCommand: ParsableCommand {
             let key = try storedKey(name)
             let client = AgentClient(path: defaultSocketPath)
             if key.isShared {
-                guard let result = client.deleteShared(name) else { throw Failure("the agent does not answer, and a shared key is deleted through it") }
+                guard let result = client.deleteShared(name) else { throw Failure("cannot reach the agent, which deletes a shared key on every Mac") }
                 guard result.outcome == .done else { throw Failure(result.message ?? "the delete failed") }
                 return
             }
@@ -265,7 +265,7 @@ struct KeyCommand: ParsableCommand {
 }
 
 struct Status: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Show the agent, its keys and the iCloud sync; exits non-zero when the agent does not answer.")
+    static let configuration = CommandConfiguration(abstract: "Show the agent, its keys and the iCloud sync; exits non-zero when the agent is not running.")
     @Option(help: "The agent socket.") var socket = defaultSocketPath
     @OptionGroup var output: JSONOption
 
@@ -312,12 +312,12 @@ struct Status: ParsableCommand {
             print("signd \(signdVersion)")
             print("socket  \(socket)")
             if let agent {
-                print("agent   \(out.value("answers (pid \(agent.pid), \(agent.version))", .inOrder))")
+                print("agent   \(out.value("running (pid \(agent.pid), \(agent.version))", .inOrder))")
                 if let error = agent.storeError { print("store   \(error)") }
                 for key in agent.keys { print("key     \(key.name)  \(key.isInMemory ? "in memory" : "not in memory")") }
                 if agent.memoryOnlyKeys > 0 { print("memory-only keys  \(agent.memoryOnlyKeys)") }
             } else {
-                print("agent   \(out.value("does not answer", .failed))")
+                print("agent   \(out.value("not running", .failed))")
             }
             let loginItemText = "\(loginItem.text)\(loginItem == .enabled ? "" : "; run signd service enable")"
             print("login item  \(out.value(loginItemText, loginItem == .enabled ? .inOrder : .waiting))")
@@ -353,7 +353,7 @@ struct DeviceCommand: ParsableCommand {
         @OptionGroup var output: JSONOption
 
         func run() throws {
-            guard let devices = AgentClient(path: defaultSocketPath).devices() else { throw Failure("the agent does not answer") }
+            guard let devices = AgentClient(path: defaultSocketPath).devices() else { throw Failure("cannot reach the agent") }
             if output.json { return try output.print(devices) }
             for device in devices { print([device.name, device.id, device.isThisDevice ? "this device" : ""].joined(separator: "  ")) }
         }
@@ -368,7 +368,7 @@ struct DeviceCommand: ParsableCommand {
         @OptionGroup var colorOption: ColorOption
 
         func run() throws {
-            guard let result = AgentClient(path: defaultSocketPath).removeDevice(id) else { throw Failure("the agent does not answer") }
+            guard let result = AgentClient(path: defaultSocketPath).removeDevice(id) else { throw Failure("cannot reach the agent") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the removal failed") }
             print(colorOption.standardOutput.success("removed \(id)"))
         }
@@ -381,7 +381,7 @@ struct SyncNow: ParsableCommand {
     @OptionGroup var output: JSONOption
 
     func run() throws {
-        guard let summary = AgentClient(path: socket).sync() else { throw Failure("the agent does not answer") }
+        guard let summary = AgentClient(path: socket).sync() else { throw Failure("cannot reach the agent") }
         if output.json {
             try output.print(summary)
         } else {
@@ -464,9 +464,9 @@ struct Service: ParsableCommand {
         guard agentAnswers(within: 5, replacing: old) else {
             // kickstart replaces only launchd's job, so a process started by hand keeps the socket.
             if let old, AgentClient(path: defaultSocketPath).status()?.pid == old {
-                throw Failure("pid \(old) still answers on the socket, and launchd does not run it; stop that process, then try again")
+                throw Failure("process \(old) still serves the socket, and launchd did not start it; stop that process and try again")
             }
-            throw Failure("the agent does not answer after the restart")
+            throw Failure("the agent did not start again after the restart")
         }
     }
 
@@ -493,9 +493,9 @@ struct Service: ParsableCommand {
                     try Service.restart()
                     let now = AgentClient(path: defaultSocketPath).status()?.version
                     guard now == signdVersion else {
-                        throw Failure("the restarted agent runs \(now ?? "an unknown version"), not \(signdVersion)")
+                        throw Failure("the agent restarted on \(now ?? "an unknown version"), not on \(signdVersion)")
                     }
-                    print(out.success("enabled; restarted the agent, which ran \(running)"))
+                    print(out.success("enabled signd and restarted the agent, which was on \(running)"))
                 } else {
                     print(out.success("enabled"))
                 }
@@ -548,15 +548,15 @@ struct Service: ParsableCommand {
             let loginItem = Service.loginItem
             print("login item  \(out.value(loginItem.text, loginItem == .enabled ? .inOrder : .waiting))")
             if let agent = AgentClient(path: defaultSocketPath).status() {
-                print("agent  \(out.value("answers (\(agent.version))", .inOrder))")
+                print("agent  \(out.value("running (\(agent.version))", .inOrder))")
             } else {
-                print("agent  \(out.value("does not answer", .failed))")
+                print("agent  \(out.value("not running", .failed))")
             }
         }
     }
 
     struct Restart: ParsableCommand {
-        static let configuration = CommandConfiguration(abstract: "Restart the agent and wait for it to answer; exits non-zero when it does not answer within 5 seconds.")
+        static let configuration = CommandConfiguration(abstract: "Restart the agent and wait until it runs again; exits non-zero when it is not back within 5 seconds.")
         @OptionGroup var colorOption: ColorOption
 
         func run() throws {

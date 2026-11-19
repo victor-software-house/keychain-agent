@@ -148,9 +148,9 @@ struct BackupCommand: ParsableCommand {
 
         func run(client: AgentClient, settings: Settings, readInput: () -> Data) throws {
             guard argument == nil else { throw Failure("pass the token on stdin, never as an argument") }
-            guard let token = BackupCommand.token(from: readInput()) else { throw Failure("stdin has no token, or one that is not text") }
+            guard let token = BackupCommand.token(from: readInput()) else { throw Failure("no token on stdin, or the token is not text") }
             let vault = settings.text(.backupVault)
-            guard let result = client.logInToBackup(BackupLoginRequest(token: token, vault: vault)) else { throw Failure("the agent does not answer") }
+            guard let result = client.logInToBackup(BackupLoginRequest(token: token, vault: vault)) else { throw Failure("cannot reach the agent") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the login failed") }
             print(colorOption.standardOutput.success("logged in; the backup uses the vault \(vault)"))
         }
@@ -161,7 +161,7 @@ struct BackupCommand: ParsableCommand {
         @OptionGroup var colorOption: ColorOption
 
         func run() throws {
-            guard let result = AgentClient(path: defaultSocketPath).logOutOfBackup() else { throw Failure("the agent does not answer") }
+            guard let result = AgentClient(path: defaultSocketPath).logOutOfBackup() else { throw Failure("cannot reach the agent") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the logout failed") }
             print(colorOption.standardOutput.success("logged out"))
         }
@@ -184,7 +184,7 @@ struct BackupCommand: ParsableCommand {
         func run() throws {
             let client = AgentClient(path: defaultSocketPath)
             if names.isEmpty && !all {
-                guard let list = client.backupKeys() else { throw Failure("the agent does not answer") }
+                guard let list = client.backupKeys() else { throw Failure("cannot reach the agent") }
                 if output.json {
                     try output.print(list)
                 } else {
@@ -193,7 +193,7 @@ struct BackupCommand: ParsableCommand {
                 if let failure = list.failure { throw Failure(failure) }
                 return
             }
-            guard let result = client.restoreBackupKeys(names: names, all: all, local: local) else { throw Failure("the agent does not answer") }
+            guard let result = client.restoreBackupKeys(names: names, all: all, local: local) else { throw Failure("cannot reach the agent") }
             if output.json {
                 try output.print(result)
             } else {

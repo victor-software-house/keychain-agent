@@ -89,7 +89,7 @@ public struct UpdateRun: Sendable {
         do {
             try dependencies.agents.restart(users)
         } catch {
-            state.error = "installed \(release.version), but \(error)"
+            state.error = "updated signd to \(release.version), but \(error)"
         }
     }
 }

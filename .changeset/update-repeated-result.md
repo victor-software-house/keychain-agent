@@ -2,5 +2,7 @@
 "signd": patch
 ---
 
-Soon after an install, `signd update` prints that signd is up to date.
-It adds the time of the install, so it does not read as a second install.
+Command messages read as plain English.
+After an update, `signd update` prints `updated signd to 0.0.18 and restarted the agent`.
+A later run within 5 minutes prints `signd is up to date`, with the time of the update.
+`signd status` shows the agent as `running` or `not running`.

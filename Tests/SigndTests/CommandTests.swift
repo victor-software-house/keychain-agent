@@ -104,7 +104,7 @@ private let noUpdates = UpdateStatus(settings: UpdateSettings(managed: noPlist, 
     state.lastCheck = asked
     state.installed = "1.2.3"
     state.outcome = .installed
-    #expect(UpdateNow.installedLine(state, asked: asked) == "installed 1.2.3; the agents restart on it")
+    #expect(UpdateNow.installedLine(state, asked: asked) == "updated signd to 1.2.3 and restarted the agent")
 }
 
 @Test func aRepeatedInstallReadsAsUpToDateWithItsTime() {
@@ -114,5 +114,5 @@ private let noUpdates = UpdateStatus(settings: UpdateSettings(managed: noPlist, 
     state.installed = "1.2.3"
     state.outcome = .installed
     let at = asked.addingTimeInterval(-60).formatted(.iso8601)
-    #expect(UpdateNow.installedLine(state, asked: asked) == "signd is up to date (1.2.3), installed at \(at)")
+    #expect(UpdateNow.installedLine(state, asked: asked) == "signd is up to date (1.2.3, updated at \(at))")
 }
