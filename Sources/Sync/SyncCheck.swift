@@ -81,6 +81,8 @@ struct SyncCheck {
 
         if let loss = fetched.zoneLoss {
             try removeShared(changes: &changes)
+            // The zone's records are gone, so the backup login ended.
+            try tokens.delete()
             state.forgetRecords()
             state.stopped = loss == .deletedByUser
             return state

@@ -172,3 +172,25 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     #expect(await b.service.checkNow().outcome == .ok)
     #expect(try b.tokens.read() == token)
 }
+
+@Test(.timeLimit(.minutes(1))) func aZoneDeletedByTheUserDeletesTheToken() async throws {
+    let (cloud, _, b) = try await loggedInAndWaiting()
+    _ = await b.service.checkNow()
+    #expect(try b.tokens.read() == token)
+
+    cloud.deleteZoneByUser()
+    #expect(await b.service.checkNow().outcome == .stopped)
+    #expect(try b.tokens.read() == nil)
+}
+
+@Test(.timeLimit(.minutes(1))) func anotherAccountDeletesTheToken() async throws {
+    let (cloud, _, b) = try await loggedInAndWaiting()
+    _ = await b.service.checkNow()
+    #expect(try b.tokens.read() == token)
+
+    // The check that follows fails, so only the change of account can have deleted the token.
+    cloud.failChanges(with: CloudError(.network, "offline"))
+    cloud.setAccount(.available(user: "user-2"))
+    b.service.accountChanged()
+    #expect(await eventually { (try? b.tokens.read()) == nil })
+}

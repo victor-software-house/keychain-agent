@@ -265,6 +265,8 @@ public actor SyncService {
         if let old = state.user, old != user {
             var changes = Changes()
             try work.removeShared(changes: &changes)
+            // The token belongs to the old account's backup.
+            try dependencies.tokens.delete()
             state.forgetRecords()
             if !changes.isEmpty { await dependencies.changed() }
         }

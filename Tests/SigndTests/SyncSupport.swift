@@ -40,6 +40,7 @@ final class FakeCloud: CloudStore {
         var failure: CloudError?
         var expireNextToken = false
         var saveFailure: CloudError?
+        var changesFailure: CloudError?
         /// Records the next reads cannot return, as CloudKit reports a record that fails to read.
         var unreadable: Set<String> = []
         var beforeDelete: (@Sendable () -> Void)?
@@ -66,6 +67,8 @@ final class FakeCloud: CloudStore {
     func fail(with error: CloudError?) { state.withLock { $0.failure = error } }
     /// Fails only saves, so a test can stop a command between its reads and its writes.
     func failSaves(with error: CloudError?) { state.withLock { $0.saveFailure = error } }
+    /// Fails only reads of changes, so a test can stop a check after the work that comes before its read.
+    func failChanges(with error: CloudError?) { state.withLock { $0.changesFailure = error } }
     /// Makes reads of changes report these records as unreadable and leave them out.
     func failReads(of names: Set<String>) { state.withLock { $0.unreadable = names } }
     /// Runs `action` before the next delete, as another device's write that lands while a command runs.
@@ -136,6 +139,7 @@ final class FakeCloud: CloudStore {
 
     func changes(database: Data?, zone: Data?) async throws(CloudError) -> CloudChanges {
         try await answer({ $0.changes += 1 }) { state throws(CloudError) in
+            if let failure = state.changesFailure { throw failure }
             if state.database.zoneMissing { throw CloudError(.zoneMissing, "the zone does not exist") }
             if state.expireNextToken, database != nil {
                 state.expireNextToken = false
