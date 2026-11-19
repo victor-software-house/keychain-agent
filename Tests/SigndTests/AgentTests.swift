@@ -147,9 +147,14 @@ final class GatedSigner: Signer {
         let server = Server(agent: agent)
         let count = 8
         try await withThrowingTaskGroup { group in
+            // Whatever ends the test, the signatures are let go: they wait on the
+            // shared thread pool, and one left waiting would stall other tests.
+            defer { signer.release(count) }
             for _ in 0..<count {
                 group.addTask {
                     guard case .signature = await server.respond(to: .sign(keyBlob: stored.publicBlob, data: Data([1]), flags: [])) else {
+                        // No signature started, so nothing else would end the wait below.
+                        continuation.finish()
                         throw SignError.failed("no signature")
                     }
                 }
