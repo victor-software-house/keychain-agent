@@ -352,7 +352,7 @@ public struct BackupRun: Sendable {
 
     /// An error as the status and the log show it.
     /// A 1Password error shows only its code, because its message could echo a field value of an item, such as the private key.
-    private static func describe(_ error: any Error) -> String {
+    static func describe(_ error: any Error) -> String {
         if let failure = error as? OnePasswordError { return "1Password \(failure.code.rawValue)" }
         return Display.clean(String(describing: error))
     }

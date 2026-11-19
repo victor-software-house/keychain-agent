@@ -756,3 +756,70 @@ private func wrappedKey(_ name: String, _ privateKey: PrivateKey) throws -> Stor
         for line in privateKey.split(separator: "\n") where line.count > 20 { #expect(!message.contains(line)) }
     }
 }
+
+// MARK: Restore
+
+/// A restore over the rig's vault into `store`, whose keys are sealed to a software key in place of the Secure Enclave.
+private func restoring(_ rig: BackupRig, into store: MemoryStore) -> BackupRestore {
+    let vault = rig.vault
+    return BackupRestore(
+        BackupRestore.Dependencies(
+            tokens: rig.tokens, openVault: { _, _ in vault }, vault: { "signd" }, store: store,
+            wrap: { (name, key, comment, hosts) throws(StoreError) -> StoredKey in
+                let agreement = P256.KeyAgreement.PrivateKey()
+                guard let wrapped = try? Wrapping.seal(key, comment: comment, to: agreement.publicKey) else { throw .corrupt(name) }
+                return StoredKey(
+                    name: name, kind: .wrapped, publicBlob: key.publicKey.blob, comment: comment, hosts: hosts, source: "backup",
+                    keyData: agreement.rawRepresentation, wrapped: wrapped
+                )
+            }
+        )
+    )
+}
+
+@Test(.timeLimit(.minutes(1))) func aRestoreSkipsAKeyTheStoreHasImportsANewOneAndNeverListsASecureEnclaveKey() async throws {
+    let rig = try BackupRig()
+    let work = try rig.share("work", hosts: ["git.example.com"])
+    try rig.store.add(storedSoftwareKey("enclave"))
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    // The vault has the key's item and the Secure Enclave list, and only the key is listed.
+    #expect(rig.vault.items.map(\.title) == ["signd Secure Enclave keys (mac-a)", "work"])
+    let listed = BackupRestoreList(keys: [BackupRestoreKey(name: "work", scope: BackupFormat.shared, fingerprint: work.publicKey.fingerprint)])
+
+    // A Mac that has the key skips it, and the list item is no key to restore.
+    let same = restoring(rig, into: rig.store)
+    #expect(await same.list() == listed)
+    #expect(await same.restore(names: ["work"], all: false) == [RestoredKey(name: "work", outcome: .skipped, reason: "already stored")])
+    #expect(await same.restore(names: ["enclave", "signd Secure Enclave keys (mac-a)"], all: false).map(\.reason) == ["no item", "no item"])
+
+    // A Mac with no keys gets the key, and it opens to the key the vault has.
+    let fresh = MemoryStore()
+    let other = restoring(rig, into: fresh)
+    #expect(await other.list() == listed)
+    #expect(await other.restore(names: [], all: true) == [RestoredKey(name: "work", outcome: .restored)])
+    let stored = try #require(try fresh.list().first)
+    #expect(stored.hosts == ["git.example.com"])
+    #expect(stored.comment == "work@example")
+    #expect(stored.source == "backup")
+    #expect(try softwareOpen(stored).0 == work)
+
+    // Restoring it again finds it stored, and a name the store uses for another key is taken.
+    #expect(await other.restore(names: ["work", "work"], all: false) == [RestoredKey(name: "work", outcome: .skipped, reason: "already stored")])
+    let taken = MemoryStore()
+    try taken.add(localWrappedKey("work").0)
+    #expect(await restoring(rig, into: taken).restore(names: ["work"], all: false) == [RestoredKey(name: "work", outcome: .skipped, reason: "the name is taken")])
+}
+
+@Test(.timeLimit(.minutes(1))) func aRestoreWithNoTokenFailsAsTheBackupAndReadsNoItem() async throws {
+    let rig = try BackupRig()
+    try rig.share("work")
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    try rig.tokens.delete()
+    rig.vault.resetCalls()
+
+    let restore = restoring(rig, into: MemoryStore())
+    let off = "the backup is off; run signd backup login"
+    #expect(await restore.list() == BackupRestoreList(failure: off))
+    #expect(await restore.restore(names: ["work"], all: false) == [RestoredKey(name: BackupRestore.backupName, outcome: .failed, reason: off)])
+    #expect(rig.vault.calls.isEmpty)
+}
