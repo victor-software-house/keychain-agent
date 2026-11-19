@@ -43,6 +43,10 @@ public enum BackupFormat {
     static let sectionID = "signd"
     static let sectionTitle = "signd"
     static let fingerprintPrefix = "SHA256:"
+
+    /// Whether `field` is outside every named section.
+    /// 1Password returns such a field in a section whose ID and title are empty, so its `sectionID` is "" and not nil.
+    static func isTopLevel(_ field: Item.Field) -> Bool { (field.sectionID ?? "").isEmpty }
     /// The version of the item shape: the title, notes, tags and fields a run writes.
     /// Raise it when any of them changes, and every Mac then writes each item once.
     static let itemVersion = 1
@@ -275,7 +279,7 @@ public struct BackupDesiredItem: Sendable, Equatable {
         let titles = Dictionary(sections.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
         var index: [FieldKey: Item.Field] = [:]
         for field in fields {
-            let key = FieldKey(section: field.sectionID.flatMap { titles[$0] }, title: field.title)
+            let key = FieldKey(section: BackupFormat.isTopLevel(field) ? nil : field.sectionID.flatMap { titles[$0] }, title: field.title)
             if index[key] == nil { index[key] = field }
         }
         return index
