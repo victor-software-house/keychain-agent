@@ -2,27 +2,43 @@
 
 ## Context
 
-The agent runs from `/Applications/Signd.app/Contents/MacOS/signd serve`, registered by `SMAppService.agent` with `KeepAlive`, so launchd starts it again whenever it exits.
+Each user's agent runs from `/Applications/Signd.app/Contents/MacOS/signd serve`, registered by `SMAppService.agent` with `KeepAlive`, so launchd starts it again whenever it exits.
+The package installs the app as `root:wheel`, so only root can change it.
 signd never reads `Bundle.main` (AGENTS.md, invariant 6); the updater reads its own path and signature from `SecCode`.
 
 ## Decisions
 
-### 1. Check schedule
+### 1. The updater is a root daemon
 
-Only the `serve` process checks, in a task of its own, never on the event loop and never inside the agent actor.
-It checks 60 seconds after start, then every `updateInterval`, 6 hours by default.
-It adds up to 10 minutes of random delay, so Macs do not check together.
+The package installs `/Library/LaunchDaemons/com.victor-software-house.signd.updater.plist`, owned by `root:wheel` with mode 0644.
+It runs `/Applications/Signd.app/Contents/MacOS/signd updater` as root, a subcommand that `--help` does not list.
+The updater fetches and checks every release itself, so nothing it installs comes from a user process (operator, 2026-11-19).
 
-`updates` (on by default) and `updateInterval` are settings, which the config file or a Mobile Device Management (MDM) profile can set.
+### 2. Check schedule
 
-### 2. Release source
+The daemon's `StartInterval` is 1 hour.
+Each run exits at once unless `update-interval`, 6 hours by default, has passed since the last check in `update.json`.
+A run that goes on first waits up to 10 minutes at random, so Macs do not check together.
 
-The agent requests `api.github.com/repos/victor-software-house/signd/releases/latest` for the tag and the `Signd.app.zip` asset, unauthenticated: 4 requests a day stay far below the 60 an hour GitHub allows.
-A tag that is not a newer version than the running one ends the check.
+`updates` (on by default) and `update-interval` are read from the managed and the machine-wide preferences, never a user's.
+A Mobile Device Management (MDM) profile sets them, or an admin with `sudo defaults write /Library/Preferences/com.victor-software-house.signd`.
 
-### 3. Verification
+### 3. Release source
 
-It unpacks the zip with `ditto -x -k` into `~/Library/Caches/signd/update/`, then checks the new `Signd.app` with `SecStaticCodeCheckValidity` against this requirement:
+The updater requests `api.github.com/repos/victor-software-house/signd/releases/latest` for the tag and the `Signd.app.zip` asset, unauthenticated: 4 requests a day stay far below the 60 an hour GitHub allows.
+A tag that is not a newer version than the installed one ends the check.
+
+After the signature check, the unpacked app's version must equal the tag and be newer than the installed one.
+Otherwise the download is deleted, so an older build under a newer tag never installs.
+
+### 4. Verification
+
+`/Library/Caches` is writable by admins, so the updater stages nothing there.
+Each run makes a fresh directory with `mkdtemp` under `/Library/Application Support/signd/update/`, which is `root:wheel` 0700.
+It refuses to go on unless every path component is owned by root and none is a symlink.
+
+It unpacks the zip with `ditto -x -k` into that directory, and the swap reads only from it.
+It then checks the new `Signd.app` with `SecStaticCodeCheckValidity` against this requirement:
 
 ```text
 anchor apple generic and notarized
@@ -31,26 +47,35 @@ and certificate leaf[subject.OU] = "<team>"
 ```
 
 `<team>` is the team identifier of the running code, read from its own signature, so the repository contains no team identifier.
-A failed check deletes the download and records the error for `signd status`.
+A failed check deletes the download and records the error.
 
-### 4. Bundle swap
+### 5. Bundle swap and restart
 
-`renamex_np` with `RENAME_SWAP` exchanges the new bundle's `Contents` with the installed one's in one step, on the Data volume that contains both `/Applications` and the home folder.
-The old `Contents` is then deleted, the agent logs the new version and exits, and launchd starts the new binary.
+`renamex_np` with `RENAME_SWAP` exchanges the new bundle's `Contents` with the installed one's in one step, on the Data volume that contains both `/Applications` and `/Library`.
+The old `Contents` is then deleted.
 A running process keeps its mapped binary, so a signature in flight finishes.
 
-### 5. Who owns the bundle
+The updater then finds each running `signd serve` by its executable path and runs `launchctl kickstart -k gui/<uid>/com.victor-software-house.signd` for its user.
 
-The package's postinstall gives `Signd.app` to the console user, unless a managed setting turns updates off.
-When the bundle is not writable, the agent skips the check and `signd status` shows `updates  managed`.
+### 6. Asking and reporting
 
-### 6. The release
+The daemon also serves the Mach service `com.victor-software-house.signd.updater` over XPC (cross-process communication), with one request: check now and answer the result.
+Any user may send it, since a check installs only what decision 4 accepts.
+
+Checks run one at a time: a request during a run gets that run's result.
+A request within 5 minutes of the last check gets the recorded result, with no new request to GitHub.
+
+Each run writes `/Library/Application Support/signd/update.json`, mode 0644, with the time, the versions and any error, and contains no secret.
+`signd update` sends the request, and `signd status` reads the file.
+
+### 7. The release
 
 The release workflow staples the notarized app, zips it with `ditto -c -k --keepParent`, and attaches `Signd.app.zip` beside `signd.pkg`.
-The cask sets `auto_updates true`, so `brew upgrade` leaves the app to the updater.
+The cask sets `auto_updates true`, so `brew upgrade` leaves the app to the updater, and its `uninstall` unloads the daemon.
 
 ## Risks
 
 - A bundle swap may affect the login item approval; Apple documents nothing for this case.
   Task 2.1 checks it on a test Mac before a release ships the updater.
-- A standard account has not been tested; task 2.2 runs the update as one.
+- The updater unpacks a download as root.
+  `ditto` runs only on a file fetched from the release asset over HTTPS, and nothing runs from it before the signature check.

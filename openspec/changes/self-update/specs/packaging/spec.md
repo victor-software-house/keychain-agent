@@ -11,11 +11,11 @@ Each release SHALL attach a notarized, stapled `Signd.app.zip` beside `signd.pkg
 - **WHEN** a release is published
 - **THEN** `Signd.app.zip` unpacks to an app that passes `spctl --assess --type execute`
 
-### Requirement: The package hands the app to the user
+### Requirement: The package installs the updater
 
-The package's postinstall SHALL make the console user the owner of `/Applications/Signd.app`, unless a managed setting turns updates off.
+The package SHALL install the updater daemon's plist in `/Library/LaunchDaemons`, owned by `root:wheel` with mode 0644, and SHALL leave `/Applications/Signd.app` owned by root.
 
-#### Scenario: An unmanaged Mac
+#### Scenario: After the install
 
-- **WHEN** the package installs on a Mac with no signd profile
-- **THEN** `stat -f %Su /Applications/Signd.app` prints the console user
+- **WHEN** the package installs
+- **THEN** `launchctl print system/com.victor-software-house.signd.updater` finds the job, and `stat -f %Su /Applications/Signd.app` prints `root`
