@@ -65,7 +65,7 @@
   - 2026-11-19 UTC: A key that 1Password's SSH Key item cannot take gets a Secure Note by design decision 2.
     `anSSHKeyItemSupportsEd25519AndRSAOfTheListedSizesAndExponents` in `BackupRunTests` covers `ItemCategory.supports` for an SSH Key item at the size and exponent edges.
     `aSecureNoteSupportsEveryKeyAndNoOtherCategoryDoes` covers the other categories.
-  - 2026-11-19 UTC: `aKeyTheSSHKeyItemCannotTakeGetsASecureNote` runs an elliptic curve key and a 1024-bit key into Secure Notes, beside two SSH Key items.
+  - 2026-11-19 UTC: `aKeyTheSSHKeyItemDoesNotSupportGetsASecureNote` runs an elliptic curve key and a 1024-bit key into Secure Notes, beside two SSH Key items.
     The next run makes only the list call, and a run with no cache writes nothing.
   - 2026-11-19 UTC: `BackupPlannerTests` cover the notes.
     `anECDSAKeyAndA1024BitRSAKeyEachGetASecureNote` and `anEd25519KeyAndA2048BitRSAKeyEachGetAnSSHKeyItem` cover each item's category and fields.

@@ -688,7 +688,7 @@ private func wrappedKey(_ name: String, _ privateKey: PrivateKey) throws -> Stor
     }
 }
 
-@Test(.timeLimit(.minutes(1))) func aKeyTheSSHKeyItemCannotTakeGetsASecureNote() async throws {
+@Test(.timeLimit(.minutes(1))) func aKeyTheSSHKeyItemDoesNotSupportGetsASecureNote() async throws {
     let rig = try BackupRig()
     try rig.share("good")
     let signing = P256.Signing.PrivateKey()
