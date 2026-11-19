@@ -203,6 +203,23 @@ signd status                                                   # iCloud state, t
 > Sharing needs the notarized release: only its provisioning profile grants signd's iCloud container.
 > A build from source keeps every key on its Mac, and `signd status` shows sync as off.
 
+## Backup to 1Password
+
+A Mac that stores a 1Password service account token copies the shared keys to a vault.
+`signd backup restore` brings them back, through the agent, which is the only process that reads the token.
+
+```sh
+signd backup restore                  # list the keys of the backup: name, scope and fingerprint
+signd backup restore deploy           # restore one key, shared with every Mac
+signd backup restore --all --local    # restore every key, kept on this Mac
+signd backup status                   # whether the backup is on, its last run and its next run
+```
+
+- A key the store already has is skipped, and so is a key whose name another key uses.
+  The command exits non-zero when a key fails, such as one with a passphrase.
+- `signd status` prints the same backup lines.
+  `backup  off; run signd backup login` shows that no token is stored.
+
 ## Settings
 
 | Setting | Default | Range | Controls |
