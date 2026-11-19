@@ -1,5 +1,5 @@
 #!/bin/sh
-#MISE description="Build build/signd.pkg: the exported Signd.app in a signed, notarized and stapled package"
+#MISE description="Build build/signd.pkg, the exported Signd.app in a signed, notarized and stapled package with the login hook and the updater daemon, and build/Signd.app.zip, the stapled app the updater downloads"
 #MISE depends=["export"]
 # The Release workflow runs this on the xcode-27 runner, after package:profile.
 # By then macos-signing has imported both Developer ID identities and the notary key.
@@ -16,6 +16,9 @@ ditto build/export/Signd.app build/root/Applications/Signd.app
 # The login hook: launchd loads a system LaunchAgent only when root owns it and nobody else can write it.
 mkdir -p build/root/Library/LaunchAgents
 install -m 0644 Bundle/com.victor-software-house.signd.login.plist build/root/Library/LaunchAgents/
+# The updater: launchd loads a daemon only when root owns it and nobody else can write it.
+mkdir -p build/root/Library/LaunchDaemons
+install -m 0644 Bundle/com.victor-software-house.signd.updater.plist build/root/Library/LaunchDaemons/
 
 # pkgbuild marks bundles relocatable by default; signd must stay in /Applications.
 pkgbuild --analyze --root build/root build/components.plist
@@ -31,3 +34,6 @@ productbuild --distribution Bundle/Installer/distribution.xml --resources build/
   --sign 'Developer ID Installer' build/signd.pkg
 xcrun notarytool submit build/signd.pkg --key "$NOTARY_KEY_PATH" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID" --wait
 xcrun stapler staple build/signd.pkg
+# The package's notarization covers the app inside it, so the app takes a ticket too.
+xcrun stapler staple build/export/Signd.app
+ditto -c -k --keepParent build/export/Signd.app build/Signd.app.zip

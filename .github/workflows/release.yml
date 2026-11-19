@@ -6,9 +6,9 @@ name: Release
 #
 # The jobs after it build signd.pkg (Developer ID, notarized, stapled) from that version's tag.
 # They build it only when the release lacks the package.
-# They attach the package and an example profile for Mobile Device Management, and point the public tap's cask at the package.
+# They attach the package, the zipped app and an example profile for Mobile Device Management, and point the public tap's cask at the package.
 #
-# A manual run with publish off builds the package and the profile from HEAD as run artifacts only.
+# A manual run with publish off builds the package, the zipped app and the profile from HEAD as run artifacts only.
 #
 # The 1Password connection that releases the signing set admits this workflow by its name,
 # Release, and the job's environment, release.
@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       publish:
-        description: Release and attach signd.pkg and signd.mobileconfig; otherwise keep them as run artifacts
+        description: Release and attach signd.pkg, Signd.app.zip and signd.mobileconfig; otherwise keep them as run artifacts
         type: boolean
         default: true
 
@@ -89,7 +89,7 @@ jobs:
     environment: release
     timeout-minutes: 30
     permissions:
-      contents: write # uploads signd.pkg to the release
+      contents: write # uploads signd.pkg and Signd.app.zip to the release
       id-token: write # the OIDC token 1Password checks before it releases the signing set, and Sigstore signs the attestation with
       attestations: write
     steps:
@@ -128,12 +128,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.plan.outputs.version }}
-        run: gh release upload "$TAG" build/signd.pkg build/signd.mobileconfig
+        run: gh release upload "$TAG" build/signd.pkg build/Signd.app.zip build/signd.mobileconfig
       - if: github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signd.pkg
           path: build/signd.pkg
+          if-no-files-found: error
+      - if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Signd.app.zip
+          path: build/Signd.app.zip
           if-no-files-found: error
       - if: github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

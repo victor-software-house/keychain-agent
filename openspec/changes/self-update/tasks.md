@@ -28,6 +28,10 @@
     Task 1.5 installs the daemon.
 - [ ] 1.5 Install the daemon in the package, publish `Signd.app.zip`, and update the cask by decisions 1 and 7.
   Verify `package:check` finds the daemon plist as `root:wheel 0644`, and the release workflow assesses the zip's app with `spctl`.
+  - 2026-11-19 UTC: `mise-tasks/package.sh` puts the daemon plist in the payload and builds the stapled `build/Signd.app.zip`.
+    `mise-tasks/package/check.sh` checks the daemon's owner and the zip's ticket and Gatekeeper assessment.
+    `Postinstall` in `Sources/SigndCLI/Signd.swift` loads the daemon, and `.github/workflows/release.yml` uploads the zip; CI has not run yet.
+    The cask change is not part of this repository.
 
 ## 2. Integration
 
