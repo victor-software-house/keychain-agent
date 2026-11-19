@@ -22,7 +22,7 @@
   Verify the built package passes `pkgutil --check-signature`.
   Verify the release workflow reads the title, `hostArchitectures` and `allowed-os-versions` back from it with `pkgutil --expand`.
 - [ ] 1.5 Add `signd service status`, `restart` and `log` by design decision 6.
-  Verify a unit test of the `log` arguments and the e2e task's restart of the agent.
+  Verify a unit test of the `log` arguments and the `service restart` step of `mise run e2e:hardware`.
 - [ ] 1.6 Change the cask by design decision 7 in the tap.
   Verify `brew uninstall --cask signd` on portable leaves no login item.
 - [ ] 1.7 Start the README's Install section from the package, with the cask second.
