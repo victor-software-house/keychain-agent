@@ -7,6 +7,8 @@ private let log = Logger(subsystem: "com.victor-software-house.signd", category:
 ///
 /// Each request during a check gets that check's result.
 /// Each request within 5 minutes of the last recorded check gets the recorded result, with no new request to GitHub.
+///
+/// A check that made no request, because updates are off, is never reused: the setting may have changed.
 /// The actor does none of the work of a check: `run` does it on the global executor.
 public actor Updater {
     /// How long a recorded check answers later requests.
@@ -32,7 +34,7 @@ public actor Updater {
     public func check() async -> UpdateState {
         lastActivity = now()
         if let running { return await running.value }
-        if state.outcome != nil, let last = state.lastCheck, now().timeIntervalSince(last) < Self.recheckWindow { return state }
+        if let outcome = state.outcome, outcome != .off, let last = state.lastCheck, now().timeIntervalSince(last) < Self.recheckWindow { return state }
         let task = Task { await self.perform() }
         running = task
         let result = await task.value

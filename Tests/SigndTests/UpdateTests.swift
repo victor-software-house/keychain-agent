@@ -270,6 +270,21 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     #expect(UpdateState.load(from: url).outcome == .upToDate)
 }
 
+@Test func anOffResultDoesNotAnswerTheNextRequest() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let clock = TestClock()
+    let runs = Counter()
+    let updater = Updater(
+        run: { state(at: clock.now, outcome: runs.increment() == 1 ? .off : .upToDate) }, now: { clock.now },
+        stateURL: directory.appending(path: "update.json")
+    )
+    #expect(await updater.check().outcome == .off)
+    clock.advance(1)
+    #expect(await updater.check().outcome == .upToDate)
+    #expect(runs.count == 2)
+}
+
 @Test func aMissingStateFileLoadsEmpty() {
     #expect(UpdateState.load(from: noPlist) == UpdateState())
 }
