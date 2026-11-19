@@ -1,5 +1,12 @@
 # Changelog
 
+## signd 0.0.14
+
+- `signd backup restore` lists the keys of the 1Password backup, and restores the ones named or all with `--all`.
+  A restored key is shared with every Mac, or stays on this one with `--local` ([`039e66b`](https://github.com/victor-software-house/signd/commit/039e66b3c032b056f41bcefc15bb1b4000d86698)).
+
+  `signd status` and `signd backup status` show whether the backup is on, its last run and its next run.
+
 ## signd 0.0.13
 
 - The agent now copies shared keys, this Mac's own keys and a list of its Secure Enclave keys to the 1Password vault.
