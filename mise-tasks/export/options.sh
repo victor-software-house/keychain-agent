@@ -17,7 +17,7 @@ cat > build/ExportOptions.plist <<EOF
 	<key>signingCertificate</key>
 	<string>Developer ID Application</string>
 	<key>teamID</key>
-	<string>${DEVELOPMENT_TEAM:?run package:profile first}</string>
+	<string>${SIGND_TEAM:?run package:profile first}</string>
 	<key>iCloudContainerEnvironment</key>
 	<string>Production</string>
 	<key>provisioningProfiles</key>

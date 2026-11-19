@@ -1,5 +1,5 @@
 #!/bin/sh
-#MISE description="Install the Developer ID provisioning profile from SIGND_PROVISIONING_PROFILE for Xcode, check its iCloud container, and write DEVELOPMENT_TEAM and SIGND_PROFILE_UUID to GITHUB_ENV"
+#MISE description="Install the Developer ID provisioning profile from SIGND_PROVISIONING_PROFILE for Xcode, check its iCloud container, and write SIGND_TEAM and SIGND_PROFILE_UUID to GITHUB_ENV"
 # The Release workflow runs this before package. SIGND_PROVISIONING_PROFILE contains the profile, base64.
 # The team and the profile's UUID come from it, so the repository contains no team identifier.
 set -eu
@@ -33,5 +33,6 @@ fi
 profiles="$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles"
 mkdir -p "$profiles"
 cp build/signd.provisionprofile "$profiles/$uuid.provisionprofile"
-printf 'DEVELOPMENT_TEAM=%s\nSIGND_PROFILE_UUID=%s\n' "$team" "$uuid" >> "${GITHUB_ENV:?}"
+# project.yml gives SIGND_TEAM to the Signd target alone; a package target that took the team would fail the archive.
+printf 'SIGND_TEAM=%s\nSIGND_PROFILE_UUID=%s\n' "$team" "$uuid" >> "${GITHUB_ENV:?}"
 echo "✔ the profile is installed and lists $CLOUDKIT_CONTAINER"
