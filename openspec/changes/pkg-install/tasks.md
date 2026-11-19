@@ -18,9 +18,12 @@
   Open Login Items by decisions 3 and 4.
   Verify a test of the JSON report's fields.
   - 2026-11-18 UTC: `theJSONReportCarriesTheLoginItemAndTheSSHInclude` passed in [CI run 44423080784][pkg-install-ci].
-- [ ] 1.4 Build the package from `Bundle/Installer/distribution.xml` by design decision 5.
+- [x] 1.4 Build the package from `Bundle/Installer/distribution.xml` by design decision 5.
   Verify the built package passes `pkgutil --check-signature`.
   Verify the release workflow reads the title, `hostArchitectures` and `allowed-os-versions` back from it with `pkgutil --expand`.
+  - 2026-11-19 UTC: the Release workflow, run by dispatch on `main` with publishing off, built, signed and notarized the package in [run 44456387525][pkg-install-package].
+    `pkgutil --check-signature` reported a Developer ID Installer signature that the Apple notary service trusts, and `spctl --assess --type install` accepted the package.
+  - 2026-11-19 UTC: in the same run, `mise run package:check` read back the title signd, `arm64` as the host architecture and macOS 26.0 as the floor.
 - [ ] 1.5 Add `signd service status`, `restart` and `log` by design decision 6.
   Verify a unit test of the `log` arguments and the `service restart` step of `mise run e2e:hardware`.
 - [ ] 1.6 Change the cask by design decision 7 in the tap.
@@ -35,3 +38,4 @@
   Verify that `ssh -G` routes a synced key's host to signd.
 
 [pkg-install-ci]: https://github.com/victor-software-house/signd/actions/runs/44423080784
+[pkg-install-package]: https://github.com/victor-software-house/signd/actions/runs/44456387525
