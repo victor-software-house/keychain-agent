@@ -61,17 +61,23 @@ run = "xcodebuild build -project Signd.xcodeproj -scheme Signd -derivedDataPath 
 description = "Archive the Signd scheme in Release into build/Signd.xcarchive, signed manually with the Developer ID identity and the profile package:profile installed"
 depends = ["generate"]
 # DEVELOPMENT_TEAM and SIGND_PROFILE_UUID come from package:profile. The version comes from VERSION.
-run = '''
+run = [
+  "rm -rf build/Signd.xcarchive",
+  '''
 xcodebuild archive -project Signd.xcodeproj -scheme Signd -configuration Release -archivePath build/Signd.xcarchive \
   CODE_SIGN_IDENTITY="Developer ID Application" OTHER_CODE_SIGN_FLAGS=--timestamp \
   DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:?run package:profile first}" SIGND_PROFILE_UUID="${SIGND_PROFILE_UUID:?run package:profile first}" \
   MARKETING_VERSION="$(cat VERSION)" CURRENT_PROJECT_VERSION="$(cat VERSION)"
-'''
+''',
+]
 
 [tasks.export]
 description = "Export build/Signd.xcarchive as the Developer ID Signd.app in build/export"
 depends = ["archive", "export:options"]
-run = "xcodebuild -exportArchive -archivePath build/Signd.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export"
+run = [
+  "rm -rf build/export",
+  "xcodebuild -exportArchive -archivePath build/Signd.xcarchive -exportOptionsPlist build/ExportOptions.plist -exportPath build/export",
+]
 
 [tasks.test]
 description = "Run the Swift package tests"
