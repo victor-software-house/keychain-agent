@@ -47,7 +47,7 @@ private func sources(
     )
 }
 
-/// `publicKey` is what the vault shows in an SSH key field, which holds the private key in `content`.
+/// `publicKey` is what the vault shows in an SSH key field, which has the private key in `content`.
 private func vaultItem(_ content: ItemContent, id: String, updatedAt: Date = epoch, publicKey: String? = nil) -> Item {
     let fields = content.fields.map { field in
         field.type == .sshKey
@@ -170,7 +170,7 @@ private func rewritten(_ item: Item, privateKey: String) -> Item {
     let reformatted = rewritten(item, privateKey: "same key, other text")
     #expect(plan(sources(shared: [key("work")]), vault: [reformatted]).isIdle)
 
-    // Another public key is another key, whatever the text says.
+    // Another public key is another key, whatever the private text is.
     let swapped = vaultItem(try #require(BackupDesiredItem(key: key("work"), scope: BackupFormat.shared)).content, id: "item-work", publicKey: publicKeyLine("other"))
     #expect(plan(sources(shared: [key("work")]), vault: [swapped]).put.map(\.itemID) == ["item-work"])
 
@@ -439,7 +439,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(third.put.map(\.itemID) == ["copy-oldest"])
     #expect(third.create.isEmpty && third.delete.isEmpty)
 
-    // A target that no longer exists is replaced by the oldest copy left.
+    // A target that is gone is replaced by the oldest copy left.
     let fourth = plan(sources(shared: [key("work", hosts: ["newer"], tag: "tag-2")]), vault: [newest], cache: second.cache)
     #expect(fourth.put.map(\.itemID) == ["copy-newest"])
 }

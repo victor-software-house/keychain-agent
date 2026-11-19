@@ -20,7 +20,8 @@ public enum BackupRead: Sendable, Equatable {
 /// What a run plans from.
 public struct BackupSources: Sendable {
     /// The shared keys of the `Key` records the read returned.
-    /// A shared key this Mac has no private key for must still be in it, with no `privateKey`: a key left out is taken for a removed one, and its item goes.
+    /// A shared key this Mac has no private key for must still be in it, with no `privateKey`.
+    /// A key left out is taken for a removed one, and its item goes.
     public var shared: [BackupKey]
     public var read: BackupRead
     /// This Mac's keys that are not shared.
@@ -64,7 +65,8 @@ public struct BackupPlan: Sendable, Equatable {
     }
 
     /// Item IDs to read with `getAll`, 50 a call.
-    /// When it is not empty, the rest of the plan is empty but `cache`, which keeps every item this plan knows: read them, and plan again with them.
+    /// When it is not empty, the rest of the plan is empty except `cache`.
+    /// Read the items, and plan again with them.
     /// Pass the IDs whose read failed as `unread` to that second plan.
     public var fetch: [[String]] = []
     /// Items to create, 100 a call.
@@ -154,7 +156,7 @@ public enum BackupPlanner {
         }
         var plan = BackupPlan()
         plan.unread = failed
-        // The groups and the targets below need the whole vault, so this plan can only keep what it knows.
+        // The groups and the targets below need the whole vault, so this plan only keeps the entries it has.
         guard missing.isEmpty else {
             plan.fetch = chunks(missing, fetchBatch)
             for entry in known {
@@ -258,7 +260,8 @@ public enum BackupPlanner {
     }
 
     /// Whether this Mac may remove the items of `slot`, which no source lists.
-    /// It never removes an item of another Mac's local key, the list of its own Mac, or a shared item while a `Key` record is unreadable.
+    /// It never removes an item of another Mac's local key or the list of its own Mac.
+    /// It removes no shared item while a `Key` record is unreadable.
     private static func isRemovable(_ slot: BackupSlot, sources: BackupSources) -> Bool {
         switch slot.kind {
         case .key:

@@ -16,7 +16,8 @@ public enum BackupFormat {
     /// Raise it when any of them changes, and every Mac then writes each item once.
     static let itemVersion = 1
 
-    /// The change tag a run compares for an item: the source's tag with the item version, and the device name where the item shows it.
+    /// The change tag a run compares for an item: the source's tag and the item version.
+    /// An item that shows the device name, such as the Secure Enclave list, adds it.
     static func changeTag(source: String, deviceName: String? = nil) -> String {
         [String(itemVersion), deviceName ?? "", source].joined(separator: "\u{1F}")
     }
@@ -245,6 +246,8 @@ func describeRedacted(_ type: String, _ children: [Mirror.Child]) -> String {
 
 /// What a Mac remembers about one tagged item of the vault.
 /// It contains no secret.
+/// Encode it with exact dates, as the default `JSONEncoder` does, and never with `.iso8601`.
+/// A run compares `updatedAt` with the vault's for equality, and whole seconds would make every entry look stale.
 public struct BackupCacheEntry: Codable, Sendable, Equatable {
     public var id: String
     public var updatedAt: Date

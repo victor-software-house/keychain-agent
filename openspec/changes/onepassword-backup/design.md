@@ -66,12 +66,20 @@ No run removes an item whose fingerprint matches a key in this Mac's store, what
 A Mac's `secure-enclave-list` item is updated with `put` and removed only when that Mac's `Device` record is gone from a completed read.
 
 Two items can have one fingerprint, as 1Password's Duplicate makes them.
-Both count: a run updates the oldest and leaves the others alone.
+Both count: a run writes nothing when any copy is current.
+Otherwise it updates one copy and leaves the others alone.
+
+A run writes to the copy the cache records, while that item exists, and otherwise to the oldest by `updatedAt`, then by identifier.
 A removal removes every copy.
 
 The list call returns overviews, which carry the tags and `updatedAt` but no section.
 Each Mac keeps a local cache with no secret in it.
-The cache has each item's identifier, `updatedAt` and the change tag of the source it last wrote.
+The cache has these for each item:
+
+- its identifier and `updatedAt`
+- the change tag of the source it last wrote
+- the slot and name of its owner
+- the identifier of the copy a run writes to, when the slot has duplicates
 
 A run fetches full items with `getAll`, up to 50 a call, only for items that are new to the cache or whose `updatedAt` moved.
 A run with no difference, on a Mac whose cache is current, makes only the list call.
