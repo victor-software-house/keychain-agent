@@ -1,5 +1,11 @@
 # Changelog
 
+## signd 0.0.17
+
+- `signd backup restore` reads the private key, hosts and comment of an item again.
+  A backup run writes only the key items that changed.
+  1Password gives a field outside every named section an empty section ID, and signd took that field for a field of another section ([`571ead0`](https://github.com/victor-software-house/signd/commit/571ead0e21699ef773f9dc682100106da8ccc9a0)).
+
 ## signd 0.0.16
 
 - A changed backup setting now applies at once: `signd config set` and `unset` notify the running agent, which computes the wait for the next backup again.
