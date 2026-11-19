@@ -18,8 +18,10 @@ struct LeaseLost: Error, CustomStringConvertible {
 /// One backup run, from the lease to the cache, by design decisions 3 to 5.
 ///
 /// A run reads what each scope is planned from, and plans.
-/// It reads the items the plan lists to fetch, plans again, and writes in the planner's batches.
-/// It renews the lease before each batch of writes and stops when a renewal fails.
+/// The run reads the items the plan lists to fetch, plans again, and writes in the planner's batches.
+/// The lease is renewed before each batch of writes, and before any call once a third of the lease has passed since the last renewal.
+///
+/// A run stops when a renewal fails.
 public struct BackupRun: Sendable {
     public struct Dependencies: Sendable {
         public var cloud: any CloudStore
@@ -65,13 +67,14 @@ public struct BackupRun: Sendable {
     /// Runs the backup once.
     /// It runs on the global executor, so no 1Password or signing call runs on the agent actor or the event loop.
     @concurrent public func perform() async -> BackupResult {
-        let token: String
+        var token: Data
         do {
             guard let stored = try dependencies.tokens.read() else { return BackupResult(.off) }
-            token = String(decoding: stored, as: UTF8.self)
+            token = stored
         } catch {
             return BackupResult(.failed, "cannot read the backup token: \(Self.describe(error))")
         }
+        defer { token.resetBytes(in: 0..<token.count) }
         let device: DeviceKey
         do {
             device = try dependencies.device()
@@ -100,9 +103,11 @@ public struct BackupRun: Sendable {
         return result
     }
 
-    private func execute(token: String, device: DeviceKey, lease: inout BackupLease) async throws -> BackupResult {
+    private func execute(token: Data, device: DeviceKey, lease: inout BackupLease) async throws -> BackupResult {
         let gathered = try await gather(device: device)
-        let vault = try await dependencies.openVault(token, gathered.vault)
+        try await renew(&lease, onlyIfDue: true)
+        let vault = try await dependencies.openVault(String(decoding: token, as: UTF8.self), gathered.vault)
+        try await renew(&lease, onlyIfDue: true)
         let overviews = try await vault.list()
         let loaded = BackupCache.load(from: dependencies.cacheURL)
         let removed = dependencies.removed()
@@ -111,9 +116,12 @@ public struct BackupRun: Sendable {
             var items: [Item] = []
             var unread: [String] = []
             for batch in plan.fetch {
+                try await renew(&lease, onlyIfDue: true)
                 let results = try await vault.items(batch)
-                for (offset, id) in batch.enumerated() {
-                    if offset < results.count, case let .item(item) = results[offset] {
+                // A result names its item, and a failure names nothing, so a request is read when its item came back.
+                let returned = Dictionary(results.compactMap { Self.item(of: $0) }.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+                for id in batch {
+                    if let item = returned[id] {
                         items.append(item)
                     } else {
                         unread.append(id)
@@ -157,19 +165,26 @@ public struct BackupRun: Sendable {
         for batch in plan.create {
             try await renew(&lease)
             let results = try await vault.create(batch.map(\.content))
-            for (offset, want) in batch.enumerated() {
-                if offset < results.count, case let .item(item) = results[offset] {
-                    written[item.id] = BackupCacheEntry(item: item, sourceTag: want.changeTag)
-                } else {
-                    rejected += 1
-                }
+            // A created item goes with the request of its slot, so the order of the results decides nothing.
+            let wants = Dictionary(batch.map { ($0.slot, $0) }, uniquingKeysWith: { first, _ in first })
+            var matched: Set<BackupSlot> = []
+            for result in results {
+                guard let item = Self.item(of: result), let slot = BackupOwner(item: item)?.slot, let want = wants[slot], matched.insert(slot).inserted else { continue }
+                written[item.id] = BackupCacheEntry(item: item, sourceTag: want.changeTag)
             }
+            rejected += batch.count - matched.count
         }
         for group in Self.groups(plan.put) {
             try await renew(&lease)
             for put in group {
-                let item = try await vault.put(put.itemID, put.desired.content)
-                written[item.id] = BackupCacheEntry(item: item, sourceTag: put.desired.changeTag, target: item.id)
+                try await renew(&lease, onlyIfDue: true)
+                do {
+                    let item = try await vault.put(put.itemID, put.desired.content)
+                    written[item.id] = BackupCacheEntry(item: item, sourceTag: put.desired.changeTag, target: item.id)
+                } catch {
+                    rejected += 1
+                    log.error("cannot write item \(put.itemID, privacy: .public): \(Self.describe(error), privacy: .public)")
+                }
             }
         }
         for batch in plan.delete {
@@ -179,16 +194,33 @@ public struct BackupRun: Sendable {
         }
         for group in Self.groups(plan.archive) {
             try await renew(&lease)
-            for id in group { try await vault.archive(id) }
+            for id in group {
+                try await renew(&lease, onlyIfDue: true)
+                do {
+                    try await vault.archive(id)
+                } catch {
+                    rejected += 1
+                    log.error("cannot archive item \(id, privacy: .public): \(Self.describe(error), privacy: .public)")
+                }
+            }
         }
     }
 
-    private func renew(_ lease: inout BackupLease) async throws {
+    /// Renews the lease, or with `onlyIfDue` only when a third of its length has passed since the last renewal.
+    private func renew(_ lease: inout BackupLease, onlyIfDue: Bool = false) async throws {
         do {
-            try await lease.renew()
+            if onlyIfDue {
+                try await lease.renewIfDue()
+            } else {
+                try await lease.renew()
+            }
         } catch {
             throw LeaseLost(reason: Self.describe(error))
         }
+    }
+
+    private static func item(of result: ItemResult) -> Item? {
+        if case let .item(item) = result { item } else { nil }
     }
 
     private static func groups<Element>(_ elements: [Element]) -> [[Element]] {
@@ -236,8 +268,9 @@ public struct BackupRun: Sendable {
                     continue
                 }
                 // A shared key this Mac has no private key for still goes in, so its item stays.
+                // The local key is the record's key only when both have one public key; a record changed elsewhere has no private key here yet.
                 var privateKey: String?
-                if let local = byRecord[record.name], local.kind == .wrapped { privateKey = await armor(local) }
+                if let local = byRecord[record.name], local.kind == .wrapped, local.publicBlob == payload.publicKey { privateKey = await armor(local) }
                 shared.append(
                     BackupKey(
                         name: payload.name, fingerprint: publicKey.fingerprint, comment: payload.comment, hosts: payload.hosts, privateKey: privateKey,

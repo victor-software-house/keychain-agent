@@ -22,6 +22,9 @@ private final class FakeVault: BackupVault {
         var unreadable: Set<String> = []
         var counter = 0
         var afterCreate: (@Sendable () -> Void)?
+        var afterPut: (@Sendable () -> Void)?
+        var failedWrites: Set<String> = []
+        var reversed = false
     }
 
     private let state = Mutex(State())
@@ -36,6 +39,12 @@ private final class FakeVault: BackupVault {
     func failReads(of ids: Set<String>) { state.withLock { $0.unreadable = ids } }
     /// Runs `action` after the next create call, as another Mac's write that lands between two batches.
     func afterNextCreate(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.afterCreate = action } }
+    /// Runs `action` after every put, as time that passes during a slow call, or another Mac's write.
+    func afterPuts(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.afterPut = action } }
+    /// Makes each put and archive of these items throw.
+    func failWrites(of ids: Set<String>) { state.withLock { $0.failedWrites = ids } }
+    /// Returns the results of `items` and `create` in the reverse of the request order.
+    func reverseResults() { state.withLock { $0.reversed = true } }
 
     /// The item the vault stores for `content`, with the public key it derives from an SSH key field.
     private static func make(id: String, _ content: ItemContent, category: ItemCategory, updatedAt: Date) -> Item {
@@ -67,16 +76,17 @@ private final class FakeVault: BackupVault {
     func items(_ ids: [String]) async throws -> [ItemResult] {
         state.withLock { state -> [ItemResult] in
             state.calls.append("items:\(ids.count)")
-            return ids.map { id -> ItemResult in
+            let results = ids.map { id -> ItemResult in
                 if state.unreadable.contains(id) { return .failure(.internalError) }
                 guard let item = state.items[id] else { return .failure(.notFound) }
                 return .item(item)
             }
+            return state.reversed ? results.reversed() : results
         }
     }
 
     func create(_ contents: [ItemContent]) async throws -> [ItemResult] {
-        let (results, action) = state.withLock { state -> ([ItemResult], (@Sendable () -> Void)?) in
+        let (results, action, reversed) = state.withLock { state -> ([ItemResult], (@Sendable () -> Void)?, Bool) in
             state.calls.append("create:\(contents.count)")
             var results: [ItemResult] = []
             for content in contents {
@@ -87,21 +97,24 @@ private final class FakeVault: BackupVault {
             }
             let action = state.afterCreate
             state.afterCreate = nil
-            return (results, action)
+            return (results, action, state.reversed)
         }
         action?()
-        return results
+        return reversed ? results.reversed() : results
     }
 
     func put(_ id: String, _ content: ItemContent) async throws -> Item {
-        try state.withLock { state throws -> Item in
+        let (item, action) = try state.withLock { state throws -> (Item, (@Sendable () -> Void)?) in
             state.calls.append("put:\(id)")
+            if state.failedWrites.contains(id) { throw BackupFailure("the vault refused \(id)") }
             guard let old = state.items[id] else { throw BackupFailure("no item \(id)") }
             state.counter += 1
             let item = Self.make(id: id, content, category: old.category, updatedAt: at(Double(state.counter)))
             state.items[id] = item
-            return item
+            return (item, state.afterPut)
         }
+        action?()
+        return item
     }
 
     func delete(_ ids: [String]) async throws -> [String: ItemFailure] {
@@ -113,8 +126,9 @@ private final class FakeVault: BackupVault {
     }
 
     func archive(_ id: String) async throws {
-        state.withLock { state in
+        try state.withLock { state throws in
             state.calls.append("archive:\(id)")
+            if state.failedWrites.contains(id) { throw BackupFailure("the vault refused \(id)") }
             state.archived.insert(id)
         }
     }
@@ -463,4 +477,161 @@ private final class ServiceRig: Sendable {
     #expect(result.message?.contains("could not be read") == true)
     #expect(rig.vault.calls == ["list", "items:1"])
     #expect(rig.vault.items == [alpha])
+}
+
+// MARK: Review fixes
+
+/// The expiry of the lease record each time a put ends, so a test sees which renewals the run made.
+private final class LeaseWatch: Sendable {
+    private let seen = Mutex<[Date]>([])
+    var expiries: [Date] { seen.withLock { $0 } }
+
+    func record(_ cloud: FakeCloud) {
+        guard let record = cloud.record(BackupLease.recordName), let lease = try? Payload.decode(LeasePayload.self, from: record.payload) else { return }
+        seen.withLock { $0.append(lease.expires) }
+    }
+}
+
+/// A rig that backed up three shared keys, and then saw their hosts change.
+/// The next run puts three items in one group.
+private func rigWithThreePuts() async throws -> BackupRig {
+    let rig = try BackupRig()
+    for name in ["alpha", "beta", "gamma"] { try rig.share(name) }
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    for stored in try rig.store.list() { rig.publish(stored, hosts: ["h.example.com"]) }
+    rig.vault.resetCalls()
+    return rig
+}
+
+@Test(.timeLimit(.minutes(1))) func aKeyRecordWithAnotherPublicKeyGetsNoItemFromTheLocalKey() async throws {
+    let rig = try BackupRig()
+    try rig.share("alpha")
+    let local = try #require(try rig.store.list().first)
+    // Another Mac replaced the key: the record shows a new public key, and this Mac still has the old key under the name.
+    let (replacement, _) = try localWrappedKey("alpha", comment: "alpha@example")
+    rig.publish(replacement, hosts: [])
+
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    #expect(rig.vault.calls == ["list"])
+    #expect(rig.vault.items.isEmpty)
+    #expect(BackupCache.load(from: rig.cacheURL).isEmpty)
+
+    // The record shows the key this Mac has again, and the run writes its item.
+    // It would not if the earlier run had cached the key as current.
+    rig.publish(local, hosts: [])
+    rig.vault.resetCalls()
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    #expect(rig.vault.calls == ["list", "create:1"])
+    #expect(rig.vault.items.map(\.title) == ["alpha"])
+}
+
+@Test(.timeLimit(.minutes(1))) func theLeaseIsRenewedBeforeACallOnceAThirdOfItHasPassed() async throws {
+    let rig = try await rigWithThreePuts()
+    let started = rig.clock.now
+    let watch = LeaseWatch()
+    let cloud = rig.cloud
+    let clock = rig.clock
+    rig.vault.afterPuts {
+        watch.record(cloud)
+        // Each put takes 240 seconds, longer than a third of the 600-second lease and shorter than half of it.
+        clock.advance(240)
+    }
+
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    // The group's own renewal came first, and the second and third put each renewed again before the call.
+    #expect(watch.expiries == [started.addingTimeInterval(600), started.addingTimeInterval(840), started.addingTimeInterval(1080)])
+    #expect(rig.vault.items.allSatisfy { $0.fields.first { $0.title == "hosts" }?.value == "h.example.com" })
+}
+
+@Test(.timeLimit(.minutes(1))) func aRenewalThatFailsBeforeAPutStopsTheRunBeforeThatCall() async throws {
+    let rig = try await rigWithThreePuts()
+    let cloud = rig.cloud
+    let clock = rig.clock
+    rig.vault.afterPuts {
+        // Another Mac takes the lease while the first put runs, and the put lasts longer than a third of the lease.
+        cloud.put(.lease, BackupLease.recordName, payload: Payload.encode(LeasePayload(holder: "device-other", expires: at(100_000))))
+        clock.advance(240)
+    }
+
+    let result = await rig.run.perform()
+    #expect(result.outcome == .failed)
+    #expect(result.message?.contains("lease was lost") == true)
+    #expect(rig.vault.calls.count == 2)
+    #expect(rig.vault.calls.last?.hasPrefix("put:") == true)
+    #expect(try rig.lease().holder == "device-other")
+}
+
+@Test(.timeLimit(.minutes(1))) func aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn() async throws {
+    let rig = try BackupRig(removed: .archive)
+    for name in ["alpha", "beta", "gamma", "delta"] { try rig.share(name) }
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    let alpha = try #require(rig.vault.item(titled: "alpha")).id
+    let beta = try #require(rig.vault.item(titled: "beta")).id
+    let gamma = try #require(rig.vault.item(titled: "gamma")).id
+    let delta = try #require(rig.vault.item(titled: "delta")).id
+
+    // Alpha and beta change their hosts, and gamma and delta go; the vault refuses the writes to alpha and gamma.
+    for stored in try rig.store.list() where ["alpha", "beta"].contains(stored.name) { rig.publish(stored, hosts: ["h.example.com"]) }
+    try await rig.unshare("gamma")
+    try await rig.unshare("delta")
+    rig.vault.failWrites(of: [alpha, gamma])
+    rig.vault.resetCalls()
+
+    let result = await rig.run.perform()
+    #expect(result.outcome == .failed)
+    #expect(result.message?.contains("writes the vault rejected: 2") == true)
+    #expect(Set(rig.vault.calls) == ["list", "put:\(alpha)", "put:\(beta)", "archive:\(gamma)", "archive:\(delta)"])
+    #expect(rig.vault.item(titled: "beta")?.fields.first { $0.title == "hosts" }?.value == "h.example.com")
+    #expect(try rig.lease().expires <= rig.clock.now)
+}
+
+/// A lease payload of the given format that carries the fields of format 1.
+private func leasePayload(format: Int, expires: Date) -> Data {
+    Data(#"{"expires":\#(expires.timeIntervalSinceReferenceDate),"format":\#(format),"holder":"device-other"}"#.utf8)
+}
+
+@Test(.timeLimit(.minutes(1))) func aLeaseOfAnotherFormatHoldsUntilItsExpiryAndOnlyAnUnreadableOneIsFree() async throws {
+    let held = try BackupRig()
+    try held.share("work")
+    held.cloud.put(.lease, BackupLease.recordName, payload: leasePayload(format: 2, expires: held.clock.now.addingTimeInterval(300)))
+    let saves = held.cloud.calls.save
+    #expect(await held.run.perform().outcome == .held)
+    #expect(held.cloud.calls.save == saves)
+    #expect(held.vault.calls.isEmpty)
+
+    let expired = try BackupRig()
+    try expired.share("work")
+    expired.cloud.put(.lease, BackupLease.recordName, payload: leasePayload(format: 2, expires: expired.clock.now.addingTimeInterval(-1)))
+    #expect(await expired.run.perform() == BackupResult(.ok))
+    #expect(expired.vault.items.map(\.title) == ["work"])
+
+    let unreadable = try BackupRig()
+    try unreadable.share("work")
+    unreadable.cloud.put(.lease, BackupLease.recordName, payload: Data("not a lease".utf8))
+    #expect(await unreadable.run.perform() == BackupResult(.ok))
+    #expect(unreadable.vault.items.map(\.title) == ["work"])
+}
+
+@Test(.timeLimit(.minutes(1))) func resultsAreMatchedToTheirRequestsWhateverTheOrder() async throws {
+    let rig = try BackupRig()
+    rig.vault.reverseResults()
+    for name in ["alpha", "beta", "gamma"] { try rig.share(name) }
+
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    #expect(rig.vault.items.map(\.title) == ["alpha", "beta", "gamma"])
+    // Each created item is cached with the source of its own key, so the next run finds every item current and writes nothing.
+    rig.vault.resetCalls()
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    #expect(rig.vault.calls == ["list"])
+
+    // Without the cache every item is read, and the read of one fails: that item is the unread one, whatever the order of the results.
+    try FileManager.default.removeItem(at: rig.cacheURL)
+    let alpha = try #require(rig.vault.item(titled: "alpha"))
+    rig.vault.failReads(of: [alpha.id])
+    rig.vault.resetCalls()
+    let result = await rig.run.perform()
+    #expect(result.outcome == .failed)
+    #expect(result.message?.contains("1 of the vault's items could not be read") == true)
+    #expect(rig.vault.calls == ["list", "items:3"])
+    #expect(rig.vault.items.count == 3)
 }
