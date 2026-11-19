@@ -16,7 +16,10 @@ The updater fetches and checks every release itself, so nothing it installs come
 
 ### 2. Check schedule
 
-The daemon's `StartInterval` is 6 hours, and each run first waits up to 10 minutes at random, so Macs do not check together.
+The daemon's `StartInterval` is 1 hour.
+Each run exits at once unless `update-interval`, 6 hours by default, has passed since the last check in `update.json`.
+A run that goes on first waits up to 10 minutes at random, so Macs do not check together.
+
 `updates` (on by default) and `update-interval` are read from the managed and the machine-wide preferences, never a user's.
 A Mobile Device Management (MDM) profile sets them, or an admin with `sudo defaults write /Library/Preferences/com.victor-software-house.signd`.
 
@@ -25,9 +28,16 @@ A Mobile Device Management (MDM) profile sets them, or an admin with `sudo defau
 The updater requests `api.github.com/repos/victor-software-house/signd/releases/latest` for the tag and the `Signd.app.zip` asset, unauthenticated: 4 requests a day stay far below the 60 an hour GitHub allows.
 A tag that is not a newer version than the installed one ends the check.
 
+After the signature check, the unpacked app's version must equal the tag and be newer than the installed one.
+Otherwise the download is deleted, so an older build under a newer tag never installs.
+
 ### 4. Verification
 
-It unpacks the zip with `ditto -x -k` into `/Library/Caches/signd/update/`, a directory only root can read.
+`/Library/Caches` is writable by admins, so the updater stages nothing there.
+Each run makes a fresh directory with `mkdtemp` under `/Library/Application Support/signd/update/`, which is `root:wheel` 0700.
+It refuses to go on unless every path component is owned by root and none is a symlink.
+
+It unpacks the zip with `ditto -x -k` into that directory, and the swap reads only from it.
 It then checks the new `Signd.app` with `SecStaticCodeCheckValidity` against this requirement:
 
 ```text
@@ -51,6 +61,9 @@ The updater then finds each running `signd serve` by its executable path and run
 
 The daemon also serves the Mach service `com.victor-software-house.signd.updater` over XPC (cross-process communication), with one request: check now and answer the result.
 Any user may send it, since a check installs only what decision 4 accepts.
+
+Checks run one at a time: a request during a run gets that run's result.
+A request within 5 minutes of the last check gets the recorded result, with no new request to GitHub.
 
 Each run writes `/Library/Application Support/signd/update.json`, mode 0644, with the time, the versions and any error, and contains no secret.
 `signd update` sends the request, and `signd status` reads the file.
