@@ -666,7 +666,8 @@ struct Serve: ParsableCommand {
 }
 
 /// The package's postinstall step runs as root.
-/// It links `/usr/local/bin/signd` to the app, then starts the agent again as the user at the console.
+/// It links `/usr/local/bin/signd` to the app and loads the updater daemon, then starts the agent again as the user at the console.
+///
 /// A cask upgrade first removes the agent's job from launchd, so `service enable` registers the login item again.
 /// With nobody logged in, the login item starts the agent at the next login. It never fails the install.
 struct Postinstall: ParsableCommand {
@@ -685,6 +686,24 @@ struct Postinstall: ParsableCommand {
             log.error("cannot link /usr/local/bin/signd: \(String(describing: error), privacy: .public)")
         }
         if linkOnly { return }
+        if root == "/" {
+            // The daemon is system-wide, so it loads with nobody logged in. A first install has nothing to boot out.
+            let daemon = "/Library/LaunchDaemons/com.victor-software-house.signd.updater.plist"
+            for arguments in [["bootout", "system/com.victor-software-house.signd.updater"], ["bootstrap", "system", daemon]] {
+                let process = Process()
+                process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+                process.arguments = arguments
+                do {
+                    try process.run()
+                    process.waitUntilExit()
+                    if arguments[0] == "bootstrap", process.terminationStatus != 0 {
+                        log.error("launchctl bootstrap of the updater failed with status \(process.terminationStatus)")
+                    }
+                } catch {
+                    log.error("cannot run launchctl \(arguments[0], privacy: .public): \(String(describing: error), privacy: .public)")
+                }
+            }
+        }
         var uid: uid_t = 0
         guard let user = SCDynamicStoreCopyConsoleUser(nil, &uid, nil) as String?, uid != 0, user != "loginwindow" else { return }
         let signd = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
