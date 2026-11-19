@@ -19,8 +19,8 @@ struct BackupAgent: BackupCommands {
 
     func logOut() async -> SyncResult { await service.logOut() }
 
-    /// The backup's keys, with the scope of a key from another Mac shown as that Mac's name.
-    /// A scope with no device in the sync service's list stays as it is.
+    /// The backup's keys, each scope shown as the name of the Mac it came from.
+    /// A scope that no device matches stays as it is.
     func list() async -> BackupRestoreList {
         var list = await restorer.list()
         let names = Dictionary(await sync.devices().map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
