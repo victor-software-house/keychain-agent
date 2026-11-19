@@ -5,6 +5,7 @@ import Backup
 import CloudKit
 import Foundation
 import KeyStore
+import notify
 import os
 import ServiceManagement
 import SSHEncoding

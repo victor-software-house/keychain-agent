@@ -1,5 +1,5 @@
-import Darwin
 import Foundation
+import notify
 
 /// signd's settings, in the user defaults domain `com.victor-software-house.signd`.
 public struct Settings: Sendable {
