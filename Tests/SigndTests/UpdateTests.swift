@@ -278,6 +278,31 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     #expect(runs.count == 2)
 }
 
+@Test func aShutdownFailsWhileACheckRunsAndRefusesLaterChecks() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let gate = Gate()
+    let runs = RunCount()
+    let updater = Updater(
+        run: {
+            runs.increment()
+            await gate.wait()
+            return state(at: at(0), outcome: .upToDate)
+        },
+        now: { at(0) }, stateURL: directory.appending(path: "update.json")
+    )
+    let first = Task { await updater.check() }
+    while runs.count == 0 { await Task.yield() }
+    #expect(await updater.shutdown(idleFor: 0) == false)
+    await gate.open()
+    #expect(await first.value.outcome == .upToDate)
+    #expect(await updater.shutdown(idleFor: 0))
+    let refused = await updater.check()
+    #expect(refused.outcome == .failed)
+    #expect(refused.error != nil)
+    #expect(runs.count == 1)
+}
+
 @Test func aMissingStateFileLoadsEmpty() {
     #expect(UpdateState.load(from: noPlist) == UpdateState())
 }
