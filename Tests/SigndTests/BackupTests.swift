@@ -274,7 +274,9 @@ private func shareDeploy(from rig: DeviceRig) async throws {
     _ = await b.service.checkNow()
     try await shareDeploy(from: a)
 
+    // A full read lists both records, so both fail in it.
     cloud.failReads(of: ["key-deploy", BackupPayload.recordName])
+    cloud.expireNextToken()
     let summary = await b.service.checkNow()
     #expect(summary.outcome == .ok)
     #expect(summary.message == "2 records could not be read; the next check tries them again")
