@@ -77,7 +77,7 @@ func memoryKey() -> PrivateKey {
 
     @Test func confirmAndExtensionConstraintsAreRefused() async {
         let agent = await makeAgent(MemoryStore())
-        #expect(await agent.add(memoryKey(), comment: "", constraints: Constraints(confirm: true)) == .failure)
+        #expect(await agent.add(memoryKey(), comment: "", constraints: Constraints(requiresConfirmation: true)) == .failure)
         #expect(await agent.add(memoryKey(), comment: "", constraints: Constraints(extensions: ["x@example.com"])) == .failure)
         #expect(await agent.identities().isEmpty)
     }
@@ -99,9 +99,9 @@ func memoryKey() -> PrivateKey {
         try store.add(stored)
         let agent = await makeAgent(store, lifetime: 1)
         #expect(await agent.signer(for: stored.publicBlob) != nil)
-        #expect(await agent.status().keys.first?.inMemory == true)
+        #expect(await agent.status().keys.first?.isInMemory == true)
         await agent.dropExpired(now: Date().addingTimeInterval(2))
-        #expect(await agent.status().keys.first?.inMemory == false)
+        #expect(await agent.status().keys.first?.isInMemory == false)
     }
 
     @Test func aKeyAddedToTheStoreIsFoundOnFirstSign() async throws {

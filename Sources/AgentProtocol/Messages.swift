@@ -52,13 +52,13 @@ public enum RSAAlgorithm: String, Sendable, Equatable {
 /// The constraints of an add-identity request that signd honours.
 public struct Constraints: Sendable, Equatable {
     public var lifetime: UInt32?
-    public var confirm = false
+    public var requiresConfirmation = false
     /// Extension constraints by name; signd refuses a key that carries any.
     public var extensions: [String] = []
 
-    public init(lifetime: UInt32? = nil, confirm: Bool = false, extensions: [String] = []) {
+    public init(lifetime: UInt32? = nil, requiresConfirmation: Bool = false, extensions: [String] = []) {
         self.lifetime = lifetime
-        self.confirm = confirm
+        self.requiresConfirmation = requiresConfirmation
         self.extensions = extensions
     }
 }
@@ -115,7 +115,7 @@ public enum Request: Sendable, Equatable {
                 guard let seconds = reader.readUInt32() else { return .malformed }
                 constraints.lifetime = seconds
             case 2:
-                constraints.confirm = true
+                constraints.requiresConfirmation = true
             case 255:
                 // An extension constraint's details have no common framing, so parsing stops here.
                 guard let name = reader.readText() else { return .malformed }

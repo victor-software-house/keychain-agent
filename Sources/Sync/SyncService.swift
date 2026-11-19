@@ -88,7 +88,7 @@ public actor SyncService {
             persist(force: true)
             return
         }
-        guard !state.stopped else { return }
+        guard !state.isStopped else { return }
         startTimer(0)
     }
 
@@ -106,7 +106,7 @@ public actor SyncService {
 
     private func pushed() {
         lastPush = dependencies.now()
-        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.stopped else { return }
+        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.isStopped else { return }
         startTimer(0)
     }
 
@@ -117,14 +117,14 @@ public actor SyncService {
 
     private func forgetAccount() {
         account = nil
-        guard dependencies.cloud != nil, current == nil, !state.stopped else { return }
+        guard dependencies.cloud != nil, current == nil, !state.isStopped else { return }
         startTimer(0)
     }
 
     /// Called when a command changed the store.
     /// It starts a check soon, so a name that a deleted local key freed is taken.
     public func reloaded() {
-        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.stopped else { return }
+        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.isStopped else { return }
         startTimer(0)
     }
 
@@ -278,23 +278,23 @@ public actor SyncService {
         // The check ends here, so a request after this point starts a new one instead of joining this one's result.
         defer { current = nil }
         guard dependencies.cloud != nil else { return CheckSummary(outcome: .off, message: Self.offMessage) }
-        if forced && state.stopped {
-            state.stopped = false
-            state.prepared = false
+        if forced && state.isStopped {
+            state.isStopped = false
+            state.isPrepared = false
         }
         var requests = 0
         var changes = Changes()
         var outcome = CheckOutcome.ok
         var message: String?
         var retryAfter: TimeInterval?
-        if state.stopped {
+        if state.isStopped {
             outcome = .stopped
             message = Self.stoppedMessage
         } else {
             do {
                 if let work = try await work() {
                     state = try await work.run(from: state, requests: &requests, changes: &changes)
-                    if state.stopped {
+                    if state.isStopped {
                         outcome = .stopped
                         message = Self.stoppedMessage
                     } else if let unreadable = state.unreadable {

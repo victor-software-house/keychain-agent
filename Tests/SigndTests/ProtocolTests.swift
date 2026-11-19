@@ -35,7 +35,7 @@ private func addBody(constrained: Bool, comment: String = "work", constraints: D
         constraints.appendUInt32(30)
         constraints.append(2)
         let request = Request(body: addBody(constrained: true, constraints: constraints))
-        #expect(request == .add(key: ed25519, comment: "work", constraints: Constraints(lifetime: 30, confirm: true)))
+        #expect(request == .add(key: ed25519, comment: "work", constraints: Constraints(lifetime: 30, requiresConfirmation: true)))
     }
 
     @Test func addWithAnExtensionConstraint() {

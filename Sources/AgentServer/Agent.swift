@@ -108,7 +108,7 @@ public actor Agent {
 
     /// Adds a memory-only key, as ssh-add expects.
     public func add(_ privateKey: PrivateKey, comment: String, constraints: Constraints) -> Response {
-        guard !constraints.confirm, constraints.extensions.isEmpty else { return .failure }
+        guard !constraints.requiresConfirmation, constraints.extensions.isEmpty else { return .failure }
         let signer: any Signer
         do {
             signer = try SoftwareSigner(privateKey)
@@ -151,7 +151,7 @@ public actor Agent {
         return AgentStatus(
             version: version,
             pid: getpid(),
-            keys: listed.map { .init(name: $0.name, inMemory: open[$0.publicBlob] != nil) },
+            keys: listed.map { .init(name: $0.name, isInMemory: open[$0.publicBlob] != nil) },
             memoryOnlyKeys: session.count,
             sessionBinds: sessionBinds,
             storeError: storeError?.description
@@ -163,7 +163,12 @@ public actor Agent {
 public struct AgentStatus: Codable, Sendable {
     public struct Key: Codable, Sendable {
         public let name: String
-        public let inMemory: Bool
+        public let isInMemory: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case isInMemory = "inMemory"
+        }
     }
 
     public let version: String

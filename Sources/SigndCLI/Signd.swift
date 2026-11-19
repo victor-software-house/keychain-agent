@@ -270,7 +270,12 @@ struct Status: ParsableCommand {
         let agent: AgentStatus?
         let sync: SyncStatus
         let loginItem: LoginItemState
-        let sshInclude: Bool
+        let isSSHIncludeEnabled: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case version, socket, agentAnswers, agent, sync, loginItem
+            case isSSHIncludeEnabled = "sshInclude"
+        }
     }
 
     func run() throws {
@@ -278,8 +283,8 @@ struct Status: ParsableCommand {
         let agent = client.status()
         let sync = SyncStatus(state: client.syncState() ?? SyncState.load())
         let loginItem = Service.loginItem
-        let sshInclude = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
-        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, loginItem: loginItem, sshInclude: sshInclude)
+        let isSSHIncludeEnabled = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
+        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, loginItem: loginItem, isSSHIncludeEnabled: isSSHIncludeEnabled)
         if output.json {
             try output.print(report)
         } else {
@@ -288,13 +293,13 @@ struct Status: ParsableCommand {
             if let agent {
                 print("agent   answers (pid \(agent.pid), \(agent.version))")
                 if let error = agent.storeError { print("store   \(error)") }
-                for key in agent.keys { print("key     \(key.name)  \(key.inMemory ? "in memory" : "not in memory")") }
+                for key in agent.keys { print("key     \(key.name)  \(key.isInMemory ? "in memory" : "not in memory")") }
                 if agent.memoryOnlyKeys > 0 { print("memory-only keys  \(agent.memoryOnlyKeys)") }
             } else {
                 print("agent   does not answer")
             }
             print("login item  \(loginItem.text)\(loginItem == .enabled ? "" : "; run signd service enable")")
-            print("ssh config  \(sshInclude ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable")")
+            print("ssh config  \(isSSHIncludeEnabled ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable")")
             print("icloud  \(sync.state)\(sync.lastMessage.map { ": \($0)" } ?? "")")
             print("interval  \(sync.interval.value) (\(sync.interval.source.rawValue))")
             if let at = sync.lastCheck, let result = sync.lastResult {

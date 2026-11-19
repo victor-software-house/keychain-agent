@@ -33,8 +33,8 @@ public actor BackupService {
 
     private let dependencies: Dependencies
     private var state = BackupState()
-    private var started = false
-    private var running = false
+    private var isStarted = false
+    private var isRunning = false
     private var timer: Task<Void, Never>?
 
     public init(_ dependencies: Dependencies) {
@@ -44,7 +44,7 @@ public actor BackupService {
     /// Reads the state and waits for the next run.
     public func start() {
         state = BackupState.load(from: dependencies.stateURL)
-        started = true
+        isStarted = true
         arm()
     }
 
@@ -53,11 +53,11 @@ public actor BackupService {
 
     /// Shared keys changed: the next run is due after the delay.
     public func keysChanged() {
-        guard started else { return }
+        guard isStarted else { return }
         state.lastChange = dependencies.now()
         persist()
         // A run in progress arms the timer again when it ends.
-        if !running { arm() }
+        if !isRunning { arm() }
     }
 
     /// Waits until the next slot, or `seconds` when the caller names it.
@@ -78,15 +78,15 @@ public actor BackupService {
     /// Runs the backup now, and waits for the next slot.
     /// A failed run keeps its key change waiting, so the next slot is one interval after it began, and no run follows it at once.
     func fire() async {
-        guard !Task.isCancelled, !running else { return }
+        guard !Task.isCancelled, !isRunning else { return }
         // The timer that called this keeps running through the run; a key change during it must not cancel it.
         timer = nil
-        running = true
+        isRunning = true
         let began = dependencies.now()
         let covered = state.lastChange
         state.lastChange = nil
         let result = await dependencies.run()
-        running = false
+        isRunning = false
         switch result.outcome {
         case .off:
             // No token is stored and nothing ran. Ask again after an interval.

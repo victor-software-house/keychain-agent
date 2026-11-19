@@ -364,7 +364,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(cloud.calls.changes == calls)
 
     #expect(await b.service.syncRequested().outcome == .ok)
-    #expect(await b.service.snapshot().stopped == false)
+    #expect(await b.service.snapshot().isStopped == false)
 }
 
 @Test(.timeLimit(.minutes(1))) func anotherAccountRemovesTheSharedKeys() async throws {

@@ -20,9 +20,9 @@ struct Changes: Sendable {
     /// Keys this device sealed for other devices.
     var sealed: [String] = []
     /// The backup token this device stores changed, so a backup run is due.
-    var backupToken = false
+    var backupTokenChanged = false
 
-    var isEmpty: Bool { added.isEmpty && replaced.isEmpty && removed.isEmpty && !backupToken }
+    var isEmpty: Bool { added.isEmpty && replaced.isEmpty && removed.isEmpty && !backupTokenChanged }
 }
 
 /// A request the agent refuses, with the reason the command prints.
@@ -52,10 +52,10 @@ struct SyncCheck {
     /// Reads the changes since the state's tokens, brings the store in line, publishes this device's record and seals keys for new devices.
     func run(from old: SyncState, requests: inout Int, changes: inout Changes) async throws -> SyncState {
         var state = old
-        if !state.prepared {
+        if !state.isPrepared {
             try await cloud.prepare()
             requests += 1
-            state.prepared = true
+            state.isPrepared = true
         }
         var full = state.databaseToken == nil
         var fetched: CloudChanges
@@ -81,7 +81,7 @@ struct SyncCheck {
             // The zone's records are gone, so the backup login ended.
             try tokens.delete()
             state.forgetRecords()
-            state.stopped = loss == .deletedByUser
+            state.isStopped = loss == .deletedByUser
             return state
         }
         state.databaseToken = fetched.databaseToken
@@ -228,7 +228,7 @@ struct SyncCheck {
         defer { token.resetBytes(in: 0..<token.count) }
         if try tokens.read() != token {
             try tokens.save(token)
-            changes.backupToken = true
+            changes.backupTokenChanged = true
         }
     }
 
