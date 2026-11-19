@@ -423,7 +423,13 @@ struct Service: ParsableCommand {
         do { try process.run() } catch { throw Failure("cannot run launchctl: \(error)") }
         process.waitUntilExit()
         guard process.terminationStatus == 0 else { throw Failure("launchctl kickstart failed with status \(process.terminationStatus)") }
-        guard agentAnswers(within: 5, replacing: old) else { throw Failure("the agent does not answer after the restart") }
+        guard agentAnswers(within: 5, replacing: old) else {
+            // kickstart replaces only launchd's job, so a process started by hand keeps the socket.
+            if let old, AgentClient(path: defaultSocketPath).status()?.pid == old {
+                throw Failure("pid \(old) still answers on the socket, and launchd does not run it; stop that process, then try again")
+            }
+            throw Failure("the agent does not answer after the restart")
+        }
     }
 
     struct Enable: ParsableCommand {
@@ -441,8 +447,9 @@ struct Service: ParsableCommand {
                 // An agent started before an install over it keeps serving the old version until it restarts.
                 if let running = AgentClient(path: defaultSocketPath).status()?.version, running != signdVersion {
                     try Service.restart()
-                    if let now = AgentClient(path: defaultSocketPath).status()?.version, now != signdVersion {
-                        throw Failure("the restarted agent runs \(now), not \(signdVersion)")
+                    let now = AgentClient(path: defaultSocketPath).status()?.version
+                    guard now == signdVersion else {
+                        throw Failure("the restarted agent runs \(now ?? "an unknown version"), not \(signdVersion)")
                     }
                     print("enabled; restarted the agent, which ran \(running)")
                 } else {

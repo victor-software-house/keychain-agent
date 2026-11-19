@@ -71,6 +71,8 @@ Installer checks both when the package opens, so an Intel Mac or an older macOS 
 | `log` | Runs `/usr/bin/log` with the predicate `subsystem == "com.victor-software-house.signd"`: `show --last 1h --info --debug` by default, `stream --level debug` with `--follow` |
 
 `restart` waits at most 5 seconds and exits non-zero when the agent does not answer.
+A kickstart replaces only the launchd job.
+When the process that answered before still answers, `restart` names its pid and says that launchd does not run it.
 
 ### 7. The cask uninstalls what the package installed
 
