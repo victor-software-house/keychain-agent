@@ -63,7 +63,7 @@ public actor BackupService {
     /// Waits until the next slot, or `seconds` when the caller names it.
     private func arm(waiting seconds: TimeInterval? = nil) {
         timer?.cancel()
-        let wait = seconds ?? dependencies.schedule().wait(lastChange: state.lastChange, lastRun: state.lastRun, now: dependencies.now())
+        let wait = seconds ?? dependencies.schedule().timeUntilNextRun(lastChange: state.lastChange, lastRun: state.lastRun, now: dependencies.now())
         let sleep = dependencies.sleep
         timer = Task {
             do {
@@ -91,7 +91,7 @@ public actor BackupService {
         case .off:
             // No token is stored and nothing ran. Ask again after an interval.
             state.lastChange = state.lastChange ?? covered
-            arm(waiting: dependencies.schedule().interval)
+            arm(waiting: dependencies.schedule().minimumInterval)
             return
         case .ok:
             state.lastSuccess = began

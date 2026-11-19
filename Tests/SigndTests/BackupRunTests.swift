@@ -223,20 +223,20 @@ private final class BackupRig: Sendable {
 
 @Test func aRunIsDueTheDelayAfterTheLastKeyChange() {
     let schedule = BackupSchedule()
-    #expect(schedule.due(lastChange: at(1000), lastRun: at(-100_000)) == at(1300))
-    #expect(schedule.wait(lastChange: at(1000), lastRun: at(-100_000), now: at(1100)) == 200)
-    #expect(schedule.wait(lastChange: at(1000), lastRun: at(-100_000), now: at(5000)) == 0)
+    #expect(schedule.nextRun(lastChange: at(1000), lastRun: at(-100_000)) == at(1300))
+    #expect(schedule.timeUntilNextRun(lastChange: at(1000), lastRun: at(-100_000), now: at(1100)) == 200)
+    #expect(schedule.timeUntilNextRun(lastChange: at(1000), lastRun: at(-100_000), now: at(5000)) == 0)
 }
 
 @Test func aRunIsDueAtMostOncePerInterval() {
     // The delay ends at 1300, but the last run began at 1000, and its interval ends at 4600.
-    #expect(BackupSchedule().due(lastChange: at(1000), lastRun: at(1000)) == at(4600))
+    #expect(BackupSchedule().nextRun(lastChange: at(1000), lastRun: at(1000)) == at(4600))
 }
 
 @Test func withNoChangeARunIsDueOncePerDayAndAMacThatNeverRanIsDueAtOnce() {
     let schedule = BackupSchedule()
-    #expect(schedule.due(lastChange: nil, lastRun: at(0)) == at(86400))
-    #expect(schedule.wait(lastChange: nil, lastRun: nil, now: at(0)) == 0)
+    #expect(schedule.nextRun(lastChange: nil, lastRun: at(0)) == at(86400))
+    #expect(schedule.timeUntilNextRun(lastChange: nil, lastRun: nil, now: at(0)) == 0)
 }
 
 @Test func theScheduleReadsTheThreeSettings() {
@@ -244,12 +244,12 @@ private final class BackupRig: Sendable {
     let settings = Settings(local: { key in
         switch key {
         case .backupDelay: "10s"
-        case .backupInterval: "2m"
-        case .backupDailyInterval: "2h"
+        case .backupMinInterval: "2m"
+        case .backupMaxInterval: "2h"
         default: nil
         }
     })
-    #expect(BackupSchedule(settings: settings) == BackupSchedule(delay: 10, interval: 120, daily: 7200))
+    #expect(BackupSchedule(settings: settings) == BackupSchedule(delay: 10, minimumInterval: 120, maximumInterval: 7200))
 }
 
 /// The backup service with a fake clock, a state file and runs that return the results in order.
@@ -307,7 +307,7 @@ private final class ServiceRig: Sendable {
     #expect(await eventually { rig.clock.requestedSleeps.contains(300) })
     #expect(rig.runs.value == 0)
     // The delay ends 300 seconds after the change, and the interval since the last run ended long before.
-    #expect(BackupSchedule().due(lastChange: at(0), lastRun: at(-4000)) == at(300))
+    #expect(BackupSchedule().nextRun(lastChange: at(0), lastRun: at(-4000)) == at(300))
 }
 
 @Test(.timeLimit(.minutes(1))) func aFailedRunRecordsItsErrorAndWaitsForTheNextSlot() async throws {

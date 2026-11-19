@@ -111,8 +111,8 @@ So a slow 1Password call delays no SSH request.
 
 ### 4. Schedule
 
-A run starts `backupDelay` (5 minutes) after the last key change, at most once per `backupInterval` (1 hour).
-With no change, it runs once per `backupDailyInterval` (1 day).
+A run starts `backupDelay` (5 minutes) after the last key change, at most once per `backupMinInterval` (1 hour).
+With no change, it runs once per `backupMaxInterval` (1 day).
 
 Each is a setting with that default, read through signd's existing settings.
 `signd config` or a device management profile can change it.
@@ -166,8 +166,8 @@ A key whose fingerprint the store already contains is skipped.
 |:--|:--|
 | `backupVault` | `signd` |
 | `backupDelay` | 5 minutes |
-| `backupInterval` | 1 hour |
-| `backupDailyInterval` | 1 day |
+| `backupMinInterval` | 1 hour |
+| `backupMaxInterval` | 1 day |
 | `backupRemoved` | `delete`; also `archive` or `keep` |
 
 With no token, the backup stays off, and `signd status` shows it as off.
