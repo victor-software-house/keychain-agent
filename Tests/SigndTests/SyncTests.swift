@@ -656,3 +656,19 @@ func measure(_ server: Server, key: StoredKey, seconds: Double) async -> [Durati
     return samples
 }
 
+@Test func backupRemovedDefaultsToDeleteAndAcceptsEachChoice() {
+    #expect(Settings(local: { _ in nil }).text(.backupRemoved) == "delete")
+    for choice in ["delete", "archive", "keep"] {
+        let settings = Settings(local: { $0 == .backupRemoved ? choice : nil })
+        #expect(settings.text(.backupRemoved) == choice)
+        #expect(settings.ignored().isEmpty)
+    }
+}
+
+@Test(arguments: ["remove", "Delete", "", "keep "])
+func backupRemovedRefusesOtherValues(text: String) {
+    #expect(throws: SettingsError.self) { try Settings().set(.backupRemoved, text) }
+    let settings = Settings(local: { $0 == .backupRemoved ? text : nil })
+    #expect(settings.text(.backupRemoved) == "delete")
+    #expect(settings.ignored().first?.reason == "not one of delete, archive, keep")
+}
