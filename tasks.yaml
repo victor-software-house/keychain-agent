@@ -28,7 +28,7 @@ queue:
       - 2026-11-18, operator decided the pkg is needed only for the first install and for MDM, and signd updates itself after that. The pkg postinstall hands Signd.app to the console user, as a drag install would, so the updater can swap it with no prompt. Under MDM the app stays root-owned, the updater stays off because it cannot swap a root-owned app, and MDM ships updates.
       - 2026-11-18, the own updater has its own row, SGD-014, and change, self-update.
       - 2026-11-19, the pkg-install change is archived with every task done; the MDM profile is the acceptance item left.
-    plan: openspec/changes/archive/2026-11-19-pkg-install/tasks.md
+    plan: openspec/changes/mdm-profile/tasks.md
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
