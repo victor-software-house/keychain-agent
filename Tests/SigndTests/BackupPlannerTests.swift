@@ -509,6 +509,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     )
     #expect(again.cache == ["item-current": recorded])
     #expect(result.create.isEmpty && result.put.isEmpty && result.delete.isEmpty)
+    #expect(again.create.isEmpty && again.put.isEmpty && again.delete.isEmpty)
 }
 
 @Test func aRenamedMacOrANewItemFormatWritesEachItemOnce() throws {
