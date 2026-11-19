@@ -52,7 +52,7 @@ The sync part SHALL show whether it is on, the last check and its result, the ne
 #### Scenario: Status with the agent stopped
 
 - **WHEN** `signd service disable` has run and `signd status` runs
-- **THEN** status reports that the agent does not answer and exits non-zero
+- **THEN** status reports that the agent is not running and exits non-zero
 
 #### Scenario: Status with sync off
 
@@ -83,7 +83,7 @@ On each line that is not in order, it SHALL show `signd service enable`.
 ### Requirement: service reports and controls the agent
 
 `signd service status` SHALL print the login item's state and whether the agent answers, with its version.
-`signd service restart` SHALL restart the agent and SHALL exit non-zero when it does not answer within 5 seconds.
+`signd service restart` SHALL restart the agent and SHALL exit non-zero when it is not running again within 5 seconds.
 `signd service log` SHALL print the agent's log entries of the last hour, and SHALL follow new entries with `--follow`.
 
 #### Scenario: A restart

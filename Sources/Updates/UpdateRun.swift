@@ -84,12 +84,14 @@ public struct UpdateRun: Sendable {
         try dependencies.staging.check(new.url)
         let users = dependencies.agents.users(running: installed.executable.path)
         try installed.swapContents(with: new)
+        state.previous = current
         state.installed = release.version
+        state.installedAt = dependencies.now()
         state.outcome = .installed
         do {
             try dependencies.agents.restart(users)
         } catch {
-            state.error = "installed \(release.version), but \(error)"
+            state.error = "updated signd to \(release.version), but \(error)"
         }
     }
 }

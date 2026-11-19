@@ -71,18 +71,30 @@ extension Updater {
         return listener
     }
 
+    /// How long `signd update` waits for the result of a check.
+    public static let checkTimeout: TimeInterval = 900
+
+    /// How a request for a check ended.
+    public enum CheckReply: Sendable, Equatable {
+        case answered(UpdateState)
+        /// The connection stayed up and no result came within the timeout.
+        case timedOut
+        /// No updater took the request, or the connection broke again on the second try.
+        case unreachable
+    }
+
     /// Asks the updater to check now and waits up to `timeout` seconds for the result.
     /// A connection that breaks before a reply is tried once more, since launchd starts a new daemon for the second message.
-    /// It returns nil when no updater answers.
-    public static func requestCheck(timeout: TimeInterval = 900) -> UpdateState? {
+    public static func requestCheck(timeout: TimeInterval = checkTimeout) -> CheckReply {
         for _ in 0..<2 {
             switch ask(timeout: timeout) {
-            case let .answered(state): return state
+            case let .answered(state): return .answered(state)
             case .interrupted: continue
-            case .unanswered: return nil
+            case .unanswered: return .unreachable
+            case .timedOut: return .timedOut
             }
         }
-        return nil
+        return .unreachable
     }
 
     private enum Answer {
@@ -90,6 +102,7 @@ extension Updater {
         /// The connection broke before a reply, so asking again may reach a new daemon.
         case interrupted
         case unanswered
+        case timedOut
     }
 
     private static func ask(timeout: TimeInterval) -> Answer {
@@ -104,7 +117,7 @@ extension Updater {
         switch reply.wait(timeout: timeout) {
         case let .success(state)?: return .answered(state)
         case let .failure(error)?: return error is XPCRichError ? .interrupted : .unanswered
-        case nil: return .unanswered
+        case nil: return .timedOut
         }
     }
 }
