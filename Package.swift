@@ -14,6 +14,7 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .executable(name: "signd", targets: ["signd"]),
+        .library(name: "SigndCLI", targets: ["SigndCLI"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-nio.git", exact: "2.105.0"),
@@ -59,18 +60,25 @@ let package = Package(
             ],
             swiftSettings: strict
         ),
-        .executableTarget(
-            name: "signd",
+        // The command line and the agent: every command, with no entry point.
+        // The Xcode app target links this library, and the executable below calls it.
+        .target(
+            name: "SigndCLI",
             dependencies: [
                 "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHWire", "Sync",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             swiftSettings: strict
         ),
+        .executableTarget(
+            name: "signd",
+            dependencies: ["SigndCLI", .product(name: "ArgumentParser", package: "swift-argument-parser")],
+            swiftSettings: strict
+        ),
         .testTarget(
             name: "SigndTests",
             dependencies: [
-                "SSHWire", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "signd",
+                "SSHWire", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "SigndCLI",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "NIOCore", package: "swift-nio"),

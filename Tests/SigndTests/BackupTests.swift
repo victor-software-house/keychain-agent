@@ -3,7 +3,7 @@ import CryptoKit
 import Foundation
 @testable import KeyStore
 import Testing
-@testable import signd
+@testable import SigndCLI
 @testable import Sync
 
 private let token = Data("ops_example-service-account-token".utf8)

@@ -11,9 +11,10 @@ import SSHWire
 import Sync
 import SystemConfiguration
 
-@main
-struct Signd: ParsableCommand {
-    static let configuration = CommandConfiguration(
+public struct Signd: ParsableCommand {
+    public init() {}
+
+    public static let configuration = CommandConfiguration(
         abstract: "An SSH agent for keys only its signed app can use, shared through iCloud.",
         version: signdVersion,
         subcommands: [KeyCommand.self, DeviceCommand.self, BackupCommand.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self, Postinstall.self]

@@ -1,4 +1,4 @@
-# signd's version is the VERSION file. verctl renders Sources/signd/Version.swift from it
+# signd's version is the VERSION file. verctl renders Sources/SigndCLI/Version.swift from it
 # through .ctl/templates/Version.swift.jinja, which `signd --version` prints. publisher none
 # releases it on GitHub only, and the Release workflow attaches signd.pkg to that release.
 packages:

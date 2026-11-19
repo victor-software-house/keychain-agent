@@ -17,5 +17,5 @@ files:
   ".build/**": {styles: []}
   # A tool writes CHANGELOG.md; nobody edits it by hand.
   "CHANGELOG.md": {styles: []}
-  # A tool writes Sources/signd/Version.swift; nobody edits it by hand.
-  "Sources/signd/Version.swift": {styles: []}
+  # A tool writes Sources/SigndCLI/Version.swift; nobody edits it by hand.
+  "Sources/SigndCLI/Version.swift": {styles: []}
