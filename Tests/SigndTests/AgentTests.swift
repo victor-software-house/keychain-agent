@@ -134,8 +134,9 @@ final class GatedSigner: Signer {
 
 @Suite struct Concurrency {
     /// Every signature waits for the release at the end, so the list request
-    /// returns only if no signature in flight delays it. No clock is read: a
-    /// time bound fails on a busy runner whatever the agent does.
+    /// returns only if no signature in flight delays it. If one does, the time
+    /// limit fails the test. No clock is read: a time bound fails on a busy
+    /// runner whatever the agent does.
     @Test(.timeLimit(.minutes(1))) func signaturesInFlightDoNotDelayAListRequest() async throws {
         let store = MemoryStore()
         let stored = storedSoftwareKey("slow")
@@ -161,7 +162,13 @@ final class GatedSigner: Signer {
             }
             var signing = entered.makeAsyncIterator()
             _ = await signing.next()
-            _ = await server.respond(to: .identities)
+            // A list request that waits on a signature ends only at the time limit,
+            // whose cancellation lets the signatures go, so the request returns.
+            await withTaskCancellationHandler {
+                _ = await server.respond(to: .identities)
+            } onCancel: {
+                signer.release(count)
+            }
             signer.release(count)
             try await group.waitForAll()
         }
