@@ -1,3 +1,5 @@
+import AgentProtocol
+@testable import AgentServer
 import CryptoKit
 import Foundation
 @testable import Backup
@@ -264,6 +266,24 @@ private final class ServiceRig: Sendable {
     #expect(await eventually { rig.clock.requestedSleeps.contains(300) })
     #expect(await rig.service.snapshot().lastChange == at(0))
     #expect(rig.runs.value == 0)
+}
+
+@Test(.timeLimit(.minutes(1))) func aLocalKeyChangeMakesARunDueAfterTheDelay() async throws {
+    var state = BackupState()
+    state.lastRun = at(-4000)
+    let rig = try ServiceRig(state: state)
+    await rig.service.start()
+    let service = rig.service
+    // The command that imports, creates or deletes a key on this Mac asks the agent to reload, as the command line does.
+    let server = Server(agent: await makeAgent(MemoryStore()), keysChanged: { await service.keysChanged() })
+    let reload = Request.extension(name: PrivateExtension.reload, contents: Data())
+    #expect(await server.respond(to: reload, on: Connection(peerPID: getpid())) == .success)
+
+    #expect(await rig.service.snapshot().lastChange == at(0))
+    #expect(await eventually { rig.clock.requestedSleeps.contains(300) })
+    #expect(rig.runs.value == 0)
+    // The delay ends 300 seconds after the change, and the interval since the last run ended long before.
+    #expect(BackupSchedule().due(lastChange: at(0), lastRun: at(-4000)) == at(300))
 }
 
 @Test(.timeLimit(.minutes(1))) func aFailedRunRecordsItsErrorAndWaitsForTheNextSlot() async throws {

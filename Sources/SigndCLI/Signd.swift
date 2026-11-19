@@ -609,7 +609,10 @@ struct Serve: ParsableCommand {
                 }
             )
         )
-        let server = Server(agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)))
+        let server = Server(
+            agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)),
+            keysChanged: { await backup?.keysChanged() }
+        )
         Task.detached {
             await backup?.start()
             do {

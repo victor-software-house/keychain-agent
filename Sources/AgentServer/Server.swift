@@ -108,19 +108,22 @@ public struct Server: Sendable {
     let agent: Agent
     let sync: SyncService?
     let backup: (any BackupLogin)?
+    /// Called after a command reloaded the keys, as a key imported, created or deleted on this Mac.
+    let keysChanged: (@Sendable () async -> Void)?
     let pool: NIOThreadPool
     /// The file this agent runs; nil refuses every private extension.
     /// A connection must run the same file to use a private extension.
     let executable: FileIdentity?
 
-    public init(agent: Agent, sync: SyncService? = nil, backup: (any BackupLogin)? = nil) {
-        self.init(agent: agent, sync: sync, backup: backup, executable: FileIdentity(executableOf: getpid()))
+    public init(agent: Agent, sync: SyncService? = nil, backup: (any BackupLogin)? = nil, keysChanged: (@Sendable () async -> Void)? = nil) {
+        self.init(agent: agent, sync: sync, backup: backup, keysChanged: keysChanged, executable: FileIdentity(executableOf: getpid()))
     }
 
-    init(agent: Agent, sync: SyncService?, backup: (any BackupLogin)? = nil, executable: FileIdentity?) {
+    init(agent: Agent, sync: SyncService?, backup: (any BackupLogin)? = nil, keysChanged: (@Sendable () async -> Void)? = nil, executable: FileIdentity?) {
         self.agent = agent
         self.sync = sync
         self.backup = backup
+        self.keysChanged = keysChanged
         pool = .singleton
         self.executable = executable
     }
@@ -229,6 +232,7 @@ public struct Server: Sendable {
         case PrivateExtension.reload:
             await agent.reload()
             await sync?.reloaded()
+            await keysChanged?()
             return .success
         case PrivateExtension.sync:
             guard let sync else { return .failure }

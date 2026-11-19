@@ -55,6 +55,8 @@
     The saved cache has each item's exact `updatedAt`, so a third run makes only the list call.
     The private key field of a created item reads back as the shared key.
   - 2026-11-19 UTC: A failed read of one item leaves that item alone and creates no item for a new key.
+  - 2026-11-19 UTC: A key changed on this Mac reaches the schedule through the agent's reload request.
+    The test sends that request and checks that a run is due after `backup-delay`.
 - [ ] 1.6 Add `signd backup restore` by design decision 7.
   Verify a unit test that skips a key the store already has.
 - [ ] 1.7 Report the backup in `signd status`.
