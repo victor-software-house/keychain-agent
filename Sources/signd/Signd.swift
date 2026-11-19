@@ -441,8 +441,14 @@ struct Service: ParsableCommand {
                 SMAppService.openSystemSettingsLoginItems()
                 throw Failure("approve signd in System Settings, General, Login Items")
             default:
-                do { try Service.agent.register() } catch { throw Failure("cannot register the agent: \(error)") }
-                print(Service.agent.status == .enabled ? "enabled" : "registered; approve signd in System Settings, General, Login Items")
+                var registerError: (any Error)?
+                do { try Service.agent.register() } catch { registerError = error }
+                if Service.agent.status == .requiresApproval {
+                    SMAppService.openSystemSettingsLoginItems()
+                    throw Failure("approve signd in System Settings, General, Login Items")
+                }
+                if let registerError { throw Failure("cannot register the agent: \(registerError)") }
+                print(Service.agent.status == .enabled ? "enabled" : "registered")
             }
             if includeFailed { throw ExitCode.failure }
         }
