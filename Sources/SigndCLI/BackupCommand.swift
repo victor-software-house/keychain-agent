@@ -140,6 +140,7 @@ struct BackupCommand: ParsableCommand {
         )
         // Given only to be refused: a token in an argument shows in the process list and the shell history.
         @Argument(help: .hidden) var argument: String?
+        @OptionGroup var colorOption: ColorOption
 
         func run() throws {
             try run(client: AgentClient(path: defaultSocketPath), settings: Settings()) { BackupCommand.readStandardInput() }
@@ -151,17 +152,18 @@ struct BackupCommand: ParsableCommand {
             let vault = settings.text(.backupVault)
             guard let result = client.logInToBackup(BackupLoginRequest(token: token, vault: vault)) else { throw Failure("the agent does not answer") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the login failed") }
-            print("logged in; the backup uses the vault \(vault)")
+            print(colorOption.standardOutput.success("logged in; the backup uses the vault \(vault)"))
         }
     }
 
     struct Logout: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Delete the backup token on every Mac.")
+        @OptionGroup var colorOption: ColorOption
 
         func run() throws {
             guard let result = AgentClient(path: defaultSocketPath).logOutOfBackup() else { throw Failure("the agent does not answer") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the logout failed") }
-            print("logged out")
+            print(colorOption.standardOutput.success("logged out"))
         }
     }
 
@@ -195,7 +197,14 @@ struct BackupCommand: ParsableCommand {
             if output.json {
                 try output.print(result)
             } else {
-                for key in result.keys { print(key.line) }
+                let out = output.colorOption.standardOutput
+                for key in result.keys {
+                    switch key.outcome {
+                    case .restored: print(out.success(key.line))
+                    case .skipped: print(out.warning(key.line))
+                    case .failed: print(out.failure(key.line))
+                    }
+                }
             }
             if let failure = result.failure { throw Failure(failure) }
             if result.keys.contains(where: { $0.outcome == .failed }) { throw ExitCode.failure }

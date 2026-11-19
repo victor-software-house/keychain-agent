@@ -33,6 +33,7 @@ struct Failure: Error, CustomStringConvertible {
 struct JSONOption: ParsableArguments {
     @Flag(help: "Print one JSON document on stdout.")
     var json = false
+    @OptionGroup var colorOption: ColorOption
 
     func print(_ value: some Encodable) throws {
         let encoder = JSONEncoder()
@@ -133,7 +134,9 @@ struct KeyCommand: ParsableCommand {
 
     /// Writes a note to stderr, so stdout keeps only the command's output.
     static func note(_ text: String) {
-        FileHandle.standardError.write(Data("▲ \(text)\n".utf8))
+        let style = TerminalStyle(.standardError, choice: .current)
+        let line = style.isColored ? style.warning(text) : "▲ \(text)"
+        FileHandle.standardError.write(Data("\(line)\n".utf8))
     }
 
     struct Create: ParsableCommand {
@@ -206,11 +209,12 @@ struct KeyCommand: ParsableCommand {
     struct Share: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Share a key of this Mac with every device on the iCloud account.")
         @Argument var name: String
+        @OptionGroup var colorOption: ColorOption
 
         func run() throws {
             guard let result = AgentClient(path: defaultSocketPath).share(name) else { throw Failure("the agent does not answer") }
             switch result.outcome {
-            case .done: print("shared \(name)")
+            case .done: print(colorOption.standardOutput.success("shared \(name)"))
             case .off: throw Failure(result.message ?? "sync is off")
             case .failed: throw Failure(result.message ?? "the share failed")
             }
@@ -282,6 +286,16 @@ struct Status: ParsableCommand {
         }
     }
 
+    /// The state of the iCloud line, by the result of the last check; a state with no level stays plain.
+    static func level(of result: CheckOutcome?) -> TerminalStyle.Level? {
+        switch result {
+        case .ok?: .inOrder
+        case .off?: .waiting
+        case .accountUnavailable?, .failed?, .throttled?: .failed
+        case .stopped?, nil: nil
+        }
+    }
+
     func run() throws {
         let client = AgentClient(path: socket)
         let agent = client.status()
@@ -294,28 +308,36 @@ struct Status: ParsableCommand {
         if output.json {
             try output.print(report)
         } else {
+            let out = output.colorOption.standardOutput
             print("signd \(signdVersion)")
             print("socket  \(socket)")
             if let agent {
-                print("agent   answers (pid \(agent.pid), \(agent.version))")
+                print("agent   \(out.value("answers (pid \(agent.pid), \(agent.version))", .inOrder))")
                 if let error = agent.storeError { print("store   \(error)") }
                 for key in agent.keys { print("key     \(key.name)  \(key.isInMemory ? "in memory" : "not in memory")") }
                 if agent.memoryOnlyKeys > 0 { print("memory-only keys  \(agent.memoryOnlyKeys)") }
             } else {
-                print("agent   does not answer")
+                print("agent   \(out.value("does not answer", .failed))")
             }
-            print("login item  \(loginItem.text)\(loginItem == .enabled ? "" : "; run signd service enable")")
-            print("ssh config  \(isSSHIncludeEnabled ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable")")
-            print("icloud  \(sync.state)\(sync.lastMessage.map { ": \($0)" } ?? "")")
+            let loginItemText = "\(loginItem.text)\(loginItem == .enabled ? "" : "; run signd service enable")"
+            print("login item  \(out.value(loginItemText, loginItem == .enabled ? .inOrder : .waiting))")
+            let sshConfigText = isSSHIncludeEnabled ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable"
+            print("ssh config  \(out.value(sshConfigText, isSSHIncludeEnabled ? .inOrder : .waiting))")
+            print("icloud  \(out.value(sync.state, Self.level(of: sync.lastResult)))\(sync.lastMessage.map { ": \($0)" } ?? "")")
             print("interval  \(sync.interval.value) (\(sync.interval.source.rawValue))")
             if let at = sync.lastCheck, let result = sync.lastResult {
-                print("last check  \(at.formatted(.iso8601)) \(result.rawValue), \(sync.requests) requests")
+                let level: TerminalStyle.Level? = switch result {
+                case .ok: .inOrder
+                case .failed: .failed
+                case .throttled, .accountUnavailable, .stopped, .off: nil
+                }
+                print("last check  \(at.formatted(.iso8601)) \(out.value(result.rawValue, level)), \(sync.requests) requests")
             }
             if let next = sync.nextAttempt { print("next check  \(next.formatted(.iso8601))") }
             if let push = sync.lastPush { print("last push  \(push.formatted(.iso8601))") }
             print("devices  \(sync.devices)")
             for setting in sync.ignoredSettings { print("ignored  \(setting.key) \(setting.value) (local): \(setting.reason)") }
-            for key in sync.skipped { print("\(key.kind == .waiting ? "waiting" : "skipped")  \(key.name): \(key.reason)") }
+            for key in sync.skipped { print("\(out.value(key.kind == .waiting ? "waiting" : "skipped", .waiting))  \(key.name): \(key.reason)") }
             for line in backup.lines { print(line) }
             for line in update.lines { print(line) }
         }
@@ -343,11 +365,12 @@ struct DeviceCommand: ParsableCommand {
             discussion: "A removal that fails partway, or that runs while another Mac checks iCloud, may leave a copy. Run it again to drop it."
         )
         @Argument(help: "The device's id, as signd device list prints it.") var id: String
+        @OptionGroup var colorOption: ColorOption
 
         func run() throws {
             guard let result = AgentClient(path: defaultSocketPath).removeDevice(id) else { throw Failure("the agent does not answer") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the removal failed") }
-            print("removed \(id)")
+            print(colorOption.standardOutput.success("removed \(id)"))
         }
     }
 }
@@ -449,14 +472,16 @@ struct Service: ParsableCommand {
 
     struct Enable: ParsableCommand {
         @Flag(help: "Run from the login hook: change nothing when the login item is enabled, never open System Settings, and exit 0 while approval is pending.") var atLogin = false
+        @OptionGroup var colorOption: ColorOption
 
         func run() throws {
+            let out = colorOption.standardOutput
             // At login, launchd starts an enabled agent itself, and it may not answer yet.
             if atLogin, Service.agent.status == .enabled { return }
             // A config that cannot be written fails the command after the login item is in order, so the agent still starts.
             var includeFailed = false
             do {
-                if try SSHInclude.enable(home: FileManager.default.homeDirectoryForCurrentUser) { print("added \(SSHInclude.line) to ~/.ssh/config") }
+                if try SSHInclude.enable(home: FileManager.default.homeDirectoryForCurrentUser) { print(out.success("added \(SSHInclude.line) to ~/.ssh/config")) }
             } catch {
                 KeyCommand.note("cannot add the Include line to ~/.ssh/config: \(error)")
                 includeFailed = true
@@ -470,9 +495,9 @@ struct Service: ParsableCommand {
                     guard now == signdVersion else {
                         throw Failure("the restarted agent runs \(now ?? "an unknown version"), not \(signdVersion)")
                     }
-                    print("enabled; restarted the agent, which ran \(running)")
+                    print(out.success("enabled; restarted the agent, which ran \(running)"))
                 } else {
-                    print("enabled")
+                    print(out.success("enabled"))
                 }
             case .enabled:
                 // The cask's uninstall step removes the job from launchd while the login item stays enabled.
@@ -483,7 +508,7 @@ struct Service: ParsableCommand {
                 } catch {
                     throw Failure("cannot register the agent again: \(error)")
                 }
-                print("enabled")
+                print(out.success("enabled"))
             case .requiresApproval:
                 if atLogin { return }
                 SMAppService.openSystemSettingsLoginItems()
@@ -497,39 +522,46 @@ struct Service: ParsableCommand {
                     throw Failure("approve signd in System Settings, General, Login Items")
                 }
                 if let registerError { throw Failure("cannot register the agent: \(registerError)") }
-                print(Service.agent.status == .enabled ? "enabled" : "registered")
+                print(out.success(Service.agent.status == .enabled ? "enabled" : "registered"))
             }
             if includeFailed { throw ExitCode.failure }
         }
     }
 
     struct Disable: ParsableCommand {
+        @OptionGroup var colorOption: ColorOption
+
         func run() throws {
-            guard Service.agent.status != .notRegistered else { return print("not registered") }
+            let out = colorOption.standardOutput
+            guard Service.agent.status != .notRegistered else { return print(out.warning("not registered")) }
             do { try Service.agent.unregister() } catch { throw Failure("cannot unregister the agent: \(error)") }
-            print("disabled")
+            print(out.success("disabled"))
         }
     }
 
     struct Status: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Show the login item and whether the agent answers.")
+        @OptionGroup var colorOption: ColorOption
 
         func run() {
-            print("login item  \(Service.loginItem.text)")
+            let out = colorOption.standardOutput
+            let loginItem = Service.loginItem
+            print("login item  \(out.value(loginItem.text, loginItem == .enabled ? .inOrder : .waiting))")
             if let agent = AgentClient(path: defaultSocketPath).status() {
-                print("agent  answers (\(agent.version))")
+                print("agent  \(out.value("answers (\(agent.version))", .inOrder))")
             } else {
-                print("agent  does not answer")
+                print("agent  \(out.value("does not answer", .failed))")
             }
         }
     }
 
     struct Restart: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Restart the agent and wait for it to answer; exits non-zero when it does not answer within 5 seconds.")
+        @OptionGroup var colorOption: ColorOption
 
         func run() throws {
             try Service.restart()
-            print("restarted")
+            print(colorOption.standardOutput.success("restarted"))
         }
     }
 

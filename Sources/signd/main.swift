@@ -1,4 +1,3 @@
-import ArgumentParser
 import SigndCLI
 
-Signd.main()
+Signd.runMain()
