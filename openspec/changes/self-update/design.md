@@ -52,5 +52,5 @@ The cask sets `auto_updates true`, so `brew upgrade` leaves the app to the updat
 ## Risks
 
 - A bundle swap may affect the login item approval; Apple documents nothing for this case.
-  Task 2.1 checks it on portable before a release ships the updater.
+  Task 2.1 checks it on a test Mac before a release ships the updater.
 - A standard account has not been tested; task 2.2 runs the update as one.

@@ -26,18 +26,27 @@
   - 2026-11-19 UTC: in the same run, `mise run package:check` read back the title signd, `arm64` as the host architecture and macOS 26.0 as the floor.
 - [ ] 1.5 Add `signd service status`, `restart` and `log` by design decision 6.
   Verify a unit test of the `log` arguments and the `service restart` step of `mise run e2e:hardware`.
-- [ ] 1.6 Change the cask by design decision 7 in the tap.
-  Verify `brew uninstall --cask signd` on portable leaves no login item.
-- [ ] 1.7 Start the README's Install section from the package, with the cask second.
+- [x] 1.6 Change the cask by design decision 7 in the tap.
+  Verify `brew uninstall --cask signd` on a test Mac leaves no login item.
+  - 2026-11-19 07:41 UTC, test Mac: `brew uninstall --cask signd` ran on the 0.0.10 cask in the public tap.
+    It left no launchd job, no login item in `sfltool dumpbtm`, no app, no `/usr/local/bin/signd` and no package receipt.
+- [x] 1.7 Start the README's Install section from the package, with the cask second.
   Verify each command runs as written.
-- [ ] 1.8 Restart an agent of another version in `signd service enable` by design decision 8.
+  - 2026-11-19 07:38 UTC, test Mac: `curl -fLO` of the latest release's package and `sudo installer -pkg signd.pkg -target /` ran as written.
+  - 2026-11-19 07:41 UTC, test Mac: `brew install --cask victor-software-house/tap/signd` tapped and trusted the tap, then installed 0.0.10.
+- [x] 1.8 Restart an agent of another version in `signd service enable` by design decision 8.
   Verify on a Mac that runs the previous release: after `sudo installer` of the new package, `signd status` shows the agent with the new version.
+  - 2026-11-19 07:38 UTC, test Mac: the agent ran 0.0.9.
+    After `sudo installer` of 0.0.10, `signd status` showed a new agent process at 0.0.10, answering.
 
 ## 2. Integration
 
-- [ ] 2.1 Install the released package on a Mac that has signd, with `sudo installer`, after moving `~/.ssh/config` aside.
+- [x] 2.1 Install the released package on a Mac that has signd, with `sudo installer`, after moving `~/.ssh/config` aside.
   Verify that a new shell finds `signd`, and that `signd status` shows the agent answering and the Include line.
   Verify that `ssh -G` routes a synced key's host to signd.
+  - 2026-11-19 07:42 UTC, test Mac, 0.0.10: the install wrote a config with only `Include ~/.ssh/signd/config`, and a new shell found `/usr/local/bin/signd`.
+    `signd status` showed the agent answering and the Include line.
+    `ssh -G` routed the synced key's host to `~/.ssh/signd.sock` with that key's public file.
 
 [pkg-install-ci]: https://github.com/victor-software-house/signd/actions/runs/44423080784
 [pkg-install-package]: https://github.com/victor-software-house/signd/actions/runs/44456387525
