@@ -42,9 +42,39 @@
   - 2026-11-19 UTC: A plan that asks for reads returns the cache entries it has.
     An item whose read failed is left alone, and that run creates no item.
   - 2026-11-19 UTC: [CI run 44509529555][ci-69] passed with these tests at `30801d3`.
-- [ ] 1.5 Add the schedule and the lease by design decisions 4 and 5.
+- [x] 1.5 Add the backup run, its schedule and its lease by design decisions 4 and 5.
   Verify unit tests with a fake clock for the delay, the interval and the daily run.
   Verify unit tests for a lease held by another Mac, an expired lease, and a renewal that fails mid-run.
+  Verify a run end to end.
+  - 2026-11-19 UTC: `BackupRunTests` cover the delay, the interval and the daily run with fixed dates and a fake clock.
+    A failed run records its error and waits one interval, with no run after it until the slot comes.
+  - 2026-11-19 UTC: They cover a lease held by another Mac, which stops the run with no CloudKit save and no 1Password call.
+    They cover an expired lease taken over, and a late clear that leaves another Mac's newer claim.
+    A renewal that fails between two create batches stops the run before the second batch.
+  - 2026-11-19 UTC: One run end to end creates four items, then puts one, deletes one and creates one with no item read.
+    The saved cache has each item's exact `updatedAt`, so a third run makes only the list call.
+    The private key field of a created item reads back as the shared key.
+  - 2026-11-19 UTC: A failed read of one item leaves that item alone and creates no item for a new key.
+  - 2026-11-19 UTC: A key changed on this Mac reaches the schedule through the agent's reload request.
+    The test sends that request and checks that a run is due after `backup-delay`.
+  - 2026-11-19 UTC: Review fixes of the run, each with a test in `BackupRunTests`.
+    `aKeyRecordWithAnotherPublicKeyGetsNoItemFromTheLocalKey` writes no item and caches nothing for a record whose public key differs from the local copy's.
+    `theLeaseIsRenewedBeforeACallOnceAThirdOfItHasPassed` and `aRenewalThatFailsBeforeAPutStopsTheRunBeforeThatCall` cover the renewal inside a put group.
+  - 2026-11-19 UTC: `aTokenThatDiffersFromTheStoredOneCountsAsAChange` in `BackupTests` covers the sync report that makes a backup run due on a Mac that did not log in.
+    `aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn`, `aLeaseOfAnotherFormatHoldsUntilItsExpiryAndOnlyAnUnreadableOneIsFree` and `resultsAreMatchedToTheirRequestsWhateverTheOrder` cover the rest.
+  - 2026-11-19 UTC: A key that 1Password's SSH Key item cannot take gets a Secure Note by design decision 2.
+    `anSSHKeyItemSupportsEd25519AndRSAOfTheListedSizesAndExponents` in `BackupRunTests` covers `ItemCategory.supports` for an SSH Key item at the size and exponent edges.
+    `aSecureNoteSupportsEveryKeyAndNoOtherCategoryDoes` covers the other categories.
+  - 2026-11-19 UTC: `aKeyTheSSHKeyItemCannotTakeGetsASecureNote` runs an elliptic curve key and a 1024-bit key into Secure Notes, beside two SSH Key items.
+    The next run makes only the list call, and a run with no cache writes nothing.
+  - 2026-11-19 UTC: `BackupPlannerTests` cover the notes.
+    `anECDSAKeyAndA1024BitRSAKeyEachGetASecureNote` and `anEd25519KeyAndA2048BitRSAKeyEachGetAnSSHKeyItem` cover each item's category and fields.
+  - 2026-11-19 UTC: `aSecureNoteThatHasWhatItShouldIsLeftAlone` and `aChangedSecureNoteIsPut` cover the comparison by the fingerprint of the public key field.
+    They cover a note with no readable public key.
+  - 2026-11-19 UTC: `aKeyWhoseItemIsInTheOtherCategoryGetsAnItemInTheRightOneAndTheOldGoes` covers a new item in the right category.
+    It covers the old item's removal by each `backupRemoved` value.
+  - 2026-11-19 UTC: `aOnePasswordErrorIsRecordedByItsKindAndNeverItsMessage` covers a 1Password error that echoes the private key and a host.
+    The recorded result shows the call, the item and the error code, and neither value.
 - [ ] 1.6 Add `signd backup restore` by design decision 7.
   Verify a unit test that skips a key the store already has.
 - [ ] 1.7 Report the backup in `signd status`.

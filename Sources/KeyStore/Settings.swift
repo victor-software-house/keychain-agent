@@ -10,6 +10,9 @@ public struct Settings: Sendable {
         case interval
         case backupVault = "backup-vault"
         case backupRemoved = "backup-removed"
+        case backupDelay = "backup-delay"
+        case backupInterval = "backup-interval"
+        case backupDailyInterval = "backup-daily-interval"
 
         public var defaultValue: String {
             switch self {
@@ -17,6 +20,9 @@ public struct Settings: Sendable {
             case .interval: "2s"
             case .backupVault: "signd"
             case .backupRemoved: "delete"
+            case .backupDelay: "5m"
+            case .backupInterval: "1h"
+            case .backupDailyInterval: "1d"
             }
         }
 
@@ -24,16 +30,19 @@ public struct Settings: Sendable {
         public var choices: [String]? {
             switch self {
             case .backupRemoved: ["delete", "archive", "keep"]
-            case .keyLifetime, .interval, .backupVault: nil
+            case .keyLifetime, .interval, .backupVault, .backupDelay, .backupInterval, .backupDailyInterval: nil
             }
         }
 
         /// The shortest and longest value, in seconds: an interval of 1 second to 1 hour, and a key lifetime of 1 second to 30 days.
+        /// The backup delay is 1 second to 1 hour, its interval 1 second to 1 day, and its daily interval 1 second to 30 days.
         /// A text setting has no bounds.
         public var bounds: ClosedRange<TimeInterval>? {
             switch self {
             case .keyLifetime: 1...2_592_000
-            case .interval: 1...3600
+            case .interval, .backupDelay: 1...3600
+            case .backupInterval: 1...86400
+            case .backupDailyInterval: 1...2_592_000
             case .backupVault, .backupRemoved: nil
             }
         }

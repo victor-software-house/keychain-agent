@@ -4,14 +4,27 @@
 
 ### Requirement: The backup copies shareable keys one way
 
-With a token stored, signd SHALL keep one SSH Key item per shareable key in the backup vault.
+With a token stored, signd SHALL keep one item per shareable key in the backup vault.
+The item SHALL be an SSH Key item when 1Password's SSH Key item takes the key, and a Secure Note otherwise.
+
 Each item SHALL carry the tag `signd`, the key's private key, hosts and comment.
+A Secure Note SHALL also carry the key's public key.
 signd SHALL never change a key from the vault's content.
 
 #### Scenario: A new key
 
 - **WHEN** a key is shared and the backup runs
 - **THEN** the vault contains an SSH Key item with that key's name, tagged `signd`, whose public key matches the key
+
+#### Scenario: A key the SSH Key item cannot take
+
+- **WHEN** an Elliptic Curve Digital Signature Algorithm (ECDSA) key is shared and the backup runs
+- **THEN** the vault contains a Secure Note with that key's name, tagged `signd`, whose public key field matches the key
+
+#### Scenario: A key whose item is in the other category
+
+- **WHEN** a key's item is in the other category and the backup runs twice
+- **THEN** the vault contains an item for the key in the right category, and the old item is removed by `backupRemoved`
 
 ### Requirement: The backup touches only its own items
 

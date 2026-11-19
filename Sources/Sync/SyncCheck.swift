@@ -19,8 +19,10 @@ struct Changes: Sendable {
     var removed: [String] = []
     /// Keys this device sealed for other devices.
     var sealed: [String] = []
+    /// The backup token this device stores changed, so a backup run is due.
+    var backupToken = false
 
-    var isEmpty: Bool { added.isEmpty && replaced.isEmpty && removed.isEmpty }
+    var isEmpty: Bool { added.isEmpty && replaced.isEmpty && removed.isEmpty && !backupToken }
 }
 
 /// A request the agent refuses, with the reason the command prints.
@@ -201,7 +203,7 @@ struct SyncCheck {
 
         // A full read that did not list the `Backup` record, and could not read it either, means the login ended.
         if full && !backupSeen && !held.contains(BackupPayload.recordName) { backupGone = true }
-        try receiveToken(backup, gone: backupGone)
+        try receiveToken(backup, gone: backupGone, changes: &changes)
 
         try await publish(&state, requests: &requests)
         try await sealForNewMacs(&state, keys: keys, requests: &requests, changes: &changes)
@@ -209,10 +211,10 @@ struct SyncCheck {
         return state
     }
 
-    /// Stores the token this device's sealed copy opens to, when it differs from the stored one.
+    /// Stores the token this device's sealed copy opens to, when it differs from the stored one, and reports the change.
     /// Deletes the stored token when the record is gone, or when the record has no copy for this device.
     /// The stored token is then older than the record's, as after a login made while this device was unknown.
-    private func receiveToken(_ payload: BackupPayload?, gone: Bool) throws {
+    private func receiveToken(_ payload: BackupPayload?, gone: Bool, changes: inout Changes) throws {
         if gone { return try tokens.delete() }
         guard let payload else { return }
         guard let sealed = payload.sealed[me] else { return try tokens.delete() }
@@ -224,7 +226,10 @@ struct SyncCheck {
             return
         }
         defer { token.resetBytes(in: 0..<token.count) }
-        if try tokens.read() != token { try tokens.save(token) }
+        if try tokens.read() != token {
+            try tokens.save(token)
+            changes.backupToken = true
+        }
     }
 
     static func deviceEntry(_ record: CloudRecord) -> DeviceEntry? {

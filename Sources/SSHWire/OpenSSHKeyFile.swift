@@ -48,6 +48,31 @@ public enum OpenSSHKeyFile {
         return .key(key, comment: comment)
     }
 
+    /// Writes an unencrypted armored `openssh-key-v1` file, as `ssh-keygen` does, which 1Password reads as an SSH key.
+    public static func armored(_ key: PrivateKey, comment: String) -> String {
+        // Both check integers must be equal; an unencrypted file has no use for a random one.
+        let check: UInt32 = 0
+        var section = Data()
+        section.appendUInt32(check)
+        section.appendUInt32(check)
+        key.write(to: &section)
+        section.appendString(comment)
+        // Padding fills the section to the cipher block size with the bytes 1, 2, 3 and so on.
+        var padding: UInt8 = 1
+        while section.count % 8 != 0 {
+            section.append(padding)
+            padding += 1
+        }
+        var binary = magic
+        binary.appendString("none")
+        binary.appendString("none")
+        binary.appendString(Data())
+        binary.appendUInt32(1)
+        binary.appendString(key.publicKey.blob)
+        binary.appendString(section)
+        return [header, binary.base64EncodedString(options: [.lineLength64Characters, .endLineWithLineFeed]), footer].joined(separator: "\n") + "\n"
+    }
+
     private static func isSupported(_ type: String) -> Bool {
         type == "ssh-ed25519" || type == "ssh-rsa" || Curve.allCases.contains { $0.keyType == type }
     }

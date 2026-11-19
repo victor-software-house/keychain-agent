@@ -585,16 +585,36 @@ struct Serve: ParsableCommand {
         )
         // A build without an iCloud container in its signature never touches CloudKit, which would stop the process.
         let cloud: (any CloudStore)? = CloudContainer.signed.map { CloudKitStore(containerID: $0) }
+        let tokens = BackupTokenStore()
+        let readDevice: @Sendable () throws(StoreError) -> DeviceKey = { () throws(StoreError) -> DeviceKey in try DeviceKeyStore().readOrCreate() }
+        let openKey: KeyOpener = { key throws(SignError) in try Wrapping.openStored(key) }
+        // The backup needs the lease in iCloud, so a build without the entitlement has none.
+        // A run does nothing while no backup token is stored.
+        let backup: BackupService? = cloud.map { cloud in
+            let run = BackupRun(
+                BackupRun.Dependencies(
+                    cloud: cloud, store: store, tokens: tokens, device: readDevice, open: openKey, openVault: OnePasswordVault.opener(version: signdVersion),
+                    removed: { BackupRemoved(rawValue: settings.text(.backupRemoved)) ?? .delete }
+                )
+            )
+            return BackupService(BackupService.Dependencies(run: { await run.perform() }, schedule: { BackupSchedule(settings: settings) }))
+        }
         let sync = SyncService(
             SyncService.Dependencies(
-                cloud: cloud, store: store, device: { () throws(StoreError) -> DeviceKey in try DeviceKeyStore().readOrCreate() },
-                open: { key throws(SignError) in try Wrapping.openStored(key) },
-                tokens: BackupTokenStore(), openSecret: { sealed, device in try Wrapping.openSecret(sealed, handle: device.handle) }, version: signdVersion,
-                interval: { settings.resolve(.interval).seconds }, changed: { await agent.reload() }
+                cloud: cloud, store: store, device: readDevice, open: openKey,
+                tokens: tokens, openSecret: { sealed, device in try Wrapping.openSecret(sealed, handle: device.handle) }, version: signdVersion,
+                interval: { settings.resolve(.interval).seconds }, changed: {
+                    await agent.reload()
+                    await backup?.keysChanged()
+                }
             )
         )
-        let server = Server(agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)))
+        let server = Server(
+            agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)),
+            keysChanged: { await backup?.keysChanged() }
+        )
         Task.detached {
+            await backup?.start()
             do {
                 try await server.run(socketPath: socketPath)
             } catch {

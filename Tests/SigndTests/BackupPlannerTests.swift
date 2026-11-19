@@ -25,12 +25,28 @@ private func publicKeyLine(_ name: String) -> String { publicKey(name).openSSHLi
 /// The tag a plan records for a source tag.
 private func tagged(_ source: String) -> String { BackupFormat.changeTag(source: source) }
 
-private func key(_ name: String, hosts: [String] = [], tag: String = "tag-1") -> BackupKey {
-    BackupKey(name: name, fingerprint: fingerprint(name), comment: name + "@example", hosts: hosts, privateKey: "private-" + name, changeTag: tag)
+/// `type` is the key's public key; the default is the Ed25519 key of its name.
+private func key(_ name: String, hosts: [String] = [], tag: String = "tag-1", type: PublicKey? = nil) -> BackupKey {
+    BackupKey(name: name, publicKey: type ?? publicKey(name), comment: name + "@example", hosts: hosts, privateKey: "private-" + name, changeTag: tag)
+}
+
+/// A key 1Password's SSH Key item rejects.
+private func ecdsaKey(_ name: String, hosts: [String] = []) -> BackupKey {
+    key(name, hosts: hosts, type: .ecdsa(.p256, Data([4]) + padded(name, to: 64)))
+}
+
+private func rsaKey(_ name: String, bits: Int, hosts: [String] = []) -> BackupKey {
+    key(name, hosts: hosts, type: .rsa(exponent: Data([1, 0, 1]), modulus: Data([0x80]) + padded(name, to: bits / 8 - 1)))
+}
+
+/// The bytes of `name`, padded with 1 to `count` bytes, so each name has its own key.
+private func padded(_ name: String, to count: Int) -> Data {
+    let bytes = Array(name.utf8.prefix(count))
+    return Data(bytes + Array(repeating: 1, count: count - bytes.count))
 }
 
 private func keyWithoutPrivateKey(_ name: String) -> BackupKey {
-    BackupKey(name: name, fingerprint: fingerprint(name), comment: "", hosts: [], privateKey: nil, changeTag: "tag-1")
+    BackupKey(name: name, publicKey: publicKey(name), comment: "", hosts: [], privateKey: nil, changeTag: "tag-1")
 }
 
 private func enclaveKey(_ name: String, hosts: [String] = []) -> BackupSecureEnclaveKey {
@@ -62,7 +78,7 @@ private func vaultItem(_ content: ItemContent, id: String, updatedAt: Date = epo
 
 /// The item the backup writes for `key`, as the vault stores it.
 private func keyItem(_ key: BackupKey, scope: String = BackupFormat.shared, id: String, updatedAt: Date = epoch) throws -> Item {
-    vaultItem(try #require(BackupDesiredItem(key: key, scope: scope)).content, id: id, updatedAt: updatedAt, publicKey: publicKeyLine(key.name))
+    vaultItem(try #require(BackupDesiredItem(key: key, scope: scope)).content, id: id, updatedAt: updatedAt, publicKey: key.publicKey.openSSHLine(comment: key.name + "@example"))
 }
 
 private func listItem(_ keys: [BackupSecureEnclaveKey], device: String, name: String, id: String) -> Item {
@@ -286,6 +302,134 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     let result = plan(sources(shared: [keyWithoutPrivateKey("work"), keyWithoutPrivateKey("new")]), vault: [existing])
     #expect(result.unavailable == [fingerprint("new"), fingerprint("work")])
     #expect(result.isIdle)
+}
+
+// MARK: Keys the SSH Key item cannot take
+
+/// `item` with the field titled `title` set to `value`, or removed when `value` is nil.
+private func withField(_ item: Item, _ title: String, _ value: String?) -> Item {
+    let fields = item.fields.compactMap { field -> Item.Field? in
+        guard field.title == title else { return field }
+        return value.map { Item.Field(id: field.id, title: field.title, type: field.type, value: $0, sectionID: field.sectionID, publicKey: field.publicKey) }
+    }
+    return Item(
+        id: item.id, title: item.title, category: item.category, vaultID: item.vaultID, fields: fields, sections: item.sections,
+        notes: item.notes, tags: item.tags, version: item.version, updatedAt: item.updatedAt
+    )
+}
+
+/// `item` in another category, as the vault keeps an item that an older run or another Mac wrote in the other one.
+private func moved(_ item: Item, to category: ItemCategory) -> Item {
+    Item(
+        id: item.id, title: item.title, category: category, vaultID: item.vaultID, fields: item.fields, sections: item.sections,
+        notes: item.notes, tags: item.tags, version: item.version, updatedAt: item.updatedAt
+    )
+}
+
+@Test func anECDSAKeyAndA1024BitRSAKeyEachGetASecureNote() throws {
+    for key in [ecdsaKey("curve", hosts: ["git"]), rsaKey("small", bits: 1024, hosts: ["git"])] {
+        let result = plan(sources(shared: [key]), vault: [])
+        let item = try #require(result.create.first?.first)
+        #expect(result.create.count == 1 && result.create[0].count == 1)
+        #expect(item.slot == .key(fingerprint: key.fingerprint, scope: BackupFormat.shared))
+        #expect(item.content.category == .secureNote)
+        #expect(item.content.title == key.name)
+        #expect(item.content.tags == ["signd"])
+        let fields = Dictionary(uniqueKeysWithValues: item.content.fields.map { ($0.title, $0) })
+        #expect(fields["private key"]?.type == .concealed)
+        #expect(fields["private key"]?.value == "private-" + key.name)
+        #expect(fields["public key"]?.type == .text)
+        #expect(fields["public key"]?.value == key.publicKey.openSSHLine(comment: key.comment))
+        #expect(fields["hosts"]?.value == "git")
+        #expect(fields["comment"]?.value == key.comment)
+        #expect(fields["kind"]?.value == "key" && fields["scope"]?.value == "shared" && fields["name"]?.value == key.name)
+        #expect(fields["fingerprint"]?.value == key.fingerprint)
+        #expect(item.content.sections == [Item.Section(id: "signd", title: "signd")])
+        // What the plan creates reads back as signd's item.
+        #expect(BackupOwner(item: vaultItem(item.content, id: "new")) == BackupOwner(slot: item.slot, name: key.name))
+    }
+}
+
+@Test func anEd25519KeyAndA2048BitRSAKeyEachGetAnSSHKeyItem() throws {
+    for candidate in [key("ed"), rsaKey("rsa", bits: 2048), rsaKey("rsa-large", bits: 4096)] {
+        let item = try #require(plan(sources(shared: [candidate]), vault: []).create.first?.first)
+        #expect(item.content.category == .sshKey)
+        #expect(item.content.fields.first { $0.title == "private key" }?.type == .sshKey)
+        #expect(!item.content.fields.contains { $0.title == "public key" })
+    }
+}
+
+@Test func aSecureNoteThatHasWhatItShouldIsLeftAlone() throws {
+    for key in [ecdsaKey("curve"), rsaKey("small", bits: 1024)] {
+        let note = try keyItem(key, id: "item-note")
+        #expect(plan(sources(shared: [key]), vault: [note]).isIdle)
+        // A field of the user's beside the wanted ones changes nothing.
+        let extra = Item(
+            id: note.id, title: note.title, category: note.category, vaultID: note.vaultID,
+            fields: note.fields + [Item.Field(id: "extra", title: "more", type: .text, value: "x")], sections: note.sections,
+            notes: note.notes, tags: note.tags, version: 2, updatedAt: note.updatedAt
+        )
+        #expect(plan(sources(shared: [key]), vault: [extra]).isIdle)
+        // The public key text compares by its fingerprint, so another comment or a bare blob is no change.
+        let blob = try #require(key.publicKey.openSSHLine().split(separator: " ").dropFirst().first.map(String.init))
+        for text in [key.publicKey.openSSHLine(comment: "renamed@elsewhere"), key.publicKey.openSSHLine(), blob, "  " + key.publicKey.openSSHLine() + "\n"] {
+            #expect(plan(sources(shared: [key]), vault: [withField(note, "public key", text)]).isIdle)
+        }
+    }
+}
+
+@Test func aChangedSecureNoteIsPut() throws {
+    let key = ecdsaKey("curve", hosts: ["old"])
+    let note = try keyItem(key, id: "item-note")
+    var changed = key
+    changed.hosts = ["new"]
+    changed.changeTag = "tag-2"
+    let hosts = plan(sources(shared: [changed]), vault: [note])
+    #expect(hosts.create.isEmpty && hosts.delete.isEmpty)
+    #expect(hosts.put.map(\.itemID) == ["item-note"])
+    #expect(hosts.put.first?.desired.content.category == .secureNote)
+
+    let current = sources(shared: [key])
+    // A note with another public key, an unreadable one, an empty one or none counts as changed.
+    for text in [ecdsaKey("other").publicKey.openSSHLine(), "not a key", "", nil] {
+        #expect(plan(current, vault: [withField(note, "public key", text)]).put.map(\.itemID) == ["item-note"])
+    }
+    #expect(plan(current, vault: [withField(note, "private key", "another key")]).put.map(\.itemID) == ["item-note"])
+    #expect(plan(current, vault: [withField(note, "comment", "other")]).put.map(\.itemID) == ["item-note"])
+}
+
+@Test func aKeyWhoseItemIsInTheOtherCategoryGetsAnItemInTheRightOneAndTheOldGoes() throws {
+    let cases: [(key: BackupKey, wrong: ItemCategory, right: ItemCategory)] = [
+        (ecdsaKey("curve"), .sshKey, .secureNote), (key("work"), .secureNote, .sshKey),
+    ]
+    for (key, wrong, right) in cases {
+        let old = moved(try keyItem(key, id: "item-old"), to: wrong)
+        // A put keeps the item's category, so the right item is created, and the old one stays until it exists.
+        let first = plan(sources(shared: [key]), vault: [old])
+        #expect(first.put.isEmpty && first.delete.isEmpty && first.archive.isEmpty && first.keep.isEmpty)
+        #expect(first.create.first?.map(\.content.category) == [right])
+
+        // The cache shows this Mac wrote the same source to the old item, which is no copy of the right one.
+        let cached = [old.id: BackupCacheEntry(id: old.id, updatedAt: old.updatedAt, owner: BackupOwner(item: old), sourceTag: tagged("tag-1"))]
+        let withCache = BackupPlanner.plan(sources: sources(shared: [key]), overviews: [overview(old)], items: [], cache: cached, removed: .delete)
+        #expect(withCache.create.first?.map(\.content.category) == [right])
+
+        // Once the right item exists, the old one goes by the setting, and the right one is current.
+        let new = moved(try keyItem(key, id: "item-new"), to: right)
+        for removed in BackupRemoved.allCases {
+            let second = plan(sources(shared: [key]), vault: [old, new], removed: removed)
+            #expect(second.create.isEmpty && second.put.isEmpty)
+            switch removed {
+            case .delete: #expect(second.delete == [["item-old"]] && second.archive.isEmpty && second.keep.isEmpty)
+            case .archive: #expect(second.archive == ["item-old"] && second.delete.isEmpty && second.keep.isEmpty)
+            case .keep: #expect(second.keep == ["item-old"] && second.delete.isEmpty && second.archive.isEmpty && second.isIdle)
+            }
+        }
+
+        // A read that decides no removal leaves the old item, as it leaves any other.
+        let incomplete = plan(sources(shared: [key], read: .incomplete(reason: "offline")), vault: [old, new])
+        #expect(incomplete.isIdle && incomplete.delete.isEmpty)
+    }
 }
 
 // MARK: Local keys and Secure Enclave lists

@@ -124,6 +124,7 @@ public enum BackupPlanner {
     private struct Known {
         let id: String
         let updatedAt: Date
+        let category: ItemCategory
         let owner: BackupOwner?
         /// The full item, when this run has it.
         let item: Item?
@@ -145,9 +146,16 @@ public enum BackupPlanner {
         var failed: [String] = []
         for overview in overviews where overview.state == .active && overview.tags.contains(BackupFormat.tag) {
             if let item = fetched[overview.id] {
-                known.append(Known(id: item.id, updatedAt: item.updatedAt, owner: BackupOwner(item: item), item: item, cachedTag: nil, target: cache[item.id]?.target))
+                known.append(
+                    Known(
+                        id: item.id, updatedAt: item.updatedAt, category: overview.category, owner: BackupOwner(item: item), item: item, cachedTag: nil,
+                        target: cache[item.id]?.target
+                    )
+                )
             } else if let entry = cache[overview.id], entry.updatedAt == overview.updatedAt {
-                known.append(Known(id: entry.id, updatedAt: entry.updatedAt, owner: entry.owner, item: nil, cachedTag: entry.sourceTag, target: entry.target))
+                known.append(
+                    Known(id: entry.id, updatedAt: entry.updatedAt, category: overview.category, owner: entry.owner, item: nil, cachedTag: entry.sourceTag, target: entry.target)
+                )
             } else if unread.contains(overview.id) {
                 failed.append(overview.id)
             } else {
@@ -172,16 +180,33 @@ public enum BackupPlanner {
             if let owner = entry.owner { groups[owner.slot, default: []].append(entry) }
         }
         groups = groups.mapValues { copies in copies.sorted { left, right in (left.updatedAt, left.id) < (right.updatedAt, right.id) } }
+        // An item's category cannot change, so a copy in the other category is not a copy of the wanted item.
+        let categories = Dictionary(desired.map { ($0.slot, $0.content.category) }, uniquingKeysWith: { first, _ in first })
+        func placed(_ slot: BackupSlot) -> [Known] {
+            let copies = groups[slot] ?? []
+            return categories[slot].map { category in copies.filter { $0.category == category } } ?? copies
+        }
         // Each slot with duplicates has one copy a run writes to, which the cache records for the next run.
-        let targets = groups.compactMapValues { copies in copies.count > 1 ? writeTarget(of: copies).id : nil }
+        var targets: [String: String] = [:]
+        for slot in groups.keys {
+            let copies = placed(slot)
+            if copies.count > 1 {
+                let target = writeTarget(of: copies).id
+                for copy in copies { targets[copy.id] = target }
+            }
+        }
 
         var created: [BackupDesiredItem] = []
+        var misplaced: [String] = []
         var touched: Set<String> = []
         for want in desired {
-            guard let copies = groups[want.slot] else {
+            let copies = placed(want.slot)
+            guard !copies.isEmpty else {
                 if failed.isEmpty { created.append(want) }
                 continue
             }
+            // The copies in the other category go once a copy in the wanted one exists.
+            misplaced += (groups[want.slot] ?? []).filter { $0.category != want.content.category }.map(\.id)
             // A slot with any current copy needs no write, so a duplicate never moves the write from one copy to another.
             let current = copies.filter { isCurrent($0, want) }
             if current.isEmpty {
@@ -198,7 +223,7 @@ public enum BackupPlanner {
             plan.skippedRemovals = reason
         } else {
             let wanted = Set(desired.map(\.slot))
-            var ids: [String] = []
+            var ids = misplaced
             for slot in groups.keys.sorted(by: order) where !wanted.contains(slot) {
                 guard let copies = groups[slot], isRemovable(slot, sources: sources) else { continue }
                 ids += copies.map(\.id)
@@ -233,8 +258,8 @@ public enum BackupPlanner {
         return copies.first { $0.id == recorded } ?? copies[0]
     }
 
-    private static func cacheEntry(_ known: Known, sourceTag: String?, targets: [BackupSlot: String]) -> BackupCacheEntry {
-        BackupCacheEntry(id: known.id, updatedAt: known.updatedAt, owner: known.owner, sourceTag: sourceTag, target: known.owner.flatMap { targets[$0.slot] })
+    private static func cacheEntry(_ known: Known, sourceTag: String?, targets: [String: String]) -> BackupCacheEntry {
+        BackupCacheEntry(id: known.id, updatedAt: known.updatedAt, owner: known.owner, sourceTag: sourceTag, target: targets[known.id])
     }
 
     /// The items this Mac writes, and the fingerprints of keys with no private key to write.
