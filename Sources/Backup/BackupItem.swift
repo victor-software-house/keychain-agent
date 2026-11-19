@@ -200,15 +200,19 @@ public struct BackupCacheEntry: Codable, Sendable, Equatable {
     public var owner: BackupOwner?
     /// The change tag of the source this Mac last wrote or found in the item; nil when unknown.
     public var sourceTag: String?
+    /// For an item whose slot has duplicates: the identifier of the copy a run writes to.
+    /// A run that puts an item records the item's own identifier here.
+    public var target: String?
 
-    public init(id: String, updatedAt: Date, owner: BackupOwner?, sourceTag: String?) {
+    public init(id: String, updatedAt: Date, owner: BackupOwner?, sourceTag: String?, target: String? = nil) {
         self.id = id
         self.updatedAt = updatedAt
         self.owner = owner
         self.sourceTag = sourceTag
+        self.target = target
     }
 
-    public init(item: Item, sourceTag: String?) {
-        self.init(id: item.id, updatedAt: item.updatedAt, owner: BackupOwner(item: item), sourceTag: sourceTag)
+    public init(item: Item, sourceTag: String?, target: String? = nil) {
+        self.init(id: item.id, updatedAt: item.updatedAt, owner: BackupOwner(item: item), sourceTag: sourceTag, target: target)
     }
 }

@@ -361,12 +361,45 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(result.put.map(\.itemID) == ["copy-oldest"])
     #expect(result.create.isEmpty && result.delete.isEmpty)
     #expect(result.cache["copy-newest"]?.owner == ownerOfKey("work"))
+    // The cache records the copy the run writes to.
+    #expect(result.cache["copy-newest"]?.target == "copy-oldest")
+
+    // The run puts the oldest copy, which then has the newest `updatedAt`.
+    let moved = Date(timeIntervalSince1970: 1_800_001_200)
+    let written = try keyItem(key("work", hosts: ["new"]), id: "copy-oldest", updatedAt: moved)
+    var recorded = result.cache
+    recorded["copy-oldest"] = BackupCacheEntry(id: "copy-oldest", updatedAt: moved, owner: ownerOfKey("work"), sourceTag: "tag-1", target: "copy-oldest")
+    let second = plan(sources(shared: [key("work", hosts: ["new"])]), vault: [newest, written], cache: recorded)
+    #expect(second.isIdle)
+    #expect(second.cache["copy-oldest"]?.target == "copy-oldest" && second.cache["copy-newest"]?.target == "copy-oldest")
+
+    // The source changes again: the run keeps writing to the same copy, though the other is now the oldest.
+    let third = plan(sources(shared: [key("work", hosts: ["newer"], tag: "tag-2")]), vault: [newest, written], cache: second.cache)
+    #expect(third.put.map(\.itemID) == ["copy-oldest"])
+    #expect(third.create.isEmpty && third.delete.isEmpty)
+
+    // A target that no longer exists is replaced by the oldest copy left.
+    let fourth = plan(sources(shared: [key("work", hosts: ["newer"], tag: "tag-2")]), vault: [newest], cache: second.cache)
+    #expect(fourth.put.map(\.itemID) == ["copy-newest"])
 }
 
 @Test func aDuplicateThatIsCurrentNeedsNoWrite() throws {
     let first = try keyItem(key("work"), id: "copy-1", updatedAt: epoch)
     let second = try keyItem(key("work"), id: "copy-2", updatedAt: later)
     #expect(plan(sources(shared: [key("work")]), vault: [first, second]).isIdle)
+}
+
+@Test func aSlotWithAnyCurrentCopyIsNotWritten() throws {
+    let stale = try keyItem(key("work", hosts: ["old"]), id: "copy-stale", updatedAt: epoch)
+    let current = try keyItem(key("work", hosts: ["new"]), id: "copy-current", updatedAt: later)
+    let wanted = sources(shared: [key("work", hosts: ["new"])])
+    #expect(plan(wanted, vault: [stale, current]).isIdle)
+
+    // A copy the cache shows current counts too, and is not read.
+    let cache = ["copy-current": BackupCacheEntry(id: "copy-current", updatedAt: later, owner: ownerOfKey("work"), sourceTag: "tag-1")]
+    let overviews = [overview(stale), overview(current)]
+    let result = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [stale], cache: cache, removed: .delete)
+    #expect(result.fetch.isEmpty && result.isIdle)
 }
 
 @Test func removingAKeyRemovesEveryCopy() throws {

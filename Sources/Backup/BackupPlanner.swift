@@ -101,6 +101,8 @@ public enum BackupPlanner {
         /// The full item, when this run has it.
         let item: Item?
         let cachedTag: String?
+        /// The copy of this item's slot that an earlier run chose to write to.
+        let target: String?
     }
 
     /// Plans a run.
@@ -114,9 +116,9 @@ public enum BackupPlanner {
         var missing: [String] = []
         for overview in overviews where overview.state == .active && overview.tags.contains(BackupFormat.tag) {
             if let item = fetched[overview.id] {
-                known.append(Known(id: item.id, updatedAt: item.updatedAt, owner: BackupOwner(item: item), item: item, cachedTag: nil))
+                known.append(Known(id: item.id, updatedAt: item.updatedAt, owner: BackupOwner(item: item), item: item, cachedTag: nil, target: cache[item.id]?.target))
             } else if let entry = cache[overview.id], entry.updatedAt == overview.updatedAt {
-                known.append(Known(id: entry.id, updatedAt: entry.updatedAt, owner: entry.owner, item: nil, cachedTag: entry.sourceTag))
+                known.append(Known(id: entry.id, updatedAt: entry.updatedAt, owner: entry.owner, item: nil, cachedTag: entry.sourceTag, target: entry.target))
             } else {
                 missing.append(overview.id)
             }
@@ -134,21 +136,24 @@ public enum BackupPlanner {
             if let owner = entry.owner { groups[owner.slot, default: []].append(entry) }
         }
         groups = groups.mapValues { copies in copies.sorted { left, right in (left.updatedAt, left.id) < (right.updatedAt, right.id) } }
+        // Each slot with duplicates has one copy a run writes to, which the cache records for the next run.
+        let targets = groups.compactMapValues { copies in copies.count > 1 ? writeTarget(of: copies).id : nil }
 
         var created: [BackupDesiredItem] = []
         var touched: Set<String> = []
         for want in desired {
-            // A duplicate leaves the oldest copy to update and the others alone.
-            guard let target = groups[want.slot]?.first else {
+            guard let copies = groups[want.slot] else {
                 created.append(want)
                 continue
             }
-            let current = target.item.map(want.matches) ?? (target.cachedTag == want.changeTag)
-            if current {
-                plan.cache[target.id] = BackupCacheEntry(id: target.id, updatedAt: target.updatedAt, owner: target.owner, sourceTag: want.changeTag)
-            } else {
+            // A slot with any current copy needs no write, so a duplicate never moves the write from one copy to another.
+            let current = copies.filter { isCurrent($0, want) }
+            if current.isEmpty {
+                let target = writeTarget(of: copies)
                 plan.put.append(BackupPlan.Put(itemID: target.id, desired: want))
                 touched.insert(target.id)
+            } else {
+                for copy in current { plan.cache[copy.id] = cacheEntry(copy, sourceTag: want.changeTag, targets: targets) }
             }
         }
         plan.create = chunks(created, createBatch)
@@ -175,9 +180,25 @@ public enum BackupPlanner {
         }
 
         for entry in known where !touched.contains(entry.id) && plan.cache[entry.id] == nil {
-            plan.cache[entry.id] = BackupCacheEntry(id: entry.id, updatedAt: entry.updatedAt, owner: entry.owner, sourceTag: entry.cachedTag)
+            plan.cache[entry.id] = cacheEntry(entry, sourceTag: entry.cachedTag, targets: targets)
         }
         return plan
+    }
+
+    /// Whether `copy` has what `want` writes: its fields match, or the cache shows this Mac wrote the same source.
+    private static func isCurrent(_ copy: Known, _ want: BackupDesiredItem) -> Bool {
+        copy.item.map(want.matches) ?? (copy.cachedTag == want.changeTag)
+    }
+
+    /// The copy of a slot to write to: the one a run chose before, while it exists, and otherwise the oldest.
+    /// `copies` are sorted by `updatedAt`, then by identifier.
+    private static func writeTarget(of copies: [Known]) -> Known {
+        let recorded = copies.lazy.compactMap(\.target).first { target in copies.contains { $0.id == target } }
+        return copies.first { $0.id == recorded } ?? copies[0]
+    }
+
+    private static func cacheEntry(_ known: Known, sourceTag: String?, targets: [BackupSlot: String]) -> BackupCacheEntry {
+        BackupCacheEntry(id: known.id, updatedAt: known.updatedAt, owner: known.owner, sourceTag: sourceTag, target: known.owner.flatMap { targets[$0.slot] })
     }
 
     /// The items this Mac writes, and the fingerprints of keys with no private key to write.
