@@ -5,6 +5,7 @@ import Backup
 import CloudKit
 import Foundation
 import KeyStore
+import notify
 import os
 import ServiceManagement
 import SSHEncoding
@@ -643,6 +644,15 @@ struct Serve: ParsableCommand {
             ),
             onKeysChanged: { await backup?.keysDidChange() }
         )
+        // A setting that `signd config set` writes in another process reaches the waiting backup through this notification.
+        // The registration lasts as long as the process, which never leaves this function.
+        var settingsToken: Int32 = 0
+        if backup != nil {
+            let status = notify_register_dispatch(Settings.changedNotification, &settingsToken, DispatchQueue.global(qos: .utility)) { _ in
+                Task { await backup?.scheduleDidChange() }
+            }
+            if status != 0 { log.error("cannot watch for changed settings: notify status \(status)") }
+        }
         Task.detached {
             await backup?.start()
             do {

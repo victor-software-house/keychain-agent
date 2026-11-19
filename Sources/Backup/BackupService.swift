@@ -60,6 +60,14 @@ public actor BackupService {
         if !isRunning { arm() }
     }
 
+    /// A setting changed.
+    /// The wait is computed again from the new schedule, and no key change is recorded.
+    public func scheduleDidChange() {
+        guard isStarted else { return }
+        // A run in progress arms the timer again when it ends.
+        if !isRunning { arm() }
+    }
+
     /// Waits until the next slot, or `seconds` when the caller names it.
     private func arm(waiting seconds: TimeInterval? = nil) {
         timer?.cancel()
