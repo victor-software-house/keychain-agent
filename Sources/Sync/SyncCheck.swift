@@ -463,7 +463,7 @@ struct SyncCheck {
         _ = try await dropCopies(for: id, state: &state, requests: &requests)
     }
 
-    /// Drops the copy sealed to `id` from every Key record, reading a record again when another device saved it first.
+    /// Drops the copy sealed to `id` from every Key record and the `Backup` record, reading a record again when another device saved it first.
     private func dropCopies(for id: String, state: inout SyncState, requests: inout Int) async throws -> Int {
         var dropped = 0
         for record in state.keys.keys.sorted() {
@@ -484,6 +484,28 @@ struct SyncCheck {
                 break
             }
         }
+        if state.backup != nil { dropped += try await dropBackupCopy(for: id, state: &state, requests: &requests) }
         return dropped
+    }
+
+    /// Drops the copy sealed to `id` from the `Backup` record, reading it again when another device saved it first.
+    private func dropBackupCopy(for id: String, state: inout SyncState, requests: inout Int) async throws -> Int {
+        for attempt in 1 ... 3 {
+            requests += 1
+            guard let current = try await cloud.fetch(.backup, name: BackupPayload.recordName),
+                  var payload = try? Payload.decode(BackupPayload.self, from: current.payload),
+                  payload.sealed[id] != nil
+            else { return 0 }
+            payload.sealed[id] = nil
+            requests += 1
+            do {
+                _ = try await cloud.save(CloudRecord(type: .backup, name: BackupPayload.recordName, payload: Payload.encode(payload), system: current.system))
+            } catch where error.kind == .conflict && attempt < 3 {
+                continue
+            }
+            state.backup?.sealedFor = payload.sealed.keys.sorted()
+            return 1
+        }
+        return 0
     }
 }

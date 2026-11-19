@@ -137,3 +137,22 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     #expect(await c.service.checkNow().outcome == .ok)
     #expect(try c.tokens.read() == newerToken)
 }
+
+@Test(.timeLimit(.minutes(1))) func removingADeviceDropsItsCopyOfTheToken() async throws {
+    let (cloud, a, b) = try await loggedInAndWaiting()
+    #expect(await a.service.removeDevice(b.device.recordName) == SyncResult(.done))
+    #expect(Array(try backupPayload(cloud).sealed.keys) == [a.device.recordName])
+    #expect(await a.service.snapshot().backup?.sealedFor == [a.device.recordName])
+}
+
+@Test(.timeLimit(.minutes(1))) func removingADeviceReadsTheBackupRecordAgainWhenAnotherDeviceSavedItFirst() async throws {
+    let (cloud, a, b) = try await loggedInAndWaiting()
+    // Another device saves the record between the removal's read and its write.
+    cloud.beforeNextSave {
+        guard let record = cloud.record(BackupPayload.recordName) else { return }
+        cloud.put(.backup, BackupPayload.recordName, payload: record.payload)
+    }
+    #expect(await a.service.removeDevice(b.device.recordName) == SyncResult(.done))
+    #expect(Array(try backupPayload(cloud).sealed.keys) == [a.device.recordName])
+    #expect(await a.service.snapshot().backup?.sealedFor == [a.device.recordName])
+}
