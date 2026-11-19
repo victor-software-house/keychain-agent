@@ -13,11 +13,15 @@ version=$(cat VERSION)
 rm -rf build/root build/installer
 mkdir -p build/root/Applications
 ditto build/export/Signd.app build/root/Applications/Signd.app
+# The login hook: launchd loads a system LaunchAgent only when root owns it and nobody else can write it.
+mkdir -p build/root/Library/LaunchAgents
+install -m 0644 Bundle/com.victor-software-house.signd.login.plist build/root/Library/LaunchAgents/
 
 # pkgbuild marks bundles relocatable by default; signd must stay in /Applications.
 pkgbuild --analyze --root build/root build/components.plist
 plutil -replace 0.BundleIsRelocatable -bool NO build/components.plist
-pkgbuild --root build/root --component-plist build/components.plist --scripts Bundle/scripts --install-location / \
+# The runner's user owns build/root, so --ownership recommended makes root:wheel the owner of the payload.
+pkgbuild --root build/root --component-plist build/components.plist --scripts Bundle/scripts --install-location / --ownership recommended \
   --identifier com.victor-software-house.signd.pkg --version "$version" build/signd-component.pkg
 # The Installer pages are in Bundle/Installer. The license page is LICENSE.
 mkdir build/installer

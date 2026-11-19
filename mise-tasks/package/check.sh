@@ -1,5 +1,5 @@
 #!/bin/sh
-#MISE description="Check the exported Signd.app and build/signd.pkg against the packaging spec: entitlements, layout, icon, Gatekeeper, and the Installer distribution's title, architecture and macOS floor"
+#MISE description="Check the exported Signd.app and build/signd.pkg against the packaging spec: entitlements, layout, icon, Gatekeeper, the Installer distribution's title, architecture and macOS floor, and the login hook's place and owner in the payload"
 # The Release workflow runs this on the package it built, after notarization.
 set -eu
 
@@ -51,3 +51,11 @@ floor=$(sed -n 's/.*\.macOS(\.v\([0-9]*\)).*/\1.0/p' Package.swift)
 [ "$(distribution 'string(//allowed-os-versions/os-version/@min)')" = "$floor" ] || fail "the distribution's allowed-os-versions is not macOS $floor"
 [ "$(distribution 'string(//domains/@enable_localSystem)')" = true ] || fail "the distribution's domains do not enable the local system"
 echo "✔ the package's distribution has the title signd, arm64 as its host architecture, macOS $floor as its floor, and installs on the boot volume"
+
+# The payload lists the login hook, and root owns it with mode 0644.
+# launchd does not load a system LaunchAgent that another user can write.
+hook=./Library/LaunchAgents/com.victor-software-house.signd.login.plist
+pkgutil --payload-files build/signd.pkg | grep -Fx "$hook" > /dev/null || fail "the package's payload does not list $hook"
+owner=$(lsbom -f -p fUGm build/expanded/signd-component.pkg/Bom | awk -F'\t' -v hook="$hook" '$1 == hook { print $2 ":" $3 " " $4 }')
+[ "$owner" = "root:wheel 100644" ] || fail "the login hook is owned by and has the mode ${owner:-none}, not root:wheel 100644"
+echo "✔ the package installs the login hook, owned by root:wheel with mode 0644"

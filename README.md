@@ -38,6 +38,8 @@ Or install it with Homebrew, which also upgrades it:
 brew install --cask victor-software-house/tap/signd
 ```
 
+A Mobile Device Management (MDM) server installs it with no step on the Mac: see [Deploy with MDM](#deploy-with-mdm).
+
 The agent then runs at login, on `~/.ssh/signd.sock`.
 When nobody was logged in during the install, enable it yourself.
 Then point SSH at it:
@@ -53,6 +55,61 @@ export SSH_AUTH_SOCK=~/.ssh/signd.sock   # or IdentityAgent ~/.ssh/signd.sock in
 > ```text
 > Include ~/.ssh/signd/config
 > ```
+
+## Deploy with MDM
+
+An organization can deploy signd to its Macs through its Mobile Device Management (MDM) server, with no prompt and no step on any Mac.
+Each release attaches two files for that: `signd.pkg` and `signd.mobileconfig`.
+
+1. Deploy `signd.pkg` with the MDM's package install.
+   Besides the app, it installs a login hook, `/Library/LaunchAgents/com.victor-software-house.signd.login.plist`.
+   At each user's login the hook runs `signd service enable --at-login`.
+   So every user of the Mac gets the agent, including a user who logs in after the install.
+   The command exits at once when the agent is set up, and never opens System Settings.
+2. Push `signd.mobileconfig` to the Macs.
+   It is an unsigned profile: sign it or edit it as your MDM needs.
+   Its payload identifiers are fixed, so a newer release replaces it.
+
+The profile has one managed login items payload, `com.apple.servicemanagement`.
+macOS 13 or later accepts it only from an MDM, on the device channel.
+Its one rule has these values, for an admin who writes the profile by hand:
+
+| Key | Value |
+|:--|:--|
+| `RuleType` | `BundleIdentifier` |
+| `RuleValue` | `com.victor-software-house.signd` |
+| `TeamIdentifier` | the signing team, which `codesign -dv /Applications/Signd.app` prints |
+
+The rule approves the login items of the app `com.victor-software-house.signd`, and only when that team signed it.
+Those are the agent and the login hook.
+It grants nothing else: no other app of the team, and no permission besides running those items.
+macOS shows one notice that managed items were installed, and no approval prompt.
+
+A rule by label does not fit.
+From macOS 26, a rule by bundle identifier, prefix or team approves tasks that outlive their app without a prompt.
+A label rule does not.
+
+A rule by team alone would approve every login item the team ever ships.
+A rule by bundle identifier alone matches any app that copies the identifier.
+So the `TeamIdentifier` key limits it.
+
+Without the profile, macOS shows each user a notice once, and the user approves signd's login items in System Settings.
+Until then, `signd status` shows the approval as missing.
+
+To remove signd from a Mac, delete the package's files and the profile.
+Remove the hook in each user's session, then delete its file:
+
+```sh
+launchctl bootout gui/$(id -u)/com.victor-software-house.signd.login   # as each logged-in user
+sudo rm /Library/LaunchAgents/com.victor-software-house.signd.login.plist
+```
+
+`brew uninstall --cask signd` unregisters the login item of the user who runs it, and deletes the hook and the app.
+
+Another user of that Mac keeps a login item that points at the deleted app.
+launchd cannot start it.
+Nothing registers it again, since the hook is gone.
+Remove that item from the user's Login Items, or reinstall signd.
 
 ## Keys
 
