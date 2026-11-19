@@ -117,7 +117,19 @@
     The service account cannot list Recently Deleted, so that part waits for task 3.3.
 - [ ] 3.3 Restore the throwaway key from Recently Deleted and run `signd backup restore`.
   Verify the key signs on both Macs.
+  - 2026-11-19 UTC: the restore path without Recently Deleted, on 0.0.17 with `backup-removed keep` on both Macs.
+    A throwaway key imported at 20:48:00 had its item at 20:48:50.
+    `signd key delete` at 20:48:59 removed it from both Macs, and its item stayed.
+  - `signd backup restore restore-test` printed `restored restore-test` at 20:50:53.
+    The key then signed a file on both Macs.
+    `ssh-keygen -Y verify` checked each signature against the public key kept from the import.
+  - The runs at 20:48:50 and 20:49:30 left every other key item at version 5.
+    So a run writes only the items that changed ([pull request 96][pr-96]).
+  - On 0.0.16, the same restore failed with `the item has no private key`.
+    1Password gives a field outside every section the section ID `""`.
+  - Left: the restore of an item from Recently Deleted, which needs the operator's 1Password account.
 
 [so-004]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.4
 [ci-69]: https://github.com/victor-software-house/signd/actions/runs/44509529555
 [pr-83]: https://github.com/victor-software-house/signd/pull/83
+[pr-96]: https://github.com/victor-software-house/signd/pull/96
