@@ -92,7 +92,7 @@ queue:
       the user.
     blocked_by: []
     acceptance:
-      - On portable, an installed release updates to the next with no prompt, Login Items still lists signd as allowed, and the agent answers from the new version.
+      - On a test Mac, an installed release updates to the next with no prompt, Login Items still lists signd as allowed, and the agent answers from the new version.
       - An app of another team, an unnotarized app, or a root-owned bundle leaves the installed app unchanged, and signd status says why.
     plan: openspec/changes/self-update/proposal.md
     notes:
@@ -141,10 +141,10 @@ archive:
       The test suite finishes in about the time of its slowest test that needs it, on
       the 3-core CI runner.
     notes:
-      - 2026-11-18, on portable aWrappedKeySignsFastOnceOpen took 0.18 s alone and 1.99 s beside slowSignaturesDoNotDelayAListRequest, whose 3,200 queued 5 ms signatures held the thread pool; on the 3-core runner both took 21 s.
+      - 2026-11-18, on a test Mac aWrappedKeySignsFastOnceOpen took 0.18 s alone and 1.99 s beside slowSignaturesDoNotDelayAListRequest, whose 3,200 queued 5 ms signatures held the thread pool; on the 3-core runner both took 21 s.
     completed: 2026-11-18T14:35:44
     evidence:
-      - '#38 merged: on the CI runner the test run took 4.35 s, down from 21.3 s (run 44318137485 against 44315790198); aWrappedKeySignsFastOnceOpen took 3.8 s beside the RSA test, and slowSignaturesDoNotDelayAListRequest no longer appears among the five slowest. On portable, three runs: 0.17 to 0.18 s and 0.06 to 0.07 s.'
+      - '#38 merged: on the CI runner the test run took 4.35 s, down from 21.3 s (run 44318137485 against 44315790198); aWrappedKeySignsFastOnceOpen took 3.8 s beside the RSA test, and slowSignaturesDoNotDelayAListRequest no longer appears among the five slowest. On a test Mac, three runs: 0.17 to 0.18 s and 0.06 to 0.07 s.'
     disposition: completed
 
   - id: SGD-006

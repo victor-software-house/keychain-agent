@@ -16,6 +16,6 @@
 
 ## 2. Integration
 
-- [ ] 2.1 On portable, update from one release to the next.
+- [ ] 2.1 On a test Mac, update from one release to the next.
   Verify that Login Items still lists signd as allowed and the agent answers from the new version.
 - [ ] 2.2 Repeat 2.1 as a standard account.
