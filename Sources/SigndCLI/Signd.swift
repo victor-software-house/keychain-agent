@@ -435,7 +435,10 @@ struct Service: ParsableCommand {
     }
 
     struct Enable: ParsableCommand {
+        @Flag(help: "Run from the login hook: change nothing when the agent is set up, never open System Settings, and exit 0 while approval is pending.") var atLogin = false
+
         func run() throws {
+            if atLogin, Service.agent.status == .enabled, Service.agentAnswers() { return }
             // A config that cannot be written fails the command after the login item is in order, so the agent still starts.
             var includeFailed = false
             do {
@@ -468,12 +471,14 @@ struct Service: ParsableCommand {
                 }
                 print("enabled")
             case .requiresApproval:
+                if atLogin { return }
                 SMAppService.openSystemSettingsLoginItems()
                 throw Failure("approve signd in System Settings, General, Login Items")
             default:
                 var registerError: (any Error)?
                 do { try Service.agent.register() } catch { registerError = error }
                 if Service.agent.status == .requiresApproval {
+                    if atLogin { return }
                     SMAppService.openSystemSettingsLoginItems()
                     throw Failure("approve signd in System Settings, General, Login Items")
                 }

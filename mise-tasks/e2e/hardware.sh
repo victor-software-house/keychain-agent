@@ -51,6 +51,18 @@ sign_and_verify() {
 wait_for_agent
 [ "$(pgrep -x -u "$(id -u)" signd | wc -l | tr -d ' ')" = 1 ] || fail "service enable twice left other than one agent"
 
+# The login hook's command prints nothing and keeps the agent's process when the agent is set up.
+old=$(agent_pid)
+"$signd" service enable --at-login > "$work/at-login.out"
+[ ! -s "$work/at-login.out" ] || fail "service enable --at-login printed output with the agent set up"
+[ "$(agent_pid)" = "$old" ] || fail "service enable --at-login replaced a running agent"
+
+# With the login item removed, the same command registers it and starts the agent.
+"$signd" service disable > /dev/null
+"$signd" service enable --at-login > /dev/null
+wait_for_agent
+[ "$("$signd" status --json | plutil -extract loginItem raw - 2> /dev/null)" = enabled ] || fail "service enable --at-login did not enable the login item"
+
 old=$(agent_pid)
 "$signd" service restart > /dev/null
 wait_for_agent

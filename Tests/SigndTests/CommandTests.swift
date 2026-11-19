@@ -1,3 +1,4 @@
+import ArgumentParser
 import Foundation
 @testable import KeyStore
 import Testing
@@ -10,6 +11,11 @@ import Testing
     let object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any])
     #expect(object["loginItem"] as? String == "requiresApproval")
     #expect(object["sshInclude"] as? Bool == true)
+}
+
+@Test func serviceEnableTakesAtLoginFromTheHook() throws {
+    #expect(try Service.Enable.parse([]).atLogin == false)
+    #expect(try Service.Enable.parse(["--at-login"]).atLogin)
 }
 
 @Test func logShowsTheLastHourAndStreamsWithFollow() {
