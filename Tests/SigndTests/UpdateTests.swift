@@ -306,6 +306,22 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     #expect(runs.count == 1)
 }
 
+@Test func theProcessExitsOnlyWhenNoRequestIsInFlight() {
+    let inFlight = InFlight()
+    let exits = RunCount()
+    #expect(inFlight.exitIfNoneInFlight { exits.increment() })
+    #expect(exits.count == 1)
+    inFlight.begin()
+    inFlight.begin()
+    #expect(!inFlight.exitIfNoneInFlight { exits.increment() })
+    inFlight.end()
+    #expect(!inFlight.exitIfNoneInFlight { exits.increment() })
+    #expect(exits.count == 1)
+    inFlight.end()
+    #expect(inFlight.exitIfNoneInFlight { exits.increment() })
+    #expect(exits.count == 2)
+}
+
 @Test func aMissingStateFileLoadsEmpty() {
     #expect(UpdateState.load(from: noPlist) == UpdateState())
 }

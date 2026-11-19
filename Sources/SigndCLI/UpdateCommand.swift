@@ -36,22 +36,23 @@ struct UpdaterDaemon: ParsableCommand {
         signal(SIGPIPE, SIG_IGN)
         let run = UpdateRun()
         let updater = Updater(run: { await run.perform() })
-        let listener = try updater.listen()
+        let inFlight = InFlight()
+        let listener = try updater.listen(counting: inFlight)
         Task.detached {
             let schedule = UpdateSchedule()
             if schedule.isDue(lastCheck: UpdateState.load().lastCheck, interval: UpdateSettings().intervalSeconds) {
                 try? await Task.sleep(for: .seconds(schedule.delay()))
                 _ = await updater.check()
             }
-            // A request that arrives between the idle check and the exit would be killed with the process.
-            // So the listener stops first, and the updater refuses new checks before the process exits.
+            // The process exits inside the lock that guards the count of requests in flight.
+            // A request that arrives later waits on that lock and never starts work, and its client sends it again.
             while true {
                 while !(await updater.isIdle(for: 60)) { try? await Task.sleep(for: .seconds(1)) }
-                listener.cancel()
-                if await updater.shutdown(idleFor: 60) { Darwin.exit(0) }
+                _ = inFlight.exitIfNoneInFlight { Darwin.exit(0) }
+                try? await Task.sleep(for: .seconds(1))
             }
         }
-        dispatchMain()
+        withExtendedLifetime(listener) { dispatchMain() }
     }
 }
 
