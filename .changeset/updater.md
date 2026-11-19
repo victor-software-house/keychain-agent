@@ -7,3 +7,5 @@ signd: patch
 `signd status` shows whether updates are on, the interval and its source, and the last update check.
 
 `signd updater` is the launch daemon's own command, hidden from `--help`: it checks on a schedule as root and answers `signd update`.
+
+The package installs the updater daemon in `/Library/LaunchDaemons` and loads it, and each release attaches the stapled `Signd.app.zip` that the updater downloads.
