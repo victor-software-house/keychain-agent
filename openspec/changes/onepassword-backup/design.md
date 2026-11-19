@@ -79,14 +79,16 @@ So a slow 1Password call delays no SSH request.
 A run starts `backupDelay` (5 minutes) after the last key change, at most once per `backupInterval` (1 hour).
 With no change, it runs once per `backupDailyInterval` (1 day).
 
-Each is a setting with that default, which the config file or a Mobile Device Management (MDM) profile can change.
+Each is a setting with that default, read through signd's existing settings.
+`signd config` or a device management profile can change it.
 A failed run records its error for `signd status` and waits for the next slot.
 It never retries in a loop.
 
 ### 5. Lease
 
 CloudKit has no record expiry in its public API.
-So the lease is a `Lease` record called `backup`, with the holder's device identifier and an expiry 10 minutes out.
+So the lease is a `Lease` record called `lease-backup`, whose payload has the holder's device identifier and an expiry 10 minutes out.
+Like every signd record, it keeps that payload in one encrypted field.
 
 A Mac claims it with a save that uses `ifServerRecordUnchanged`, so two claims cannot both succeed.
 A lease past its expiry counts as free, and the same save takes it over.
@@ -101,9 +103,18 @@ It clears the lease at the end with a conditional save too, so a late clear neve
 It stores the token in the data-protection keychain in signd's access group, on this device only.
 Other Macs receive it sealed to their Secure Enclave keys, as keys are, so one login serves every Mac.
 
+The sealed copies live in a `Backup` record called `backup-token`.
+Its payload has the vault name and one sealed copy of the token per device, keyed by the device's record name.
+A `Key` record's payload keeps its key the same way.
+
+The check that seals shared keys for a new Mac seals the token for it too.
+The sealing takes bytes, so it uses the hybrid public key encryption (HPKE) of `Wrapping` without a `PrivateKey`.
+
+A Mac that opens its copy stores the token in its keychain under its own service name, never beside the keys.
+
 The token never appears in a file, an argument, the environment or a log.
 Its service account can write only to the backup vault.
-`signd backup logout` deletes the token on every Mac.
+`signd backup logout` deletes the `Backup` record, and each Mac deletes its stored token when a check no longer reads the record.
 
 ### 7. Restore
 
