@@ -60,6 +60,8 @@ A completed read that could not return a record still ends every record it did n
 The record keeps its last known state, and the read saves its change tokens.
 Each check, full or not, reads such a record again by name, and `signd status` shows how many are left.
 
+While a `Key` record cannot be read, the backup removes no shared item, since that record's fingerprint is unknown.
+
 A completed full fetch is trusted even when it lists no keys, so deleting the last shared key removes its item too.
 
 No run removes an item whose fingerprint matches a key in this Mac's store, whatever its scope.

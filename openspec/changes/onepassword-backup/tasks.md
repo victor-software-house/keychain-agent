@@ -41,6 +41,7 @@
     They cover a current cache with only the list call, and items read in batches of 50.
   - 2026-11-19 UTC: A plan that asks for reads returns the cache entries it has.
     An item whose read failed is left alone, and that run creates no item.
+  - 2026-11-19 UTC: [CI run 44509529555][ci-69] passed with these tests at `30801d3`.
 - [ ] 1.5 Add the schedule and the lease by design decisions 4 and 5.
   Verify unit tests with a fake clock for the delay, the interval and the daily run.
   Verify unit tests for a lease held by another Mac, an expired lease, and a renewal that fails mid-run.
@@ -67,3 +68,4 @@
   Verify the key signs on both Macs.
 
 [so-004]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.4
+[ci-69]: https://github.com/victor-software-house/signd/actions/runs/44509529555
