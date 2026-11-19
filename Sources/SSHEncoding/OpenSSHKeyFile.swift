@@ -15,6 +15,7 @@ public enum OpenSSHKeyFile {
     }
 
     static let header = "-----BEGIN OPENSSH PRIVATE KEY-----"
+    static let footer = "-----END OPENSSH PRIVATE KEY-----"
     static let magic = Data("openssh-key-v1\0".utf8)
 
     /// Reads the armored text of one unencrypted or encrypted key file.
