@@ -1,3 +1,4 @@
+import ArgumentParser
 import CryptoKit
 import Foundation
 @testable import KeyStore

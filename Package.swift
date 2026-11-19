@@ -71,6 +71,7 @@ let package = Package(
             name: "SigndTests",
             dependencies: [
                 "SSHWire", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "signd",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "NIOCore", package: "swift-nio"),
             ],
