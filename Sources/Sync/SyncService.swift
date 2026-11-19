@@ -12,7 +12,7 @@ public actor SyncService {
         /// The iCloud database.
         /// It is nil in a build without signd's iCloud entitlement, and that build keeps every key local.
         public var cloud: (any CloudStore)?
-        public var store: any KeyStore
+        public var store: any KeyStorage
         public var device: @Sendable () throws(StoreError) -> DeviceKey
         public var open: KeyOpener
         /// Where this Mac keeps the backup token.
@@ -32,7 +32,7 @@ public actor SyncService {
         public var changed: @Sendable () async -> Void
 
         public init(
-            cloud: (any CloudStore)?, store: any KeyStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey, open: @escaping KeyOpener,
+            cloud: (any CloudStore)?, store: any KeyStorage, device: @escaping @Sendable () throws(StoreError) -> DeviceKey, open: @escaping KeyOpener,
             tokens: any TokenStore, openSecret: @escaping SecretOpener,
             deviceName: @escaping @Sendable () -> String = { ThisDevice.name() }, version: String,
             interval: @escaping @Sendable () -> TimeInterval,

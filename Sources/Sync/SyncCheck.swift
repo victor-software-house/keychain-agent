@@ -34,7 +34,7 @@ struct SyncRefusal: Error, CustomStringConvertible {
 /// The work of design decisions 4 to 6, on the state of one device: a check, and the commands that change shared keys and devices.
 struct SyncCheck {
     let cloud: any CloudStore
-    let store: any KeyStore
+    let store: any KeyStorage
     let device: DeviceKey
     /// This device's name, a Mac's `LocalHostName` in lowercase.
     let deviceName: String

@@ -19,7 +19,7 @@ public actor Agent {
         let expires: Date?
     }
 
-    private let store: any KeyStore
+    private let store: any KeyStorage
     let lifetime: @Sendable () -> TimeInterval
     private let version: String
     private var stored: [StoredKey] = []
@@ -38,7 +38,7 @@ public actor Agent {
 
     /// `keysRead` runs after each successful read of the stored keys, as the SSH routing files follow them.
     public init(
-        store: any KeyStore, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openStored,
+        store: any KeyStorage, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openStored,
         keysRead: @escaping @Sendable ([StoredKey]) -> Void = { _ in }
     ) {
         self.store = store

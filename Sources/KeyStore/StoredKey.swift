@@ -97,7 +97,7 @@ public enum StoreError: Error, Sendable, Equatable, CustomStringConvertible {
 }
 
 /// Where stored keys live.
-public protocol KeyStore: Sendable {
+public protocol KeyStorage: Sendable {
     func list() throws(StoreError) -> [StoredKey]
     func add(_ key: StoredKey) throws(StoreError)
     /// Replaces the key of the same name in one keychain write.

@@ -7,7 +7,7 @@ import SSHEncoding
 ///
 /// Items take the first access group of the binary's entitlements, so the store names no team.
 /// They are readable after the first unlock after boot, without a prompt, and never leave this Mac.
-public struct KeychainStore: KeyStore {
+public struct KeychainStore: KeyStorage {
     static let service = "com.victor-software-house.signd.key"
 
     public init() {}

@@ -25,7 +25,7 @@ struct LeaseLost: Error, CustomStringConvertible {
 public struct BackupRun: Sendable {
     public struct Dependencies: Sendable {
         public var cloud: any CloudStore
-        public var store: any KeyStore
+        public var store: any KeyStorage
         /// Where this Mac keeps the backup token.
         public var tokens: any TokenStore
         public var device: @Sendable () throws(StoreError) -> DeviceKey
@@ -38,7 +38,7 @@ public struct BackupRun: Sendable {
         public var cacheURL: URL
 
         public init(
-            cloud: any CloudStore, store: any KeyStore, tokens: any TokenStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey,
+            cloud: any CloudStore, store: any KeyStorage, tokens: any TokenStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey,
             deviceName: @escaping @Sendable () -> String = { ThisDevice.name() }, open: @escaping KeyOpener, openVault: @escaping BackupVaultOpener,
             removed: @escaping @Sendable () -> BackupRemoved, now: @escaping @Sendable () -> Date = { Date() }, cacheURL: URL = BackupCache.defaultURL
         ) {

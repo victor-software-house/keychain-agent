@@ -9,7 +9,7 @@ import SSHEncoding
 import Testing
 
 /// An in-memory store, for tests on runners that lack a Secure Enclave and signd's entitlements.
-final class MemoryStore: KeyStore {
+final class MemoryStore: KeyStorage {
     private let keys = Mutex<[StoredKey]>([])
 
     func list() throws(StoreError) -> [StoredKey] { keys.withLock { $0 } }
