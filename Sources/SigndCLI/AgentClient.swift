@@ -1,5 +1,6 @@
 import AgentProtocol
 import AgentServer
+import Backup
 import Darwin
 import Foundation
 import SSHEncoding
@@ -92,6 +93,27 @@ struct AgentClient {
     /// Asks the agent to delete the backup token on every Mac, or nil when no agent answers.
     func logOutOfBackup() -> SyncResult? {
         decoded(PrivateExtension.backupLogout, timeout: 120)
+    }
+
+    /// The keys of the backup, or nil when no agent answers.
+    func backupKeys() -> BackupRestoreList? {
+        backupRestore(BackupRestoreRequest(names: [], all: false, local: false, listOnly: true))
+    }
+
+    /// Asks the agent to restore keys from the backup, or nil when no agent answers.
+    func restoreBackupKeys(names: [String], all: Bool, local: Bool) -> BackupRestoreResult? {
+        backupRestore(BackupRestoreRequest(names: names, all: all, local: local, listOnly: false))
+    }
+
+    /// The backup's status, or nil when no agent answers.
+    func backupStatus() -> BackupStatus? {
+        decoded(PrivateExtension.backupStatus, timeout: 5)
+    }
+
+    private func backupRestore<Value: Decodable>(_ request: BackupRestoreRequest) -> Value? {
+        guard let json = try? JSONEncoder().encode(request) else { return nil }
+        // A restore shares each key through iCloud one after another, so it waits longer than a list.
+        return decoded(PrivateExtension.backupRestore, argument: String(decoding: json, as: UTF8.self), timeout: request.listOnly ? 120 : 600)
     }
 
     /// The devices of the account, or nil when no agent answers.

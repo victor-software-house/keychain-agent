@@ -1,4 +1,5 @@
 import AgentProtocol
+import Backup
 import Darwin
 import Foundation
 import KeyStore
@@ -30,9 +31,13 @@ public enum PrivateExtension {
     public static let backupLogin = "signd-backup-login@victor-software-house.com"
     /// Deletes the backup token on every Mac, and answers with a `SyncResult` as JSON.
     public static let backupLogout = "signd-backup-logout@victor-software-house.com"
+    /// Lists the backup's keys, or restores the ones its contents name; answers with a `BackupRestoreList` or a `BackupRestoreResult` as JSON.
+    public static let backupRestore = "signd-backup-restore@victor-software-house.com"
+    /// Answers with the backup's `BackupStatus` as JSON.
+    public static let backupStatus = "signd-backup-status@victor-software-house.com"
 
     /// Every extension of signd's command line; a connection that the SSH client forwarded may use none of them.
-    static let all: Set<String> = [status, reload, sync, syncState, share, deleteShared, devices, removeDevice, backupLogin, backupLogout]
+    static let all: Set<String> = [status, reload, sync, syncState, share, deleteShared, devices, removeDevice, backupLogin, backupLogout, backupRestore, backupStatus]
 }
 
 /// What a backup login carries to the agent: the token, as JSON in the extension's one string argument.
@@ -46,10 +51,28 @@ public struct BackupLoginRequest: Codable, Sendable {
     }
 }
 
-/// The backup login and logout the agent answers; the agent is the only process that calls CloudKit.
-public protocol BackupLogin: Sendable {
+/// What a backup restore carries to the agent: the keys to restore, or with `listOnly` a request for the backup's keys.
+public struct BackupRestoreRequest: Codable, Sendable {
+    public let names: [String]
+    public let all: Bool
+    public let local: Bool
+    public let listOnly: Bool
+
+    public init(names: [String], all: Bool, local: Bool, listOnly: Bool) {
+        self.names = names
+        self.all = all
+        self.local = local
+        self.listOnly = listOnly
+    }
+}
+
+/// The backup commands the agent answers; the agent is the only process that calls CloudKit and 1Password.
+public protocol BackupCommands: Sendable {
     func logIn(token: String, vault: String) async -> SyncResult
     func logOut() async -> SyncResult
+    func restore(names: [String], all: Bool, local: Bool) async -> BackupRestoreResult
+    func list() async -> BackupRestoreList
+    func status() async -> BackupStatus
 }
 
 /// A file by its device and inode, so two paths to one file match.
@@ -107,7 +130,7 @@ struct FrameDecoder: ByteToMessageDecoder {
 public struct Server: Sendable {
     let agent: Agent
     let sync: SyncService?
-    let backup: (any BackupLogin)?
+    let backup: (any BackupCommands)?
     /// Called after a command reloaded the keys, as a key imported, created or deleted on this Mac.
     let onKeysChanged: (@Sendable () async -> Void)?
     let pool: NIOThreadPool
@@ -115,11 +138,11 @@ public struct Server: Sendable {
     /// A connection must run the same file to use a private extension.
     let executable: FileIdentity?
 
-    public init(agent: Agent, sync: SyncService? = nil, backup: (any BackupLogin)? = nil, onKeysChanged: (@Sendable () async -> Void)? = nil) {
+    public init(agent: Agent, sync: SyncService? = nil, backup: (any BackupCommands)? = nil, onKeysChanged: (@Sendable () async -> Void)? = nil) {
         self.init(agent: agent, sync: sync, backup: backup, onKeysChanged: onKeysChanged, executable: FileIdentity(executableOf: getpid()))
     }
 
-    init(agent: Agent, sync: SyncService?, backup: (any BackupLogin)? = nil, onKeysChanged: (@Sendable () async -> Void)? = nil, executable: FileIdentity?) {
+    init(agent: Agent, sync: SyncService?, backup: (any BackupCommands)? = nil, onKeysChanged: (@Sendable () async -> Void)? = nil, executable: FileIdentity?) {
         self.agent = agent
         self.sync = sync
         self.backup = backup
@@ -260,6 +283,15 @@ public struct Server: Sendable {
         case PrivateExtension.backupLogout:
             guard let backup else { return .failure }
             return Self.json(await backup.logOut(), name: name)
+        case PrivateExtension.backupRestore:
+            guard let backup, let argument = Self.argument(contents),
+                  let request = try? JSONDecoder().decode(BackupRestoreRequest.self, from: Data(argument.utf8))
+            else { return .failure }
+            if request.listOnly { return Self.json(await backup.list(), name: name) }
+            return Self.json(await backup.restore(names: request.names, all: request.all, local: request.local), name: name)
+        case PrivateExtension.backupStatus:
+            guard let backup else { return .failure }
+            return Self.json(await backup.status(), name: name)
         case PrivateExtension.status:
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys

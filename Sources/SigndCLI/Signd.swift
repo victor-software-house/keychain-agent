@@ -269,11 +269,12 @@ struct Status: ParsableCommand {
         let agentAnswers: Bool
         let agent: AgentStatus?
         let sync: SyncStatus
+        let backup: BackupStatus?
         let loginItem: LoginItemState
         let isSSHIncludeEnabled: Bool
 
         enum CodingKeys: String, CodingKey {
-            case version, socket, agentAnswers, agent, sync, loginItem
+            case version, socket, agentAnswers, agent, sync, backup, loginItem
             case isSSHIncludeEnabled = "sshInclude"
         }
     }
@@ -282,9 +283,10 @@ struct Status: ParsableCommand {
         let client = AgentClient(path: socket)
         let agent = client.status()
         let sync = SyncStatus(state: client.syncState() ?? SyncState.load())
+        let backup = BackupCommand.status(client: client, settings: Settings())
         let loginItem = Service.loginItem
         let isSSHIncludeEnabled = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
-        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, loginItem: loginItem, isSSHIncludeEnabled: isSSHIncludeEnabled)
+        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, backup: backup, loginItem: loginItem, isSSHIncludeEnabled: isSSHIncludeEnabled)
         if output.json {
             try output.print(report)
         } else {
@@ -310,6 +312,7 @@ struct Status: ParsableCommand {
             print("devices  \(sync.devices)")
             for setting in sync.ignoredSettings { print("ignored  \(setting.key) \(setting.value) (local): \(setting.reason)") }
             for key in sync.skipped { print("\(key.kind == .waiting ? "waiting" : "skipped")  \(key.name): \(key.reason)") }
+            for line in backup.lines { print(line) }
         }
         if agent == nil { throw ExitCode.failure }
     }
@@ -610,6 +613,14 @@ struct Serve: ParsableCommand {
             )
             return BackupService(BackupService.Dependencies(run: { await run.perform() }, schedule: { BackupSchedule(settings: settings) }))
         }
+        let restore = BackupRestore(
+            BackupRestore.Dependencies(
+                tokens: tokens, openVault: OnePasswordVault.opener(version: signdVersion), vault: { settings.text(.backupVault) }, store: store,
+                wrap: { (name, key, comment, hosts) throws(StoreError) -> StoredKey in
+                    try KeychainStore.makeWrappedKey(name: name, privateKey: key, comment: comment, hosts: hosts, source: "backup")
+                }
+            )
+        )
         let sync = SyncService(
             SyncService.Dependencies(
                 cloud: cloud, store: store, device: readDevice, open: openKey,
@@ -621,7 +632,11 @@ struct Serve: ParsableCommand {
             )
         )
         let server = Server(
-            agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)),
+            agent: agent, sync: sync,
+            backup: BackupAgent(
+                service: BackupLoginService(sync: sync, version: signdVersion), restorer: restore, sync: sync, agent: agent, backup: backup, tokens: tokens,
+                settings: settings
+            ),
             onKeysChanged: { await backup?.keysDidChange() }
         )
         Task.detached {
