@@ -15,8 +15,11 @@
     `package:check` reads the payload list and the bill of materials.
     `plutil -lint` accepts the plist, and the owner filter ran on a system receipt.
     The package is not built yet: the Release workflow builds it.
+  - 2026-11-19 UTC: in the [Release dry run][dry-run-mdm], `package:check` found the hook in the package, owned by root:wheel with mode 0644.
 - [ ] 1.3 Delete the hook in the cask's `uninstall` in the Homebrew tap.
   Verify the spec scenario on a Mac.
+  - 2026-11-19 UTC: the tap's cask unloads the job `com.victor-software-house.signd.login`, and its `pkgutil` step deletes the file the receipt lists ([homebrew-tap #5][tap-5]).
+    The uninstall has not run on a Mac yet.
 
 ## 2. Example profile
 
@@ -28,6 +31,8 @@
   Verify the attached file's team matches the app's.
   - 2026-11-19 UTC: with a stub `codesign`, the task wrote the team into the profile and refused `not set` and a short value.
     The Release workflow runs and uploads it; that has not run yet.
+  - 2026-11-19 UTC: in the [Release dry run][dry-run-mdm], the task wrote the signed app's team into the profile.
+    The run uploaded `signd.mobileconfig` beside `signd.pkg`.
 - [x] 2.3 Add a README section for Mobile Device Management (MDM) admins, titled "Deploy with MDM".
   It covers the package, the profile, the rule's values, what it grants and why not a label rule.
   It also covers removal: the hook's commands, and what other users keep after an uninstall.
@@ -38,3 +43,6 @@
 
 - [ ] 3.1 Push the profile and the package through an MDM to a test Mac with no user logged in, then log in.
   Verify the spec scenario with `signd status` and Login Items, and record whether macOS showed any prompt.
+
+[dry-run-mdm]: https://github.com/victor-software-house/signd/actions/runs/44546363536
+[tap-5]: https://github.com/victor-software-house/homebrew-tap/pull/5
