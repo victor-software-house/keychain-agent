@@ -133,6 +133,7 @@ queue:
       - On a Mac, signd config set backup-delay 30s after a key change starts the run within a minute, with no agent restart.
     notes:
       - '2026-11-19 UTC: after signd config set lowered both settings, the agent kept the wait it had armed, while signd backup status showed the next backup as due; signd service restart started the run.'
+      - '2026-11-19 UTC: cause: the agent read the schedule once, when it armed its timer, and nothing told it that another process had written a setting. Design: the command posts a Darwin notification after it writes a setting, and the agent arms the backup timer again when it arrives.'
 archive:
   - id: SGD-010
     title: Sync shared keys through iCloud
