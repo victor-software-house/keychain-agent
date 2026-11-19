@@ -28,6 +28,7 @@ None.
 ### Modified Capabilities
 
 - `packaging`: the login hook, the example profile as a release asset, and the cask removing the hook.
+- `cli`: `service enable --at-login` never opens Login Items, and exits 0 while approval is pending.
 
 ## Impact
 

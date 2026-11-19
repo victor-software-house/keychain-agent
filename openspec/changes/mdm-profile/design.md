@@ -51,6 +51,9 @@ With a label rule, macOS 26 still shows its prompt for tasks that outlive their 
 
 `Bundle/signd.mobileconfig` has the placeholder `TEAM_IDENTIFIER`.
 After signing, the package task reads `TeamIdentifier` from `codesign -dv` on the built app.
+It fails unless the value matches `^[A-Z0-9]{10}$`.
+An unsigned build shows `not set` there.
+
 Then `plutil -replace` swaps in the team.
 The task then checks the result with `plutil -lint` and checks that no placeholder is left.
 The release uploads `signd.mobileconfig` beside `signd.pkg`.
@@ -63,9 +66,19 @@ Its payload UUIDs are fixed in the file, so a newer release replaces the same pr
 - [Login Items shows two signd rows on a Mac with no profile] → Both name signd, and the hook exits at once; `signd status` reports both.
 - [A user turns off the hook in Login Items] → The agent the user registered keeps running; only a new user would miss it.
 - [An admin writes a rule by label] → The README gives the bundle rule and explains why a label rule does not cover macOS 26.
+- [The cask's `uninstall` runs as one user] → It unregisters that user's login item, then deletes the hook and the app.
+  Other users keep a registration that points at the deleted app: launchd cannot start it, and nothing registers it again, since the hook is gone.
+  The README's uninstall section covers this.
 
 ## Migration Plan
 
 A Mac that installed an earlier package gets the hook with the next package or cask upgrade.
-The hook finds the agent set up and exits.
-Rollback is the previous package; its cask `uninstall` deletes the hook.
+The hook then finds the agent set up and exits.
+Under MDM, the MDM ships each release as a package.
+
+A Mac that updates itself never runs a package again.
+So the privileged step of the [self-update change](../self-update/design.md) installs the hook after its swap.
+
+Rollback is the previous package, which does not know the hook.
+With that older binary, the hook's command fails with a usage error at each login, shows nothing and changes nothing.
+The README's MDM section gives the commands that remove the hook: `launchctl bootout` in each user's session, then deleting the file.

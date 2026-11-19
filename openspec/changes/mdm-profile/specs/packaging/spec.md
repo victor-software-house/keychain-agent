@@ -35,11 +35,11 @@ The release job SHALL take the team identifier from the signed app.
 
 ### Requirement: The cask removes what it installed
 
-The cask's `uninstall` SHALL unregister the login item and delete the login hook before it deletes the app.
+The cask's `uninstall` SHALL unregister the login item of the user who runs it and delete the login hook before it deletes the app.
 Its `zap` SHALL delete `~/Library/Application Support/signd` and `~/.ssh/signd`.
 Neither SHALL delete a key.
 
 #### Scenario: An uninstall
 
 - **WHEN** `brew uninstall --cask signd` runs
-- **THEN** Login Items lists no signd item, `/Library/LaunchAgents/com.victor-software-house.signd.login.plist` and `/Applications/Signd.app` are gone
+- **THEN** Login Items lists no signd item for that user, `/Library/LaunchAgents/com.victor-software-house.signd.login.plist` and `/Applications/Signd.app` are gone
