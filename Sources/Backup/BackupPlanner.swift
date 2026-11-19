@@ -138,7 +138,7 @@ public enum BackupPlanner {
     /// `unread` are the IDs of that fetch whose read failed.
     /// An item the list shows that is tagged, and is in none of `items`, `unread` and a current `cache` entry, goes to `plan.fetch`.
     public static func plan(
-        sources: BackupSources, overviews: [ItemOverview], items: [Item], unread: [String] = [], cache: [String: BackupCacheEntry], removed: BackupRemoval
+        sources: BackupSources, overviews: [ItemOverview], items: [Item], unread: [String] = [], cache: [String: BackupCacheEntry], removal: BackupRemoval
     ) -> BackupPlan {
         let fetched = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var known: [Known] = []
@@ -228,7 +228,7 @@ public enum BackupPlanner {
                 guard let copies = groups[slot], isRemovable(slot, sources: sources) else { continue }
                 ids += copies.map(\.id)
             }
-            switch removed {
+            switch removal {
             case .delete:
                 plan.delete = chunks(ids, deleteBatch)
                 touched.formUnion(ids)

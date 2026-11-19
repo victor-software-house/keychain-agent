@@ -156,7 +156,7 @@ private final class BackupRig: Sendable {
     let device: DeviceKey
     let run: BackupRun
 
-    init(removed: BackupRemoval = .delete) throws {
+    init(removal: BackupRemoval = .delete) throws {
         let device = DeviceKey(handle: agreement.rawRepresentation, publicKey: agreement.publicKey.x963Representation)
         self.device = device
         let cloud = cloud
@@ -172,7 +172,7 @@ private final class BackupRig: Sendable {
                     vault.recordOpen(name)
                     return vault
                 },
-                removal: { removed }, now: { clock.now }, cacheURL: cacheURL
+                removal: { removal }, now: { clock.now }, cacheURL: cacheURL
             )
         )
         cloud.put(.backup, BackupPayload.recordName, payload: Payload.encode(BackupPayload(vault: "signd", sealed: [:])))
@@ -572,7 +572,7 @@ private func rigWithThreePuts() async throws -> BackupRig {
 }
 
 @Test(.timeLimit(.minutes(1))) func aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn() async throws {
-    let rig = try BackupRig(removed: .archive)
+    let rig = try BackupRig(removal: .archive)
     for name in ["alpha", "beta", "gamma", "delta"] { try rig.share(name) }
     #expect(await rig.run.perform() == BackupResult(.ok))
     let alpha = try #require(rig.vault.item(titled: "alpha")).id

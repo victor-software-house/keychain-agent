@@ -164,7 +164,7 @@ public actor SyncService {
     /// Stores the backup token on this Mac and seals it to every device, so one login serves every Mac.
     public func logInToBackup(token: Data, vault: String) async -> SyncResult {
         guard dependencies.cloud != nil else { return SyncResult(.off, Self.offMessage) }
-        return await exclusive { service in await service.runBackupLogin(token: token, vault: vault) }
+        return await exclusive { service in await service.runLogInToBackup(token: token, vault: vault) }
     }
 
     /// Deletes the `Backup` record, which makes every Mac delete its token at its next check, and this Mac's token.
@@ -178,7 +178,7 @@ public actor SyncService {
             }
         }
         return await exclusive { service in await service.runCommand { work, state, requests, _ in
-            try await work.backupLogout(state: &state, requests: &requests)
+            try await work.logOutOfBackup(state: &state, requests: &requests)
         } }
     }
 
@@ -200,7 +200,7 @@ public actor SyncService {
         }
     }
 
-    private func runBackupLogin(token: Data, vault: String) async -> SyncResult {
+    private func runLogInToBackup(token: Data, vault: String) async -> SyncResult {
         // A login seals the token to the devices of the account, so a device that has not checked yet checks first.
         if state.databaseToken == nil || account == nil {
             _ = await runCheck(forced: false)
@@ -209,7 +209,7 @@ public actor SyncService {
             return SyncResult(.off, state.lastMessage ?? "no iCloud account is available")
         }
         return await runCommand { work, state, requests, _ in
-            try await work.backupLogin(token: token, vault: vault, state: &state, requests: &requests)
+            try await work.logInToBackup(token: token, vault: vault, state: &state, requests: &requests)
         }
     }
 

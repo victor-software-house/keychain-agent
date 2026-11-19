@@ -397,7 +397,7 @@ struct SyncCheck {
     // MARK: Commands
 
     /// Logs in to the backup: seals the token to every known device, saves the `Backup` record, and stores this device's copy.
-    func backupLogin(token: Data, vault: String, state: inout SyncState, requests: inout Int) async throws {
+    func logInToBackup(token: Data, vault: String, state: inout SyncState, requests: inout Int) async throws {
         try await publish(&state, requests: &requests)
         var devices = state.devices
         if devices[me] == nil { devices[me] = DeviceEntry(name: deviceName, publicKey: device.publicKey, system: nil) }
@@ -422,7 +422,7 @@ struct SyncCheck {
     }
 
     /// Deletes the `Backup` record and this device's token; every other device deletes its token at its next check.
-    func backupLogout(state: inout SyncState, requests: inout Int) async throws {
+    func logOutOfBackup(state: inout SyncState, requests: inout Int) async throws {
         requests += 1
         try await cloud.delete(.backup, name: BackupPayload.recordName)
         try tokens.delete()

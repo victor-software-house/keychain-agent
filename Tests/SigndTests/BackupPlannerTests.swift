@@ -96,13 +96,13 @@ private func overview(_ item: Item, state: ItemState = .active) -> ItemOverview 
 
 /// Plans a run, and plans again with the full items that the first plan lists to fetch.
 private func plan(
-    _ sources: BackupSources, vault: [Item], archived: [Item] = [], removed: BackupRemoval = .delete, cache: [String: BackupCacheEntry] = [:]
+    _ sources: BackupSources, vault: [Item], archived: [Item] = [], removal: BackupRemoval = .delete, cache: [String: BackupCacheEntry] = [:]
 ) -> BackupPlan {
     let overviews = vault.map { overview($0) } + archived.map { overview($0, state: .archived) }
-    let first = BackupPlanner.plan(sources: sources, overviews: overviews, items: [], cache: cache, removed: removed)
+    let first = BackupPlanner.plan(sources: sources, overviews: overviews, items: [], cache: cache, removal: removal)
     let ids = Set(first.fetch.flatMap { $0 })
     guard !ids.isEmpty else { return first }
-    return BackupPlanner.plan(sources: sources, overviews: overviews, items: vault.filter { ids.contains($0.id) }, cache: cache, removed: removed)
+    return BackupPlanner.plan(sources: sources, overviews: overviews, items: vault.filter { ids.contains($0.id) }, cache: cache, removal: removal)
 }
 
 private func ownerOfKey(_ name: String, scope: String = BackupFormat.shared) -> BackupOwner {
@@ -201,12 +201,12 @@ private func rewritten(_ item: Item, privateKey: String) -> Item {
 }
 
 @Test(arguments: BackupRemoval.allCases)
-func aRemovedKeysItemFollowsBackupRemoved(removed: BackupRemoval) throws {
+func aRemovedKeysItemFollowsBackupRemoved(removal: BackupRemoval) throws {
     let gone = try keyItem(key("gone"), id: "item-gone")
     let kept = try keyItem(key("kept"), id: "item-kept")
-    let result = plan(sources(shared: [key("kept")]), vault: [gone, kept], removed: removed)
+    let result = plan(sources(shared: [key("kept")]), vault: [gone, kept], removal: removal)
     #expect(result.create.isEmpty && result.put.isEmpty)
-    switch removed {
+    switch removal {
     case .delete:
         #expect(result.delete == [["item-gone"]])
         #expect(result.archive.isEmpty && result.keep.isEmpty)
@@ -231,7 +231,7 @@ func aRemovedKeysItemFollowsBackupRemoved(removed: BackupRemoval) throws {
     let untagged = foreignItem(id: "untagged")
     let otherTag = foreignItem(id: "other-tag", tags: ["work"])
     let overviews = [gone, untagged, otherTag].map { overview($0) }
-    let first = BackupPlanner.plan(sources: sources(), overviews: overviews, items: [], cache: [:], removed: .delete)
+    let first = BackupPlanner.plan(sources: sources(), overviews: overviews, items: [], cache: [:], removal: .delete)
     // An item without the tag is never read.
     #expect(first.fetch == [["item-gone"]])
     let result = plan(sources(), vault: [gone, untagged, otherTag])
@@ -291,7 +291,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
 
 @Test func anArchivedItemIsNotPlannedOrRead() throws {
     let archived = try keyItem(key("gone"), id: "item-archived")
-    let first = BackupPlanner.plan(sources: sources(shared: [key("work")]), overviews: [overview(archived, state: .archived)], items: [], cache: [:], removed: .delete)
+    let first = BackupPlanner.plan(sources: sources(shared: [key("work")]), overviews: [overview(archived, state: .archived)], items: [], cache: [:], removal: .delete)
     #expect(first.fetch.isEmpty)
     #expect(first.create.count == 1)
     #expect(first.delete.isEmpty && first.archive.isEmpty && first.cache.isEmpty)
@@ -411,15 +411,15 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
 
         // The cache shows this Mac wrote the same source to the old item, which is no copy of the right one.
         let cached = [old.id: BackupCacheEntry(id: old.id, updatedAt: old.updatedAt, owner: BackupOwner(item: old), sourceTag: tagged("tag-1"))]
-        let withCache = BackupPlanner.plan(sources: sources(shared: [key]), overviews: [overview(old)], items: [], cache: cached, removed: .delete)
+        let withCache = BackupPlanner.plan(sources: sources(shared: [key]), overviews: [overview(old)], items: [], cache: cached, removal: .delete)
         #expect(withCache.create.first?.map(\.content.category) == [right])
 
         // Once the right item exists, the old one goes by the setting, and the right one is current.
         let new = moved(try keyItem(key, id: "item-new"), to: right)
-        for removed in BackupRemoval.allCases {
-            let second = plan(sources(shared: [key]), vault: [old, new], removed: removed)
+        for removal in BackupRemoval.allCases {
+            let second = plan(sources(shared: [key]), vault: [old, new], removal: removal)
             #expect(second.create.isEmpty && second.put.isEmpty)
-            switch removed {
+            switch removal {
             case .delete: #expect(second.delete == [["item-old"]] && second.archive.isEmpty && second.keep.isEmpty)
             case .archive: #expect(second.archive == ["item-old"] && second.delete.isEmpty && second.keep.isEmpty)
             case .keep: #expect(second.keep == ["item-old"] && second.delete.isEmpty && second.archive.isEmpty && second.isIdle)
@@ -492,7 +492,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let theirs = listItem([enclaveKey("other")], device: peer, name: "mac-b", id: "list-theirs")
     #expect(plan(sources(devices: [me, peer]), vault: [theirs]).isIdle)
     #expect(plan(sources(devices: [me]), vault: [theirs]).delete == [["list-theirs"]])
-    #expect(plan(sources(devices: [me]), vault: [theirs], removed: .archive).archive == ["list-theirs"])
+    #expect(plan(sources(devices: [me]), vault: [theirs], removal: .archive).archive == ["list-theirs"])
     // The record exists but could not be read.
     let unreadable = [UnreadableRecord(type: .device, name: peer)]
     #expect(plan(sources(devices: [me], unreadable: unreadable), vault: [theirs]).isIdle)
@@ -512,10 +512,10 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let gone = try keyItem(key("gone"), id: "item-gone")
     let theirsList = listItem([enclaveKey("other")], device: peer, name: "mac-b", id: "list-theirs")
     let mine = try keyItem(key("mine"), scope: me, id: "item-mine")
-    for removed in BackupRemoval.allCases {
+    for removal in BackupRemoval.allCases {
         let result = plan(
             sources(shared: [key("new")], read: .incomplete(reason: "the fetch stopped before its last page"), devices: []),
-            vault: [gone, theirsList, mine], removed: removed
+            vault: [gone, theirsList, mine], removal: removal
         )
         #expect(result.delete.isEmpty && result.archive.isEmpty && result.keep.isEmpty)
         #expect(result.skippedRemovals == "the fetch stopped before its last page")
@@ -531,7 +531,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
 @Test func aCompletedEmptyReadRemovesTheLastSharedKeysItem() throws {
     let last = try keyItem(key("last"), id: "item-last")
     #expect(plan(sources(shared: []), vault: [last]).delete == [["item-last"]])
-    #expect(plan(sources(shared: []), vault: [last], removed: .archive).archive == ["item-last"])
+    #expect(plan(sources(shared: []), vault: [last], removal: .archive).archive == ["item-last"])
 }
 
 @Test func aKeyInThisMacsStoreIsNeverRemoved() throws {
@@ -546,8 +546,8 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let gone = try keyItem(key("gone"), id: "item-gone")
     // The item's name need not be the unreadable record's name, so no shared item is removed.
     let mine = try keyItem(key("mine"), scope: me, id: "item-mine")
-    for removed in BackupRemoval.allCases {
-        let result = plan(sources(unreadable: [UnreadableRecord(type: .key, name: "key-unread")]), vault: [unread, gone, mine], removed: removed)
+    for removal in BackupRemoval.allCases {
+        let result = plan(sources(unreadable: [UnreadableRecord(type: .key, name: "key-unread")]), vault: [unread, gone, mine], removal: removal)
         #expect(!result.delete.joined().contains("item-unread") && !result.delete.joined().contains("item-gone"))
         #expect(!result.archive.contains("item-unread") && !result.archive.contains("item-gone"))
         #expect(!result.keep.contains("item-unread") && !result.keep.contains("item-gone"))
@@ -603,7 +603,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     // A copy the cache shows current counts too, and is not read.
     let cache = ["copy-current": BackupCacheEntry(id: "copy-current", updatedAt: later, owner: ownerOfKey("work"), sourceTag: tagged("tag-1"))]
     let overviews = [overview(stale), overview(current)]
-    let result = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [stale], cache: cache, removed: .delete)
+    let result = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [stale], cache: cache, removal: .delete)
     #expect(result.fetch.isEmpty && result.isIdle)
 }
 
@@ -611,7 +611,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let first = try keyItem(key("gone"), id: "copy-1", updatedAt: epoch)
     let second = try keyItem(key("gone"), id: "copy-2", updatedAt: later)
     #expect(plan(sources(), vault: [second, first]).delete == [["copy-1", "copy-2"]])
-    #expect(plan(sources(), vault: [second, first], removed: .archive).archive == ["copy-1", "copy-2"])
+    #expect(plan(sources(), vault: [second, first], removal: .archive).archive == ["copy-1", "copy-2"])
 }
 
 // MARK: Items that could not be read
@@ -623,10 +623,10 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let overviews = [stale, gone, broken].map { overview($0) }
     let wanted = sources(shared: [key("work", hosts: ["new"], tag: "tag-2"), key("new")])
 
-    let first = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [], cache: [:], removed: .delete)
+    let first = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [], cache: [:], removal: .delete)
     #expect(first.fetch == [["item-work", "item-gone", "item-broken"]])
 
-    let result = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [stale, gone], unread: ["item-broken"], cache: [:], removed: .delete)
+    let result = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [stale, gone], unread: ["item-broken"], cache: [:], removal: .delete)
     #expect(result.fetch.isEmpty)
     #expect(result.unread == ["item-broken"])
     #expect(result.create.isEmpty)
@@ -641,7 +641,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let entry = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: tagged("tag-1"))
     let result = BackupPlanner.plan(
         sources: sources(shared: [key("current"), key("added")]), overviews: [overview(current), overview(added)], items: [],
-        cache: ["item-current": entry], removed: .delete
+        cache: ["item-current": entry], removal: .delete
     )
     #expect(result.fetch == [["item-added"]])
     #expect(result.cache == ["item-current": entry])
@@ -649,7 +649,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let recorded = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: tagged("tag-1"), target: "item-other")
     let again = BackupPlanner.plan(
         sources: sources(shared: [key("current"), key("added")]), overviews: [overview(current), overview(added)], items: [],
-        cache: ["item-current": recorded], removed: .delete
+        cache: ["item-current": recorded], removal: .delete
     )
     #expect(again.cache == ["item-current": recorded])
     #expect(result.create.isEmpty && result.put.isEmpty && result.delete.isEmpty)
@@ -661,7 +661,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let tag = BackupFormat.changeTag(source: "enclave-1", deviceName: "mac-a")
     let cache = ["list-mine": BackupCacheEntry(id: "list-mine", updatedAt: epoch, owner: BackupOwner(slot: .list(device: me), name: nil), sourceTag: tag)]
     func run(_ sources: BackupSources, cache: [String: BackupCacheEntry]) -> BackupPlan {
-        BackupPlanner.plan(sources: sources, overviews: [overview(list)], items: [], cache: cache, removed: .delete)
+        BackupPlanner.plan(sources: sources, overviews: [overview(list)], items: [], cache: cache, removal: .delete)
     }
 
     #expect(run(sources(secureEnclave: [enclaveKey("a")]), cache: cache).isIdle)
@@ -691,16 +691,16 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let listed = [overview(item), overview(foreignItem())]
     let wanted = sources(shared: [key("work")])
 
-    let first = BackupPlanner.plan(sources: wanted, overviews: listed, items: [], cache: [:], removed: .delete)
+    let first = BackupPlanner.plan(sources: wanted, overviews: listed, items: [], cache: [:], removal: .delete)
     #expect(first.fetch == [["item-work"]])
     #expect(first.create.isEmpty && first.put.isEmpty && first.delete.isEmpty)
 
-    let second = BackupPlanner.plan(sources: wanted, overviews: listed, items: [item], cache: [:], removed: .delete)
+    let second = BackupPlanner.plan(sources: wanted, overviews: listed, items: [item], cache: [:], removal: .delete)
     #expect(second.isIdle)
     let entry = BackupCacheEntry(id: "item-work", updatedAt: epoch, owner: ownerOfKey("work"), sourceTag: tagged("tag-1"))
     #expect(second.cache == ["item-work": entry])
 
-    let third = BackupPlanner.plan(sources: wanted, overviews: listed, items: [], cache: second.cache, removed: .delete)
+    let third = BackupPlanner.plan(sources: wanted, overviews: listed, items: [], cache: second.cache, removal: .delete)
     #expect(third.fetch.isEmpty)
     #expect(third.isIdle)
     #expect(third.cache == second.cache)
@@ -722,20 +722,20 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     ]
     let movedLater = try keyItem(key("moved"), id: "item-moved", updatedAt: later)
     let listed = [overview(current), overview(movedLater), overview(added)]
-    let result = BackupPlanner.plan(sources: sources(shared: [key("current"), key("moved"), key("added")]), overviews: listed, items: [], cache: cache, removed: .delete)
+    let result = BackupPlanner.plan(sources: sources(shared: [key("current"), key("moved"), key("added")]), overviews: listed, items: [], cache: cache, removal: .delete)
     #expect(result.fetch == [["item-moved", "item-added"]])
 }
 
 @Test func itemsToReadGoInBatchesOfFifty() throws {
     let items = try (0..<120).map { try keyItem(key(String(format: "key-%03d", $0)), id: String(format: "item-%03d", $0)) }
-    let result = BackupPlanner.plan(sources: sources(), overviews: items.map { overview($0) }, items: [], cache: [:], removed: .delete)
+    let result = BackupPlanner.plan(sources: sources(), overviews: items.map { overview($0) }, items: [], cache: [:], removal: .delete)
     #expect(result.fetch.map(\.count) == [50, 50, 20])
 }
 
 @Test func aChangedSourceWithACurrentCacheIsPutWithoutReadingTheItem() throws {
     let item = try keyItem(key("work"), id: "item-work")
     let cache = ["item-work": BackupCacheEntry(id: "item-work", updatedAt: epoch, owner: ownerOfKey("work"), sourceTag: tagged("tag-1"))]
-    let result = BackupPlanner.plan(sources: sources(shared: [key("work", hosts: ["new"], tag: "tag-2")]), overviews: [overview(item)], items: [], cache: cache, removed: .delete)
+    let result = BackupPlanner.plan(sources: sources(shared: [key("work", hosts: ["new"], tag: "tag-2")]), overviews: [overview(item)], items: [], cache: cache, removal: .delete)
     #expect(result.fetch.isEmpty)
     #expect(result.put.map(\.itemID) == ["item-work"])
     #expect(result.cache.isEmpty)
@@ -744,7 +744,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
 @Test func aCurrentCacheStillRemovesAKeyThatIsGone() throws {
     let item = try keyItem(key("gone"), id: "item-gone")
     let cache = ["item-gone": BackupCacheEntry(id: "item-gone", updatedAt: epoch, owner: ownerOfKey("gone"), sourceTag: tagged("tag-1"))]
-    let result = BackupPlanner.plan(sources: sources(), overviews: [overview(item)], items: [], cache: cache, removed: .delete)
+    let result = BackupPlanner.plan(sources: sources(), overviews: [overview(item)], items: [], cache: cache, removal: .delete)
     #expect(result.fetch.isEmpty)
     #expect(result.delete == [["item-gone"]])
 }

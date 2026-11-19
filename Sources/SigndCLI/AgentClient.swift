@@ -84,13 +84,13 @@ struct AgentClient {
     }
 
     /// Asks the agent to store the backup token on every Mac, or nil when no agent answers.
-    func backupLogin(_ request: BackupLoginRequest) -> SyncResult? {
+    func logInToBackup(_ request: BackupLoginRequest) -> SyncResult? {
         guard let json = try? JSONEncoder().encode(request) else { return nil }
         return decoded(PrivateExtension.backupLogin, argument: String(decoding: json, as: UTF8.self), timeout: 120)
     }
 
     /// Asks the agent to delete the backup token on every Mac, or nil when no agent answers.
-    func backupLogout() -> SyncResult? {
+    func logOutOfBackup() -> SyncResult? {
         decoded(PrivateExtension.backupLogout, timeout: 120)
     }
 

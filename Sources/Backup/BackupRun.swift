@@ -110,8 +110,8 @@ public struct BackupRun: Sendable {
         try await renew(&lease, onlyIfDue: true)
         let overviews = try await vault.list()
         let loaded = BackupCache.load(from: dependencies.cacheURL)
-        let removed = dependencies.removal()
-        var plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: [], cache: loaded, removed: removed)
+        let removal = dependencies.removal()
+        var plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: [], cache: loaded, removal: removal)
         if !plan.fetch.isEmpty {
             var items: [Item] = []
             var unread: [String] = []
@@ -128,7 +128,7 @@ public struct BackupRun: Sendable {
                     }
                 }
             }
-            plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: items, unread: unread, cache: loaded, removed: removed)
+            plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: items, unread: unread, cache: loaded, removal: removal)
             guard plan.fetch.isEmpty else { throw BackupFailure("the plan still asks for item reads after they were made") }
         }
 
