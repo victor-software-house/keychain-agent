@@ -77,7 +77,11 @@ The hook then finds the agent set up and exits.
 Under MDM, the MDM ships each release as a package.
 
 A Mac that updates itself never runs a package again.
-So the privileged step of the [self-update change](../self-update/design.md) installs the hook after its swap.
+
+The hook runs the app's binary in every user's session, so the bundle stays owned by root wherever the hook is installed.
+A bundle one user can write would let that user run code as every other user at their next login.
+
+So the [self-update change](../self-update/design.md) updates such a Mac through a step that runs as root, and that step installs the hook after its swap.
 
 Rollback is the previous package, which does not know the hook.
 With that older binary, the hook's command fails with a usage error at each login, shows nothing and changes nothing.
