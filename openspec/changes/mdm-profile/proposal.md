@@ -1,3 +1,5 @@
+# Deploy through device management
+
 ## Why
 
 An organization should be able to deploy signd to its Macs through its own Mobile Device Management (MDM) server.

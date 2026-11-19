@@ -1,3 +1,5 @@
+# Design
+
 ## Context
 
 See proposal.md, Why.
