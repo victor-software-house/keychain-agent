@@ -171,7 +171,7 @@ public struct BackupRestore: Sendable {
             RestoredKey(name: key.name, outcome: outcome, reason: reason)
         }
         func text(_ title: String) -> String {
-            key.item.fields.first { $0.title == title && $0.sectionID == nil }?.value ?? ""
+            key.item.fields.first { $0.title == title && BackupFormat.isTopLevel($0) }?.value ?? ""
         }
         guard !fingerprints.contains(key.fingerprint) else { return result(.skipped, "already stored") }
         guard !names.contains(key.name) else { return result(.skipped, "the name is taken") }

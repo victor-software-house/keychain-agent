@@ -56,16 +56,18 @@ private final class FakeVault: BackupVault {
     func reverseResults() { state.withLock { $0.reversed = true } }
 
     /// The item the vault stores for `content`, with the public key it derives from an SSH key field.
+    /// As 1Password does, it returns a field outside every named section with an empty section ID, in a section whose ID and title are empty.
     private static func make(id: String, _ content: ItemContent, category: ItemCategory, updatedAt: Date) -> Item {
         let fields = content.fields.map { field -> Item.Field in
-            guard field.type == .sshKey, case let .key(key, _)? = try? OpenSSHKeyFile.parse(field.value) else { return field }
-            return Item.Field(
-                id: field.id, title: field.title, type: field.type, value: field.value, sectionID: field.sectionID,
-                publicKey: key.publicKey.openSSHLine(comment: "vault")
-            )
+            var publicKey: String?
+            if field.type == .sshKey, case let .key(key, _)? = try? OpenSSHKeyFile.parse(field.value) {
+                publicKey = key.publicKey.openSSHLine(comment: "vault")
+            }
+            return Item.Field(id: field.id, title: field.title, type: field.type, value: field.value, sectionID: field.sectionID ?? "", publicKey: publicKey)
         }
         return Item(
-            id: id, title: content.title, category: category, vaultID: "vault", fields: fields, sections: content.sections, notes: content.notes,
+            id: id, title: content.title, category: category, vaultID: "vault", fields: fields,
+            sections: content.sections + [Item.Section(id: "", title: "")], notes: content.notes,
             tags: content.tags, version: 1, updatedAt: updatedAt
         )
     }
