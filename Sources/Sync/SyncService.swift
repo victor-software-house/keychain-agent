@@ -29,7 +29,7 @@ public actor SyncService {
         public var schedule: SyncSchedule
         public var stateURL: URL
         /// Called after shared keys changed, so the agent reads them.
-        public var changed: @Sendable () async -> Void
+        public var onSharedKeysChanged: @Sendable () async -> Void
 
         public init(
             cloud: (any CloudStore)?, store: any KeyStorage, device: @escaping @Sendable () throws(StoreError) -> DeviceKey, open: @escaping KeyOpener,
@@ -39,7 +39,7 @@ public actor SyncService {
             now: @escaping @Sendable () -> Date = { Date() },
             sleep: @escaping @Sendable (_ seconds: TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0), tolerance: .milliseconds(250)) },
             schedule: SyncSchedule = SyncSchedule(), stateURL: URL = SyncState.defaultURL,
-            changed: @escaping @Sendable () async -> Void
+            onSharedKeysChanged: @escaping @Sendable () async -> Void
         ) {
             self.cloud = cloud
             self.store = store
@@ -54,7 +54,7 @@ public actor SyncService {
             self.sleep = sleep
             self.schedule = schedule
             self.stateURL = stateURL
-            self.changed = changed
+            self.onSharedKeysChanged = onSharedKeysChanged
         }
     }
 
@@ -123,14 +123,14 @@ public actor SyncService {
 
     /// Called when a command changed the store.
     /// It starts a check soon, so a name that a deleted local key freed is taken.
-    public func reloaded() {
+    public func keysDidChange() {
         guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.isStopped else { return }
         startTimer(0)
     }
 
     /// What `signd sync` requests: a check now.
     /// It also starts again after the zone was deleted in iCloud settings.
-    public func syncRequested() async -> CheckSummary {
+    public func syncNow() async -> CheckSummary {
         await check(forced: true)
     }
 
@@ -162,13 +162,13 @@ public actor SyncService {
     }
 
     /// Stores the backup token on this Mac and seals it to every device, so one login serves every Mac.
-    public func backupLogin(token: Data, vault: String) async -> SyncResult {
+    public func logInToBackup(token: Data, vault: String) async -> SyncResult {
         guard dependencies.cloud != nil else { return SyncResult(.off, Self.offMessage) }
         return await exclusive { service in await service.runBackupLogin(token: token, vault: vault) }
     }
 
     /// Deletes the `Backup` record, which makes every Mac delete its token at its next check, and this Mac's token.
-    public func backupLogout() async -> SyncResult {
+    public func logOutOfBackup() async -> SyncResult {
         guard dependencies.cloud != nil else {
             do {
                 try dependencies.tokens.delete()
@@ -222,10 +222,10 @@ public actor SyncService {
             try await body(work, &updated, &requests, &changes)
             state = updated
             persist(force: true)
-            await dependencies.changed()
+            await dependencies.onSharedKeysChanged()
             return SyncResult(.done)
         } catch {
-            if !changes.isEmpty { await dependencies.changed() }
+            if !changes.isEmpty { await dependencies.onSharedKeysChanged() }
             return SyncResult(.failed, Display.clean(String(describing: error)))
         }
     }
@@ -268,7 +268,7 @@ public actor SyncService {
             // The token belongs to the old account's backup.
             try dependencies.tokens.delete()
             state.forgetRecords()
-            if !changes.isEmpty { await dependencies.changed() }
+            if !changes.isEmpty { await dependencies.onSharedKeysChanged() }
         }
         state.user = user
         return work
@@ -355,7 +355,7 @@ public actor SyncService {
             let detail = state.lastMessage ?? ""
             log.notice("check \(outcome.rawValue, privacy: .public): \(detail, privacy: .public)")
         }
-        if !changes.isEmpty { await dependencies.changed() }
+        if !changes.isEmpty { await dependencies.onSharedKeysChanged() }
         if let delay { startTimer(delay) }
 
         var summary = CheckSummary(outcome: outcome, message: state.lastMessage)

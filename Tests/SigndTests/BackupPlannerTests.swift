@@ -96,7 +96,7 @@ private func overview(_ item: Item, state: ItemState = .active) -> ItemOverview 
 
 /// Plans a run, and plans again with the full items that the first plan lists to fetch.
 private func plan(
-    _ sources: BackupSources, vault: [Item], archived: [Item] = [], removed: BackupRemoved = .delete, cache: [String: BackupCacheEntry] = [:]
+    _ sources: BackupSources, vault: [Item], archived: [Item] = [], removed: BackupRemoval = .delete, cache: [String: BackupCacheEntry] = [:]
 ) -> BackupPlan {
     let overviews = vault.map { overview($0) } + archived.map { overview($0, state: .archived) }
     let first = BackupPlanner.plan(sources: sources, overviews: overviews, items: [], cache: cache, removed: removed)
@@ -200,8 +200,8 @@ private func rewritten(_ item: Item, privateKey: String) -> Item {
     #expect(plan(sources(shared: [key("work")]), vault: [plain]).isIdle)
 }
 
-@Test(arguments: BackupRemoved.allCases)
-func aRemovedKeysItemFollowsBackupRemoved(removed: BackupRemoved) throws {
+@Test(arguments: BackupRemoval.allCases)
+func aRemovedKeysItemFollowsBackupRemoved(removed: BackupRemoval) throws {
     let gone = try keyItem(key("gone"), id: "item-gone")
     let kept = try keyItem(key("kept"), id: "item-kept")
     let result = plan(sources(shared: [key("kept")]), vault: [gone, kept], removed: removed)
@@ -416,7 +416,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
 
         // Once the right item exists, the old one goes by the setting, and the right one is current.
         let new = moved(try keyItem(key, id: "item-new"), to: right)
-        for removed in BackupRemoved.allCases {
+        for removed in BackupRemoval.allCases {
             let second = plan(sources(shared: [key]), vault: [old, new], removed: removed)
             #expect(second.create.isEmpty && second.put.isEmpty)
             switch removed {
@@ -512,7 +512,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let gone = try keyItem(key("gone"), id: "item-gone")
     let theirsList = listItem([enclaveKey("other")], device: peer, name: "mac-b", id: "list-theirs")
     let mine = try keyItem(key("mine"), scope: me, id: "item-mine")
-    for removed in BackupRemoved.allCases {
+    for removed in BackupRemoval.allCases {
         let result = plan(
             sources(shared: [key("new")], read: .incomplete(reason: "the fetch stopped before its last page"), devices: []),
             vault: [gone, theirsList, mine], removed: removed
@@ -546,7 +546,7 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
     let gone = try keyItem(key("gone"), id: "item-gone")
     // The item's name need not be the unreadable record's name, so no shared item is removed.
     let mine = try keyItem(key("mine"), scope: me, id: "item-mine")
-    for removed in BackupRemoved.allCases {
+    for removed in BackupRemoval.allCases {
         let result = plan(sources(unreadable: [UnreadableRecord(type: .key, name: "key-unread")]), vault: [unread, gone, mine], removed: removed)
         #expect(!result.delete.joined().contains("item-unread") && !result.delete.joined().contains("item-gone"))
         #expect(!result.archive.contains("item-unread") && !result.archive.contains("item-gone"))
@@ -778,6 +778,6 @@ private func moved(_ item: Item, to category: ItemCategory) -> Item {
 // MARK: The setting
 
 @Test func backupRemovedHasTheChoicesOfTheSetting() {
-    #expect(Settings.Key.backupRemoved.choices == BackupRemoved.allCases.map(\.rawValue))
-    #expect(Settings.Key.backupRemoved.defaultValue == BackupRemoved.delete.rawValue)
+    #expect(Settings.Key.backupRemoved.choices == BackupRemoval.allCases.map(\.rawValue))
+    #expect(Settings.Key.backupRemoved.defaultValue == BackupRemoval.delete.rawValue)
 }

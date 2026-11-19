@@ -52,7 +52,7 @@ public actor BackupService {
     public func snapshot() -> BackupState { state }
 
     /// Shared keys changed: the next run is due after the delay.
-    public func keysChanged() {
+    public func keysDidChange() {
         guard isStarted else { return }
         state.lastChange = dependencies.now()
         persist()

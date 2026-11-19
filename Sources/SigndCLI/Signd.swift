@@ -390,7 +390,7 @@ struct Config: ParsableCommand {
         @Argument var name: SettingName
         @Argument var value: String
         func run() throws {
-            do { try Settings().set(name.key, value) } catch { throw Failure(error) }
+            do { try Settings().set(name.key, to: value) } catch { throw Failure(error) }
         }
     }
 
@@ -586,7 +586,7 @@ struct Serve: ParsableCommand {
         let log = Logger(subsystem: "com.victor-software-house.signd", category: "agent")
         let agent = Agent(
             store: store, version: signdVersion, lifetime: { settings.resolve(.keyLifetime).seconds },
-            keysRead: { keys in
+            onKeysRead: { keys in
                 do {
                     try Routing.write(keys, socket: socketPath, home: FileManager.default.homeDirectoryForCurrentUser)
                 } catch {
@@ -605,7 +605,7 @@ struct Serve: ParsableCommand {
             let run = BackupRun(
                 BackupRun.Dependencies(
                     cloud: cloud, store: store, tokens: tokens, device: readDevice, open: openKey, openVault: OnePasswordVault.opener(version: signdVersion),
-                    removed: { BackupRemoved(rawValue: settings.text(.backupRemoved)) ?? .delete }
+                    removal: { BackupRemoval(rawValue: settings.text(.backupRemoved)) ?? .delete }
                 )
             )
             return BackupService(BackupService.Dependencies(run: { await run.perform() }, schedule: { BackupSchedule(settings: settings) }))
@@ -614,15 +614,15 @@ struct Serve: ParsableCommand {
             SyncService.Dependencies(
                 cloud: cloud, store: store, device: readDevice, open: openKey,
                 tokens: tokens, openSecret: { sealed, device in try Wrapping.openSecret(sealed, handle: device.handle) }, version: signdVersion,
-                interval: { settings.resolve(.interval).seconds }, changed: {
+                interval: { settings.resolve(.interval).seconds }, onSharedKeysChanged: {
                     await agent.reload()
-                    await backup?.keysChanged()
+                    await backup?.keysDidChange()
                 }
             )
         )
         let server = Server(
             agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)),
-            keysChanged: { await backup?.keysChanged() }
+            onKeysChanged: { await backup?.keysDidChange() }
         )
         Task.detached {
             await backup?.start()

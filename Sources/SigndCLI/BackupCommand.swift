@@ -9,9 +9,9 @@ import Sync
 struct BackupAgent: BackupLogin {
     let service: BackupLoginService
 
-    func login(token: String, vault: String) async -> SyncResult { await service.login(token: token, vault: vault) }
+    func logIn(token: String, vault: String) async -> SyncResult { await service.logIn(token: token, vault: vault) }
 
-    func logout() async -> SyncResult { await service.logout() }
+    func logOut() async -> SyncResult { await service.logOut() }
 }
 
 struct BackupCommand: ParsableCommand {

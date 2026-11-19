@@ -33,14 +33,14 @@ public struct BackupRun: Sendable {
         /// Opens a stored wrapped key to its private key.
         public var open: KeyOpener
         public var openVault: BackupVaultOpener
-        public var removed: @Sendable () -> BackupRemoved
+        public var removal: @Sendable () -> BackupRemoval
         public var now: @Sendable () -> Date
         public var cacheURL: URL
 
         public init(
             cloud: any CloudStore, store: any KeyStorage, tokens: any TokenStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey,
             deviceName: @escaping @Sendable () -> String = { ThisDevice.name() }, open: @escaping KeyOpener, openVault: @escaping BackupVaultOpener,
-            removed: @escaping @Sendable () -> BackupRemoved, now: @escaping @Sendable () -> Date = { Date() }, cacheURL: URL = BackupCache.defaultURL
+            removal: @escaping @Sendable () -> BackupRemoval, now: @escaping @Sendable () -> Date = { Date() }, cacheURL: URL = BackupCache.defaultURL
         ) {
             self.cloud = cloud
             self.store = store
@@ -49,7 +49,7 @@ public struct BackupRun: Sendable {
             self.deviceName = deviceName
             self.open = open
             self.openVault = openVault
-            self.removed = removed
+            self.removal = removal
             self.now = now
             self.cacheURL = cacheURL
         }
@@ -110,7 +110,7 @@ public struct BackupRun: Sendable {
         try await renew(&lease, onlyIfDue: true)
         let overviews = try await vault.list()
         let loaded = BackupCache.load(from: dependencies.cacheURL)
-        let removed = dependencies.removed()
+        let removed = dependencies.removal()
         var plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: [], cache: loaded, removed: removed)
         if !plan.fetch.isEmpty {
             var items: [Item] = []

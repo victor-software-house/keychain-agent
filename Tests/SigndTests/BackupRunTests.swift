@@ -156,7 +156,7 @@ private final class BackupRig: Sendable {
     let device: DeviceKey
     let run: BackupRun
 
-    init(removed: BackupRemoved = .delete) throws {
+    init(removed: BackupRemoval = .delete) throws {
         let device = DeviceKey(handle: agreement.rawRepresentation, publicKey: agreement.publicKey.x963Representation)
         self.device = device
         let cloud = cloud
@@ -172,7 +172,7 @@ private final class BackupRig: Sendable {
                     vault.recordOpen(name)
                     return vault
                 },
-                removed: { removed }, now: { clock.now }, cacheURL: cacheURL
+                removal: { removed }, now: { clock.now }, cacheURL: cacheURL
             )
         )
         cloud.put(.backup, BackupPayload.recordName, payload: Payload.encode(BackupPayload(vault: "signd", sealed: [:])))
@@ -286,7 +286,7 @@ private final class ServiceRig: Sendable {
     // No change is waiting, so the next run is a day after the last.
     #expect(await eventually { rig.clock.requestedSleeps.contains(82400) })
 
-    await rig.service.keysChanged()
+    await rig.service.keysDidChange()
     #expect(await eventually { rig.clock.requestedSleeps.contains(300) })
     #expect(await rig.service.snapshot().lastChange == at(0))
     #expect(rig.runs.value == 0)
@@ -299,7 +299,7 @@ private final class ServiceRig: Sendable {
     await rig.service.start()
     let service = rig.service
     // The command that imports, creates or deletes a key on this Mac asks the agent to reload, as the command line does.
-    let server = Server(agent: await makeAgent(MemoryStore()), keysChanged: { await service.keysChanged() })
+    let server = Server(agent: await makeAgent(MemoryStore()), onKeysChanged: { await service.keysDidChange() })
     let reload = Request.extension(name: PrivateExtension.reload, contents: Data())
     #expect(await server.respond(to: reload, on: Connection(peerPID: getpid())) == .success)
 

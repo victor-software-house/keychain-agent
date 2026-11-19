@@ -363,7 +363,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(await b.service.checkNow().outcome == .stopped)
     #expect(cloud.calls.changes == calls)
 
-    #expect(await b.service.syncRequested().outcome == .ok)
+    #expect(await b.service.syncNow().outcome == .ok)
     #expect(await b.service.snapshot().isStopped == false)
 }
 
@@ -400,7 +400,7 @@ func twoDevices() throws -> (cloud: FakeCloud, a: DeviceRig, b: DeviceRig, key: 
     #expect(await rig.service.snapshot().lastResult == .off)
     #expect(SyncState.load(from: rig.stateURL).lastResult == .off)
     #expect(await rig.service.share("k").outcome == .off)
-    #expect(await rig.service.syncRequested().outcome == .off)
+    #expect(await rig.service.syncNow().outcome == .off)
 }
 
 @Test(.timeLimit(.minutes(1))) func theStateFileHoldsNoPrivateKeyOrSealedCopy() async throws {
@@ -516,8 +516,8 @@ func aKeyLifetimeOutsideItsBoundsIsRefused(text: String) {
 }
 
 @Test func aBadSettingIsRefusedBeforeItIsWritten() {
-    #expect(throws: SettingsError.self) { try Settings().set(.interval, "infs") }
-    #expect(throws: SettingsError.self) { try Settings().set(.keyLifetime, "1e25s") }
+    #expect(throws: SettingsError.self) { try Settings().set(.interval, to: "infs") }
+    #expect(throws: SettingsError.self) { try Settings().set(.keyLifetime, to: "1e25s") }
 }
 
 @Test func aLocalSettingOutOfBoundsIsShownAsIgnoredWithItsReason() throws {
@@ -667,7 +667,7 @@ func measure(_ server: Server, key: StoredKey, seconds: Double) async -> [Durati
 
 @Test(arguments: ["remove", "Delete", "", "keep "])
 func backupRemovedRefusesOtherValues(text: String) {
-    #expect(throws: SettingsError.self) { try Settings().set(.backupRemoved, text) }
+    #expect(throws: SettingsError.self) { try Settings().set(.backupRemoved, to: text) }
     let settings = Settings(local: { $0 == .backupRemoved ? text : nil })
     #expect(settings.text(.backupRemoved) == "delete")
     #expect(settings.ignored().first?.reason == "not one of delete, archive, keep")

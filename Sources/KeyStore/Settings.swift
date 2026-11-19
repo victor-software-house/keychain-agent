@@ -103,7 +103,7 @@ public struct Settings: Sendable {
         }
     }
 
-    public func set(_ key: Key, _ value: String) throws(SettingsError) {
+    public func set(_ key: Key, to value: String) throws(SettingsError) {
         guard Self.isValid(key, value) else { throw .invalid(key.rawValue, value) }
         write(key, value as CFString)
     }
