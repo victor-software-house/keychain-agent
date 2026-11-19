@@ -8,7 +8,8 @@ A key lost with every Mac, or deleted by mistake, needs a copy outside iCloud (o
 
 ## What Changes
 
-- Any live Mac copies each shareable key one way into one 1Password vault, `signd` by default, as an SSH Key item.
+- Any live Mac copies each shareable key one way into one 1Password vault, `signd` by default.
+  A key goes in an SSH Key item, or in a Secure Note when the SSH Key item does not support its type.
 - The backup touches only the items it created, which carry the tag `signd`, and leaves every other item in the vault alone.
 - A run comes 5 minutes after the last key change, at most once an hour, and once a day with no change.
 - A `Lease` record in the signd zone keeps two Macs from running at once; it expires on its own and blocks no request.
