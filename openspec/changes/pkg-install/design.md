@@ -81,6 +81,14 @@ Its `zap` deletes `~/Library/Application Support/signd` and `~/.ssh/signd`.
 Neither touches the keys: they stay in the keychain and in iCloud, and `signd key delete` removes them.
 The `Include` line stays in `~/.ssh/config`; SSH skips an `Include` whose file is missing.
 
+### 8. service enable restarts an agent of another version
+
+A package installed over a running agent replaces the app, and the agent keeps serving the old version.
+The postinstall's `signd service enable` found the login item enabled and an agent answering, and changed nothing.
+
+It compares the answering agent's version with its own, and restarts the agent by decision 6 when they differ.
+Keys in memory go with the old process, and the agent reads each key again at its next use.
+
 ## Risks
 
 - A user's own `/usr/local/bin/signd` that is a link, such as one to a build of their own, is replaced.
