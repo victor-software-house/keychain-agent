@@ -139,4 +139,47 @@ if grep -q 'deploy.pub' "$work/g4"; then fail "a key whose last host was removed
 [ ! -e "$home/.ssh/signd/deploy.pub" ] || fail "the public file of a key with no hosts remains"
 grep -q '^identityfile .*/.ssh/signd/other.pub$' "$work/g4" || fail "the remaining key stopped routing"
 
-echo "✔ the agent served ed25519, ecdsa and rsa keys added by ssh-add, refused lock and confirm, honoured lifetimes and ssh-add -D, survived an oversized message and a restart, and reported sync as off without the iCloud entitlement; the routing files give ssh -G the socket and key of each host, keep to modes 700, 600 and 644, drop a bad host pattern, and follow a removed host"
+# The postinstall's link step against a temporary root, as the package runs it against /.
+stage "linking the command into a temporary root"
+target=/Applications/Signd.app/Contents/MacOS/signd
+linkroot=$work/linkroot
+bindir=$linkroot/usr/local/bin
+link=$bindir/signd
+link_step() {
+  "$bin" postinstall --root "$linkroot" --link-only || fail "the link step failed: $1"
+}
+expect_link() {
+  [ -L "$link" ] || fail "$1: signd is not a symbolic link"
+  [ "$(readlink "$link")" = "$target" ] || fail "$1: the link does not point at the app"
+}
+
+mkdir "$linkroot"
+link_step "a missing bin folder"
+expect_link "a missing bin folder"
+[ "$(stat -f %Lp "$bindir")" = 755 ] || fail "the new bin folder is not mode 755"
+
+rm "$link"
+link_step "a missing path"
+expect_link "a missing path"
+
+rm "$link"
+printf 'kept\n' > "$work/linked-file"
+ln -s "$work/linked-file" "$link"
+link_step "a link to a file"
+expect_link "a link to a file"
+[ "$(cat "$work/linked-file")" = kept ] || fail "a link to a file changed the file"
+
+rm "$link"
+mkdir "$work/linked-folder"
+ln -s "$work/linked-folder" "$link"
+link_step "a link to a folder"
+expect_link "a link to a folder"
+[ -z "$(ls -A "$work/linked-folder")" ] || fail "a link to a folder was followed"
+
+rm "$link"
+printf 'own\n' > "$link"
+link_step "a regular file"
+[ ! -L "$link" ] || fail "a regular file was replaced by a link"
+[ "$(cat "$link")" = own ] || fail "a regular file was changed"
+
+echo "✔ the agent served ed25519, ecdsa and rsa keys added by ssh-add, refused lock and confirm, honoured lifetimes and ssh-add -D, survived an oversized message and a restart, and reported sync as off without the iCloud entitlement; the routing files give ssh -G the socket and key of each host, keep to modes 700, 600 and 644, drop a bad host pattern, and follow a removed host; the postinstall's link step makes a missing bin folder, a missing path, a link to a file and a link to a folder a link to the app, and leaves a regular file alone"

@@ -267,13 +267,17 @@ struct Status: ParsableCommand {
         let agentAnswers: Bool
         let agent: AgentStatus?
         let sync: SyncStatus
+        let loginItem: LoginItemState
+        let sshInclude: Bool
     }
 
     func run() throws {
         let client = AgentClient(path: socket)
         let agent = client.status()
         let sync = SyncStatus(state: client.syncState() ?? SyncState.load())
-        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync)
+        let loginItem = Service.loginItem
+        let sshInclude = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
+        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, loginItem: loginItem, sshInclude: sshInclude)
         if output.json {
             try output.print(report)
         } else {
@@ -287,6 +291,8 @@ struct Status: ParsableCommand {
             } else {
                 print("agent   does not answer")
             }
+            print("login item  \(loginItem.text)\(loginItem == .enabled ? "" : "; run signd service enable")")
+            print("ssh config  \(sshInclude ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable")")
             print("icloud  \(sync.state)\(sync.lastMessage.map { ": \($0)" } ?? "")")
             print("interval  \(sync.interval.value) (\(sync.interval.source.rawValue))")
             if let at = sync.lastCheck, let result = sync.lastResult {
@@ -390,13 +396,36 @@ struct Config: ParsableCommand {
 }
 
 struct Service: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Run the agent at login, or stop doing so.", subcommands: [Enable.self, Disable.self])
+    static let configuration = CommandConfiguration(
+        abstract: "Run the agent at login, or stop doing so.",
+        subcommands: [Enable.self, Disable.self, Status.self, Restart.self, Log.self]
+    )
     static var agent: SMAppService { .agent(plistName: "com.victor-software-house.signd.plist") }
+    static var loginItem: LoginItemState { LoginItemState(agent.status) }
+
+    /// Whether an agent answers within `seconds`, one other than process `old` when it is given.
+    /// That covers an agent that launchd is starting.
+    static func agentAnswers(within seconds: Double = 2, replacing old: Int32? = nil) -> Bool {
+        let deadline = Date.now.addingTimeInterval(seconds)
+        repeat {
+            if let status = AgentClient(path: defaultSocketPath).status(), status.pid != old { return true }
+            usleep(100_000)
+        } while Date.now < deadline
+        return false
+    }
 
     struct Enable: ParsableCommand {
         func run() throws {
+            // A config that cannot be written fails the command after the login item is in order, so the agent still starts.
+            var includeFailed = false
+            do {
+                if try SSHInclude.enable(home: FileManager.default.homeDirectoryForCurrentUser) { print("added \(SSHInclude.line) to ~/.ssh/config") }
+            } catch {
+                KeyCommand.note("cannot add the Include line to ~/.ssh/config: \(error)")
+                includeFailed = true
+            }
             switch Service.agent.status {
-            case .enabled where Self.agentAnswers():
+            case .enabled where Service.agentAnswers():
                 print("enabled")
             case .enabled:
                 // The cask's uninstall step removes the job from launchd while the login item stays enabled.
@@ -409,20 +438,19 @@ struct Service: ParsableCommand {
                 }
                 print("enabled")
             case .requiresApproval:
+                SMAppService.openSystemSettingsLoginItems()
                 throw Failure("approve signd in System Settings, General, Login Items")
             default:
-                do { try Service.agent.register() } catch { throw Failure("cannot register the agent: \(error)") }
-                print(Service.agent.status == .enabled ? "enabled" : "registered; approve signd in System Settings, General, Login Items")
+                var registerError: (any Error)?
+                do { try Service.agent.register() } catch { registerError = error }
+                if Service.agent.status == .requiresApproval {
+                    SMAppService.openSystemSettingsLoginItems()
+                    throw Failure("approve signd in System Settings, General, Login Items")
+                }
+                if let registerError { throw Failure("cannot register the agent: \(registerError)") }
+                print(Service.agent.status == .enabled ? "enabled" : "registered")
             }
-        }
-
-        /// Whether the agent answers within two seconds, which covers one that launchd is starting.
-        static func agentAnswers() -> Bool {
-            for _ in 0 ..< 20 {
-                if AgentClient(path: defaultSocketPath).status() != nil { return true }
-                usleep(100_000)
-            }
-            return false
+            if includeFailed { throw ExitCode.failure }
         }
     }
 
@@ -431,6 +459,83 @@ struct Service: ParsableCommand {
             guard Service.agent.status != .notRegistered else { return print("not registered") }
             do { try Service.agent.unregister() } catch { throw Failure("cannot unregister the agent: \(error)") }
             print("disabled")
+        }
+    }
+
+    struct Status: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show the login item and whether the agent answers.")
+
+        func run() {
+            print("login item  \(Service.loginItem.text)")
+            if let agent = AgentClient(path: defaultSocketPath).status() {
+                print("agent  answers (\(agent.version))")
+            } else {
+                print("agent  does not answer")
+            }
+        }
+    }
+
+    struct Restart: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Restart the agent and wait for it to answer; exits non-zero when it does not answer within 5 seconds.")
+
+        func run() throws {
+            let old = AgentClient(path: defaultSocketPath).status()?.pid
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            process.arguments = ["kickstart", "-k", "gui/\(getuid())/com.victor-software-house.signd"]
+            do { try process.run() } catch { throw Failure("cannot run launchctl: \(error)") }
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw Failure("launchctl kickstart failed with status \(process.terminationStatus)") }
+            guard Service.agentAnswers(within: 5, replacing: old) else { throw Failure("the agent does not answer after the restart") }
+            print("restarted")
+        }
+    }
+
+    struct Log: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show the agent's log of the last hour, or follow it.")
+        @Flag(help: "Stream new entries until interrupted, instead of showing the last hour.") var follow = false
+
+        /// The arguments of `/usr/bin/log` for the agent's subsystem.
+        static func arguments(follow: Bool) -> [String] {
+            (follow ? ["stream", "--level", "debug"] : ["show", "--last", "1h", "--info", "--debug"]) + ["--predicate", "subsystem == \"com.victor-software-house.signd\""]
+        }
+
+        func run() throws {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/log")
+            process.arguments = Self.arguments(follow: follow)
+            do { try process.run() } catch { throw Failure("cannot run log: \(error)") }
+            process.waitUntilExit()
+            guard process.terminationStatus == 0 else { throw ExitCode(process.terminationStatus) }
+        }
+    }
+}
+
+/// The login item's state, as `signd status` prints it and reports it in JSON.
+enum LoginItemState: String, Encodable {
+    case enabled
+    case requiresApproval
+    case notRegistered
+    case notFound
+    case unknown
+
+    init(_ status: SMAppService.Status) {
+        switch status {
+        case .enabled: self = .enabled
+        case .requiresApproval: self = .requiresApproval
+        case .notRegistered: self = .notRegistered
+        case .notFound: self = .notFound
+        @unknown default: self = .unknown
+        }
+    }
+
+    var text: String {
+        switch self {
+        case .enabled: "enabled"
+        case .requiresApproval: "requires approval"
+        case .notRegistered: "not registered"
+        case .notFound: "not found"
+        case .unknown: "unknown"
         }
     }
 }
@@ -487,14 +592,25 @@ struct Serve: ParsableCommand {
 }
 
 /// The package's postinstall step runs as root.
-/// It starts the agent again as the user at the console.
+/// It links `/usr/local/bin/signd` to the app, then starts the agent again as the user at the console.
 /// A cask upgrade first removes the agent's job from launchd, so `service enable` registers the login item again.
 /// With nobody logged in, the login item starts the agent at the next login. It never fails the install.
 struct Postinstall: ParsableCommand {
-    static let configuration = CommandConfiguration(abstract: "Start the agent as the console user after the package installs.", shouldDisplay: false)
+    static let configuration = CommandConfiguration(abstract: "Link the command and start the agent as the console user after the package installs.", shouldDisplay: false)
+    @Option(help: .hidden) var root = "/"
+    @Flag(help: .hidden) var linkOnly = false
 
-    func run() {
+    func run() throws {
         let log = Logger(subsystem: "com.victor-software-house.signd", category: "install")
+        do {
+            if try CommandLink.install(root: URL(fileURLWithPath: root, isDirectory: true)) == .kept {
+                log.notice("/usr/local/bin/signd is not a symbolic link, so it stays as it is")
+            }
+        } catch {
+            if linkOnly { throw Failure(error) }
+            log.error("cannot link /usr/local/bin/signd: \(String(describing: error), privacy: .public)")
+        }
+        if linkOnly { return }
         var uid: uid_t = 0
         guard let user = SCDynamicStoreCopyConsoleUser(nil, &uid, nil) as String?, uid != 0, user != "loginwindow" else { return }
         let signd = URL(fileURLWithPath: CommandLine.arguments[0]).resolvingSymlinksInPath().path
@@ -507,5 +623,39 @@ struct Postinstall: ParsableCommand {
         } catch {
             log.error("cannot start the agent for \(user, privacy: .public): \(String(describing: error), privacy: .public)")
         }
+    }
+}
+
+/// The symbolic link `/usr/local/bin/signd`, where every shell finds the command.
+enum CommandLink {
+    enum Outcome { case linked, kept }
+
+    static let target = "/Applications/Signd.app/Contents/MacOS/signd"
+
+    /// Makes `usr/local/bin/signd` under `root` a symbolic link to the app's executable.
+    /// A missing `usr/local/bin` is created with mode 755, and owned by root:wheel when this runs as root.
+    /// A symbolic link there is replaced, whatever it points to, and a link to a folder is not followed.
+    /// Anything else there is not signd's, so it stays.
+    static func install(root: URL) throws -> Outcome {
+        let manager = FileManager.default
+        let folder = root.appendingPathComponent("usr/local/bin", isDirectory: true)
+        if !manager.fileExists(atPath: folder.path) {
+            var attributes: [FileAttributeKey: Any] = [.posixPermissions: 0o755]
+            if geteuid() == 0 {
+                attributes[.ownerAccountID] = 0
+                attributes[.groupOwnerAccountID] = 0
+            }
+            try manager.createDirectory(at: folder, withIntermediateDirectories: true, attributes: attributes)
+            try manager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path)
+        }
+        let link = folder.appendingPathComponent("signd")
+        var info = stat()
+        if lstat(link.path, &info) == 0 {
+            guard info.st_mode & S_IFMT == S_IFLNK else { return .kept }
+            if try manager.destinationOfSymbolicLink(atPath: link.path) == target { return .linked }
+            try manager.removeItem(at: link)
+        }
+        try manager.createSymbolicLink(atPath: link.path, withDestinationPath: target)
+        return .linked
     }
 }

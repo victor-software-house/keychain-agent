@@ -68,7 +68,7 @@ Installer checks both when the package opens, so an Intel Mac or an older macOS 
 |:--|:--|
 | `status` | Prints the login item's state, from `SMAppService.agent`, and whether the agent answers on its socket, with its version |
 | `restart` | Runs `launchctl kickstart -k` on the agent's label in the user's GUI domain, then waits until the agent answers |
-| `log` | Runs `/usr/bin/log` with the predicate `subsystem == "com.victor-software-house.signd"`: `show --last 1h` by default, `stream` with `--follow` |
+| `log` | Runs `/usr/bin/log` with the predicate `subsystem == "com.victor-software-house.signd"`: `show --last 1h --info --debug` by default, `stream --level debug` with `--follow` |
 
 `restart` waits at most 5 seconds and exits non-zero when the agent does not answer.
 

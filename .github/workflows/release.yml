@@ -113,6 +113,7 @@ jobs:
         env:
           SIGND_PROVISIONING_PROFILE: ${{ secrets.SIGND_PROVISIONING_PROFILE }}
       - run: pkgutil --check-signature build/signd.pkg
+      - run: mise run package:check
       - run: spctl --assess -vv --type install build/signd.pkg
       - run: xcrun stapler validate build/signd.pkg
       # Build provenance for the package, checkable with `gh attestation verify`.

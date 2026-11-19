@@ -51,6 +51,11 @@ sign_and_verify() {
 wait_for_agent
 [ "$(pgrep -x -u "$(id -u)" signd | wc -l | tr -d ' ')" = 1 ] || fail "service enable twice left other than one agent"
 
+old=$(agent_pid)
+"$signd" service restart > /dev/null
+wait_for_agent
+[ "$(agent_pid)" != "$old" ] || fail "service restart kept the same agent"
+
 "$signd" key create "$name" > "$work/key.pub"
 grep -q '^ecdsa-sha2-nistp256 ' "$work/key.pub" || fail "key create printed no P-256 public key"
 [ "$("$signd" key show "$name")" = "$(cat "$work/key.pub")" ] || fail "key show differs from key create"
