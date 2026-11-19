@@ -84,7 +84,9 @@ public struct Staging: Sendable {
 
     /// Walks the root's path from `/`, makes the components that are missing, and checks each one.
     private func prepareRoot() throws {
-        let components = Array(root.standardizedFileURL.pathComponents.dropFirst())
+        // The path is walked as given: standardizing it would strip /private from a resolved path.
+        let components = Array(root.pathComponents.dropFirst())
+        guard !components.contains("..") else { throw UpdateError("\(root.path) has a .. component, so the updater stages nothing under it") }
         var path = ""
         for (index, component) in components.enumerated() {
             path += "/" + component
