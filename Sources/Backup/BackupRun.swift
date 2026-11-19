@@ -133,7 +133,7 @@ public struct BackupRun: Sendable {
         }
 
         var written: [String: BackupCacheEntry] = [:]
-        var rejected = 0
+        var rejected = Rejections()
         var stopped: (any Error)?
         do {
             try await write(plan, to: vault, lease: &lease, written: &written, rejected: &rejected)
@@ -154,13 +154,13 @@ public struct BackupRun: Sendable {
         var problems: [String] = []
         if case let .incomplete(reason) = gathered.sources.read { problems.append("the CloudKit read did not complete, so no item was removed: \(reason)") }
         if !plan.unread.isEmpty { problems.append("\(plan.unread.count) of the vault's items could not be read, so no item was created") }
-        if rejected > 0 { problems.append("writes the vault rejected: \(rejected)") }
+        if rejected.count > 0 { problems.append(rejected.summary) }
         return problems.isEmpty ? BackupResult(.ok) : BackupResult(.failed, problems.joined(separator: "; "))
     }
 
     /// Creates, puts, deletes and archives in the planner's batches, and renews the lease before each.
     private func write(
-        _ plan: BackupPlan, to vault: any BackupVault, lease: inout BackupLease, written: inout [String: BackupCacheEntry], rejected: inout Int
+        _ plan: BackupPlan, to vault: any BackupVault, lease: inout BackupLease, written: inout [String: BackupCacheEntry], rejected: inout Rejections
     ) async throws {
         for batch in plan.create {
             try await renew(&lease)
@@ -172,7 +172,7 @@ public struct BackupRun: Sendable {
                 guard let item = Self.item(of: result), let slot = BackupOwner(item: item)?.slot, let want = wants[slot], matched.insert(slot).inserted else { continue }
                 written[item.id] = BackupCacheEntry(item: item, sourceTag: want.changeTag)
             }
-            rejected += batch.count - matched.count
+            rejected.count += batch.count - matched.count
         }
         for group in Self.groups(plan.put) {
             try await renew(&lease)
@@ -182,7 +182,7 @@ public struct BackupRun: Sendable {
                     let item = try await vault.put(put.itemID, put.desired.content)
                     written[item.id] = BackupCacheEntry(item: item, sourceTag: put.desired.changeTag, target: item.id)
                 } catch {
-                    rejected += 1
+                    rejected.add("put \(put.itemID): \(Self.describe(error))")
                     log.error("cannot write item \(put.itemID, privacy: .public): \(Self.describe(error), privacy: .public)")
                 }
             }
@@ -190,7 +190,7 @@ public struct BackupRun: Sendable {
         for batch in plan.delete {
             try await renew(&lease)
             let failures = try await vault.delete(batch)
-            rejected += failures.count
+            for (id, failure) in failures.sorted(by: { $0.key < $1.key }) { rejected.add("delete \(id): \(failure.rawValue)") }
         }
         for group in Self.groups(plan.archive) {
             try await renew(&lease)
@@ -199,7 +199,7 @@ public struct BackupRun: Sendable {
                 do {
                     try await vault.archive(id)
                 } catch {
-                    rejected += 1
+                    rejected.add("archive \(id): \(Self.describe(error))")
                     log.error("cannot archive item \(id, privacy: .public): \(Self.describe(error), privacy: .public)")
                 }
             }
@@ -321,9 +321,14 @@ public struct BackupRun: Sendable {
         return Gathered(sources: sources, vault: vault)
     }
 
-    /// The key as an OpenSSH private key file, or nil when this Mac cannot open it.
+    /// The key as an OpenSSH private key file, or nil when this Mac cannot open it or 1Password takes no such key.
     /// Opening runs on a dispatch queue, so a slow Secure Enclave call never blocks the actor or the event loop.
     private func armor(_ key: StoredKey) async -> String? {
+        // The key type decides before the key opens, so a key 1Password rejects is never unwrapped for the backup.
+        guard let publicKey = key.publicKey, Self.onePasswordTakes(publicKey) else {
+            log.notice("1Password takes no item for the key \(key.name, privacy: .public), so the backup has none")
+            return nil
+        }
         let opener = dependencies.open
         do {
             return try await Self.offActor { () throws -> String in
@@ -350,7 +355,47 @@ public struct BackupRun: Sendable {
         SHA256.hash(data: Data(fields.joined(separator: "\u{1F}").utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
+    /// An error as the status and the log show it.
+    /// A 1Password error shows only its code, because its message could echo a field value of an item, such as the private key.
     private static func describe(_ error: any Error) -> String {
-        Display.clean(String(describing: error))
+        if let failure = error as? OnePasswordError { return "1Password \(failure.code.rawValue)" }
+        return Display.clean(String(describing: error))
+    }
+
+    /// The writes a vault refused: how many, and the first few as the call, the item and the error code.
+    private struct Rejections {
+        private static let shown = 5
+        var count = 0
+        private var details: [String] = []
+
+        mutating func add(_ detail: String) {
+            count += 1
+            details.append(detail)
+        }
+
+        var summary: String {
+            guard !details.isEmpty else { return "writes the vault rejected: \(count)" }
+            let listed = details.prefix(Self.shown)
+            let more = count > listed.count ? "; and \(count - listed.count) more" : ""
+            return "writes the vault rejected: \(count) (\(listed.joined(separator: "; "))\(more))"
+        }
+    }
+
+    /// Whether 1Password's SSH Key item takes the key.
+    /// Ed25519 keys fit, and so do Rivest-Shamir-Adleman (RSA) keys of 2048, 3072 or 4096 bits with an exponent of 65537 or more.
+    /// No Elliptic Curve Digital Signature Algorithm (ECDSA) key fits.
+    static func onePasswordTakes(_ key: PublicKey) -> Bool {
+        switch key {
+        case .ed25519:
+            return true
+        case .ecdsa:
+            return false
+        case let .rsa(exponent, modulus):
+            let significant = modulus.drop { $0 == 0 }
+            guard let first = significant.first else { return false }
+            let bits = (significant.count - 1) * 8 + (8 - first.leadingZeroBitCount)
+            let large = exponent.drop { $0 == 0 }
+            return [2048, 3072, 4096].contains(bits) && (large.count > 3 || large.reduce(UInt64(0)) { $0 << 8 | UInt64($1) } >= 65537)
+        }
     }
 }

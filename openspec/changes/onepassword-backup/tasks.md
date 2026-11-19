@@ -62,6 +62,10 @@
     `theLeaseIsRenewedBeforeACallOnceAThirdOfItHasPassed` and `aRenewalThatFailsBeforeAPutStopsTheRunBeforeThatCall` cover the renewal inside a put group.
   - 2026-11-19 UTC: `aTokenThatDiffersFromTheStoredOneCountsAsAChange` in `BackupTests` covers the sync report that makes a backup run due on a Mac that did not log in.
     `aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn`, `aLeaseOfAnotherFormatHoldsUntilItsExpiryAndOnlyAnUnreadableOneIsFree` and `resultsAreMatchedToTheirRequestsWhateverTheOrder` cover the rest.
+  - 2026-11-19 UTC: `onePasswordTakesEd25519AndRSAOfTheListedSizesAndExponents` and `aKeyOnePasswordRejectsGetsNoItemAndDoesNotFailTheRun` cover keys that 1Password's SSH Key item rejects.
+    The run writes no item for an elliptic curve key or a 1024-bit key, and does not fail.
+  - 2026-11-19 UTC: `aOnePasswordErrorIsRecordedByItsKindAndNeverItsMessage` covers a 1Password error that echoes the private key and a host.
+    The recorded result shows the call, the item and the error code, and neither value.
 - [ ] 1.6 Add `signd backup restore` by design decision 7.
   Verify a unit test that skips a key the store already has.
 - [ ] 1.7 Report the backup in `signd status`.

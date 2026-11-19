@@ -25,6 +25,8 @@ private final class FakeVault: BackupVault {
         var afterPut: (@Sendable () -> Void)?
         var failedWrites: Set<String> = []
         var reversed = false
+        var writeError: (any Error)?
+        var listError: (any Error)?
     }
 
     private let state = Mutex(State())
@@ -42,7 +44,14 @@ private final class FakeVault: BackupVault {
     /// Runs `action` after every put, as time that passes during a slow call, or another Mac's write.
     func afterPuts(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.afterPut = action } }
     /// Makes each put and archive of these items throw.
-    func failWrites(of ids: Set<String>) { state.withLock { $0.failedWrites = ids } }
+    func failWrites(of ids: Set<String>, with error: (any Error)? = nil) {
+        state.withLock {
+            $0.failedWrites = ids
+            $0.writeError = error
+        }
+    }
+    /// Makes the list call throw `error`.
+    func failList(with error: any Error) { state.withLock { $0.listError = error } }
     /// Returns the results of `items` and `create` in the reverse of the request order.
     func reverseResults() { state.withLock { $0.reversed = true } }
 
@@ -62,8 +71,9 @@ private final class FakeVault: BackupVault {
     }
 
     func list() async throws -> [ItemOverview] {
-        state.withLock { state -> [ItemOverview] in
+        try state.withLock { state throws -> [ItemOverview] in
             state.calls.append("list")
+            if let error = state.listError { throw error }
             return state.items.values.sorted { $0.id < $1.id }.map { item in
                 ItemOverview(
                     id: item.id, title: item.title, category: item.category, vaultID: item.vaultID, tags: item.tags, updatedAt: item.updatedAt,
@@ -106,7 +116,7 @@ private final class FakeVault: BackupVault {
     func put(_ id: String, _ content: ItemContent) async throws -> Item {
         let (item, action) = try state.withLock { state throws -> (Item, (@Sendable () -> Void)?) in
             state.calls.append("put:\(id)")
-            if state.failedWrites.contains(id) { throw BackupFailure("the vault refused \(id)") }
+            if state.failedWrites.contains(id) { throw state.writeError ?? BackupFailure("the vault refused \(id)") }
             guard let old = state.items[id] else { throw BackupFailure("no item \(id)") }
             state.counter += 1
             let item = Self.make(id: id, content, category: old.category, updatedAt: at(Double(state.counter)))
@@ -128,7 +138,7 @@ private final class FakeVault: BackupVault {
     func archive(_ id: String) async throws {
         try state.withLock { state throws in
             state.calls.append("archive:\(id)")
-            if state.failedWrites.contains(id) { throw BackupFailure("the vault refused \(id)") }
+            if state.failedWrites.contains(id) { throw state.writeError ?? BackupFailure("the vault refused \(id)") }
             state.archived.insert(id)
         }
     }
@@ -634,4 +644,79 @@ private func leasePayload(format: Int, expires: Date) -> Data {
     #expect(result.message?.contains("1 of the vault's items could not be read") == true)
     #expect(rig.vault.calls == ["list", "items:3"])
     #expect(rig.vault.items.count == 3)
+}
+
+// MARK: Keys 1Password rejects, and its errors
+
+/// A wrapped key of this Mac, sealed to a software key, for any key type.
+private func wrappedKey(_ name: String, _ privateKey: PrivateKey) throws -> StoredKey {
+    let agreement = P256.KeyAgreement.PrivateKey()
+    let wrapped = try Wrapping.seal(privateKey, comment: "\(name)@example", to: agreement.publicKey)
+    return StoredKey(
+        name: name, kind: .wrapped, publicBlob: privateKey.publicKey.blob, comment: "\(name)@example", hosts: [], source: "import",
+        keyData: agreement.rawRepresentation, wrapped: wrapped
+    )
+}
+
+@Test func onePasswordTakesEd25519AndRSAOfTheListedSizesAndExponents() {
+    func rsa(bits: Int, exponent: [UInt8] = [1, 0, 1], leadingZero: Bool = false) -> PublicKey {
+        .rsa(exponent: Data(exponent), modulus: Data(leadingZero ? [0] : []) + Data([0x80]) + Data(repeating: 1, count: bits / 8 - 1))
+    }
+    #expect(BackupRun.onePasswordTakes(.ed25519(Data(repeating: 1, count: 32))))
+    for bits in [2048, 3072, 4096] {
+        #expect(BackupRun.onePasswordTakes(rsa(bits: bits)))
+        #expect(BackupRun.onePasswordTakes(rsa(bits: bits, leadingZero: true)))
+    }
+    for bits in [1024, 1536, 2560, 8192] { #expect(!BackupRun.onePasswordTakes(rsa(bits: bits))) }
+    #expect(BackupRun.onePasswordTakes(rsa(bits: 2048, exponent: [1, 0, 0, 0, 1])))
+    #expect(!BackupRun.onePasswordTakes(rsa(bits: 2048, exponent: [3])))
+    #expect(!BackupRun.onePasswordTakes(rsa(bits: 2048, exponent: [0xFF, 0xFF])))
+    let point = P256.Signing.PrivateKey().publicKey.x963Representation
+    for curve in Curve.allCases { #expect(!BackupRun.onePasswordTakes(.ecdsa(curve, point))) }
+}
+
+@Test(.timeLimit(.minutes(1))) func aKeyOnePasswordRejectsGetsNoItemAndDoesNotFailTheRun() async throws {
+    let rig = try BackupRig()
+    try rig.share("good")
+    let signing = P256.Signing.PrivateKey()
+    let ecdsa = PrivateKey.ecdsa(.p256, point: signing.publicKey.x963Representation, scalar: signing.rawRepresentation)
+    // The numbers of the 1024-bit key are fillers: only its size matters, and the run never opens it.
+    let filler = Data([0x80]) + Data(repeating: 1, count: 127)
+    let rsa1024 = PrivateKey.rsa(n: filler, e: Data([1, 0, 1]), d: filler, iqmp: filler, p: filler, q: filler)
+
+    // The elliptic curve key is shared, so its record exists, and the other key is this Mac's own.
+    var shared = try wrappedKey("ecdsa-shared", ecdsa)
+    shared.recordName = KeyPayload.recordName(for: shared.name)
+    try rig.store.add(shared)
+    rig.publish(shared, hosts: [])
+    try rig.store.add(wrappedKey("rsa-local", rsa1024))
+
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    #expect(rig.vault.calls == ["list", "create:1"])
+    #expect(rig.vault.items.map(\.title) == ["good"])
+}
+
+@Test(.timeLimit(.minutes(1))) func aOnePasswordErrorIsRecordedByItsKindAndNeverItsMessage() async throws {
+    let rig = try BackupRig()
+    try rig.share("alpha")
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    let alpha = try #require(rig.vault.item(titled: "alpha"))
+    let privateKey = try #require(alpha.fields.first { $0.title == "private key" }).value
+    let echo = OnePasswordError(code: .requestFailed, message: "invalid field \(privateKey) and hosts h.example.com")
+
+    // A write fails with an error that echoes the item's fields: the result names the call, the item and the error code.
+    for stored in try rig.store.list() { rig.publish(stored, hosts: ["h.example.com"]) }
+    rig.vault.failWrites(of: [alpha.id], with: echo)
+    let write = await rig.run.perform()
+    #expect(write.outcome == .failed)
+    #expect(write.message == "writes the vault rejected: 1 (put \(alpha.id): 1Password requestFailed)")
+
+    // A call that stops the run records the error code alone.
+    rig.vault.failList(with: echo)
+    let stopped = await rig.run.perform()
+    #expect(stopped == BackupResult(.failed, "1Password requestFailed"))
+    for message in [write.message, stopped.message].compactMap({ $0 }) {
+        #expect(!message.contains("h.example.com"))
+        for line in privateKey.split(separator: "\n") where line.count > 20 { #expect(!message.contains(line)) }
+    }
 }
