@@ -1,5 +1,14 @@
 # Changelog
 
+## signd 0.0.12
+
+- The new `backup-removed` setting chooses whether the 1Password backup deletes, archives or keeps the item of a removed key.
+  It defaults to delete ([`eb94ffa`](https://github.com/victor-software-house/signd/commit/eb94ffa8dbf4295004461fdd3e3b6d8dc0344fae)).
+- Signd.app has an app icon.
+  The repository builds the app target with XcodeGen and Xcode, and every pull request checks that build ([`e4092b8`](https://github.com/victor-software-house/signd/commit/e4092b83a54ac2dfebba4064d8c8b51a750e5ea7)).
+- The release builds Signd.app with Xcode.
+  It exports the app signed with the Developer ID profile ([`9cca26b`](https://github.com/victor-software-house/signd/commit/9cca26bbf9f545e56c902820fa518d743b4c5907)).
+
 ## signd 0.0.11
 
 - `signd backup login` reads a 1Password service account token from stdin.
