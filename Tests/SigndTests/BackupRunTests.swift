@@ -259,7 +259,7 @@ private final class ServiceRig: Sendable {
     let stateURL = FileManager.default.temporaryDirectory.appendingPathComponent("backup-state-\(UUID().uuidString).json")
     let service: BackupService
 
-    init(state: BackupState, results: [BackupResult] = []) throws {
+    init(state: BackupState, results: [BackupResult] = [], schedule: @escaping @Sendable () -> BackupSchedule = { BackupSchedule() }) throws {
         try state.save(to: stateURL)
         let clock = clock
         let runs = runs
@@ -270,7 +270,7 @@ private final class ServiceRig: Sendable {
                     runs.increment()
                     return queue.withLock { $0.isEmpty ? BackupResult(.ok) : $0.removeFirst() }
                 },
-                schedule: { BackupSchedule() }, now: { clock.now }, sleep: { try await clock.sleep($0) }, stateURL: stateURL
+                schedule: schedule, now: { clock.now }, sleep: { try await clock.sleep($0) }, stateURL: stateURL
             )
         )
     }
@@ -289,6 +289,31 @@ private final class ServiceRig: Sendable {
     await rig.service.keysDidChange()
     #expect(await eventually { rig.clock.requestedSleeps.contains(300) })
     #expect(await rig.service.snapshot().lastChange == at(0))
+    #expect(rig.runs.value == 0)
+}
+
+@Test(.timeLimit(.minutes(1))) func aChangedScheduleReplacesTheWaitTheServiceArmed() async throws {
+    var state = BackupState()
+    state.lastChange = at(0)
+    state.lastRun = at(-100)
+    let schedule = Mutex(BackupSchedule(delay: 300, minimumInterval: 3600, maximumInterval: 86400))
+    let rig = try ServiceRig(state: state, schedule: { schedule.withLock { $0 } })
+    await rig.service.start()
+    // The run is due an interval after the last: 3500 seconds from now.
+    #expect(await eventually { rig.clock.requestedSleeps == [3500] })
+
+    schedule.withLock { $0 = BackupSchedule(delay: 10, minimumInterval: 60, maximumInterval: 86400) }
+    await rig.service.scheduleDidChange()
+    #expect(await eventually { rig.clock.requestedSleeps.last == 10 })
+    #expect(rig.runs.value == 0)
+    // A setting records no key change.
+    #expect(await rig.service.snapshot().lastChange == at(0))
+}
+
+@Test(.timeLimit(.minutes(1))) func aChangedScheduleBeforeTheServiceStartsArmsNothing() async throws {
+    let rig = try ServiceRig(state: BackupState())
+    await rig.service.scheduleDidChange()
+    #expect(await !eventually(0.1) { !rig.clock.requestedSleeps.isEmpty })
     #expect(rig.runs.value == 0)
 }
 

@@ -1,8 +1,12 @@
+import Darwin
 import Foundation
 
 /// signd's settings, in the user defaults domain `com.victor-software-house.signd`.
 public struct Settings: Sendable {
     public static let domain = "com.victor-software-house.signd"
+
+    /// The Darwin notification that a command posts after it writes a setting, so the agent applies the change at once.
+    public static let changedNotification = "com.victor-software-house.signd.settings-changed"
 
     /// A setting signd reads, with its default.
     public enum Key: String, CaseIterable, Sendable {
@@ -114,6 +118,7 @@ public struct Settings: Sendable {
     private func write(_ key: Key, _ value: CFPropertyList?) {
         CFPreferencesSetAppValue(key.rawValue as CFString, value, Self.domain as CFString)
         CFPreferencesAppSynchronize(Self.domain as CFString)
+        notify_post(Self.changedNotification)
     }
 
     /// A setting's value: the local one, else the default. A local value that is not a valid duration for the setting is passed over.
