@@ -83,9 +83,11 @@
   - 2026-11-18 UTC: both Macs run 0.0.8 through the cask.
     Step 1 did not hold on Mac A, whose key items had left the `signd` vault before the upgrade.
     So Mac A's store had no key.
+
   - A work key was imported on Mac A from its 1Password item through stdin, and shared by default.
     Mac B listed it 2.78 s after the import began.
     `ssh -T` to that key's Git host through `~/.ssh/signd.sock` authenticated on both Macs.
+
   - Six rounds used throwaway keys, each imported on one Mac and deleted 3 s later.
     The other Mac polled every 0.2 s, and the 0.046 s clock offset is removed:
 
@@ -95,10 +97,12 @@
     | Mac B | 0.88, 0.92, 0.84 | 0.74, 0.72, 0.91 |
 
   - For steps 4 and 5, the `signd` vault read is deleted, and the `signd` service account is revoked in 1Password.
+
   - 2026-11-18 UTC: from 16:07 to 17:07 UTC, a shared key was imported every 2 minutes, on each Mac in turn.
     Each one was deleted 3 s later.
     All 31 rounds saw both changes on the other Mac, with no timeout.
     Every check was `ok` at the 2 s interval, so nothing was throttled.
+
   - Seconds from each change to the other Mac's list:
 
     | Change | Median, seconds | p95, seconds | Max, seconds |
