@@ -35,10 +35,15 @@ It uses Noora's `TerminalText` and `format` to colour a line, and prints the lin
 It never uses Noora's prompts, steps or tables.
 `signd serve` and the updater daemon never build a `Noora`, so their signal handling stays their own.
 
+Noora colours text through Rainbow, which emits plain text unless stdout is a terminal and `TERM` is set.
+So when either stream gets colour, the command line sets `Rainbow.enabled` and `Rainbow.outputTarget = .console` once, before it prints.
+Each stream's `Noora` still decides by its own `isColored`.
+
 ### 4. Plain text without colour
 
 With colour off, each line is the same text as today, with no symbol added.
 With colour on, a result line gets its symbol in front, and `signd status` colours each value by its state.
+The backup and update lines of `signd status`, which their own modules build, stay plain in this change.
 
 | State | Colour | Examples |
 |:--|:--|:--|
