@@ -56,7 +56,13 @@ run = "xcodegen generate"
 [tasks.app]
 description = "Build the Signd app target unsigned into build/, as a pull request's check does"
 depends = ["generate"]
-run = "xcodebuild build -project Signd.xcodeproj -scheme Signd -derivedDataPath build CODE_SIGNING_ALLOWED=NO"
+# xcodegen/settings.yml sets the compilation cache for the project's own targets only.
+# The Swift package targets take it from the command line, so they share the cache path CI restores.
+run = '''
+xcodebuild build -project Signd.xcodeproj -scheme Signd -derivedDataPath build CODE_SIGNING_ALLOWED=NO \
+  COMPILATION_CACHE_ENABLE_CACHING=YES COMPILATION_CACHE_KEEP_CAS_DIRECTORY=YES \
+  COMPILATION_CACHE_CAS_PATH="$HOME/Library/Caches/CompilationCache.noindex"
+'''
 
 [tasks.archive]
 description = "Archive the Signd scheme in Release into build/Signd.xcarchive, signed manually with the Developer ID identity and the profile package:profile installed"
