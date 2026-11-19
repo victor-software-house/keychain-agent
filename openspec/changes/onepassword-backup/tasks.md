@@ -9,10 +9,13 @@
     It does not archive: the SDK cannot delete an archived item, so a Go stub test covers `archive`.
 - [x] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`.
   Verify unit tests that no file, argument or log contains it.
-  - 2026-11-19 UTC: [CI run on the pull request][ci-1-2] passed Build and test.
-    Unit tests cover a sealed payload that never contains the token.
+  - 2026-11-19 UTC: Unit tests cover a sealed payload that never contains the token.
     They cover a login with an argument, which exits with the stdin message.
-    They also cover a check that stores, deletes and seals the token.
+    They also cover a check that stores the token, seals it for a new Mac, and deletes it when the record, the zone or the account is gone.
+  - 2026-11-19 UTC: More unit tests cover a Mac with no copy in the record, which deletes its token and seals nothing.
+    They cover a removed device, whose copy leaves the record, and a read with an unreadable record, which deletes nothing.
+    They also cover a state file and results that contain neither the token nor its base64.
+    The prompt that reads the token with echo off has no test, as it needs a terminal.
 - [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
   Verify unit tests of the plan for new, changed, removed and foreign items, and for each `backupRemoved` value.
   Verify unit tests for a tagged item with no section, a `--local` key, and a Secure Enclave list per Mac.
@@ -46,4 +49,3 @@
   Verify the key signs on both Macs.
 
 [so-004]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.4
-[ci-1-2]: https://github.com/victor-software-house/signd/actions/runs/44494294193
