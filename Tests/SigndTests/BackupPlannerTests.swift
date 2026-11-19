@@ -430,6 +430,19 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(result.cache["item-broken"] == nil)
 }
 
+@Test func aPlanThatAsksForReadsKeepsTheCacheItKnows() throws {
+    let current = try keyItem(key("current"), id: "item-current")
+    let added = try keyItem(key("added"), id: "item-added")
+    let entry = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: "tag-1")
+    let result = BackupPlanner.plan(
+        sources: sources(shared: [key("current"), key("added")]), overviews: [overview(current), overview(added)], items: [],
+        cache: ["item-current": entry], removed: .delete
+    )
+    #expect(result.fetch == [["item-added"]])
+    #expect(result.cache == ["item-current": entry])
+    #expect(result.create.isEmpty && result.put.isEmpty && result.delete.isEmpty)
+}
+
 @Test func aPlanWithNoUnreadItemsListsNone() throws {
     let item = try keyItem(key("work"), id: "item-work")
     #expect(plan(sources(shared: [key("work")]), vault: [item]).unread.isEmpty)

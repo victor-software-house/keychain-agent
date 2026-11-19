@@ -63,7 +63,7 @@ public struct BackupPlan: Sendable, Equatable {
     }
 
     /// Item IDs to read with `getAll`, 50 a call.
-    /// When it is not empty, the rest of the plan is empty: read them, and plan again with them.
+    /// When it is not empty, the rest of the plan is empty but `cache`, which keeps every item this plan knows: read them, and plan again with them.
     /// Pass the IDs whose read failed as `unread` to that second plan.
     public var fetch: [[String]] = []
     /// Items to create, 100 a call.
@@ -133,8 +133,10 @@ public enum BackupPlanner {
         }
         var plan = BackupPlan()
         plan.unread = failed
+        // The groups and the targets below need the whole vault, so this plan can only keep what it knows.
         guard missing.isEmpty else {
             plan.fetch = chunks(missing, fetchBatch)
+            for entry in known { plan.cache[entry.id] = cacheEntry(entry, sourceTag: entry.cachedTag, targets: [:]) }
             return plan
         }
 
