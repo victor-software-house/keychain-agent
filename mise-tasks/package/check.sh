@@ -21,4 +21,5 @@ floor=$(sed -n 's/.*\.macOS(\.v\([0-9]*\)).*/\1.0/p' Package.swift)
 [ "$(distribution 'string(//title)')" = signd ] || fail "the distribution's title is not signd"
 [ "$(distribution 'string(//options/@hostArchitectures)')" = arm64 ] || fail "the distribution's hostArchitectures is not arm64"
 [ "$(distribution 'string(//allowed-os-versions/os-version/@min)')" = "$floor" ] || fail "the distribution's allowed-os-versions is not macOS $floor"
-echo "✔ the package's distribution has the title signd, arm64 as its host architecture, and macOS $floor as its floor"
+[ "$(distribution 'string(//domains/@enable_localSystem)')" = true ] || fail "the distribution's domains do not enable the local system"
+echo "✔ the package's distribution has the title signd, arm64 as its host architecture, macOS $floor as its floor, and installs on the boot volume"
