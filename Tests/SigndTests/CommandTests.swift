@@ -123,21 +123,21 @@ private let noUpdates = UpdateStatus(settings: UpdateSettings(managed: noPlist, 
 }
 
 @Test func anUnreachableUpdaterGetsTheCommandThatFixesIt() {
-    #expect(UpdaterProblem.message(hasPlist: false, isLoaded: false, isCask: true, waited: 0) == "the updater is not installed; reinstall signd with: brew reinstall --cask signd")
+    #expect(UpdaterProblem.message(hasPlist: false, isLoaded: false, isCask: true, timedOut: false) == "the updater is not installed; reinstall signd with: brew reinstall --cask signd")
     #expect(
-        UpdaterProblem.message(hasPlist: false, isLoaded: false, isCask: false, waited: 0)
+        UpdaterProblem.message(hasPlist: false, isLoaded: false, isCask: false, timedOut: false)
             == "the updater is not installed; reinstall signd from https://github.com/victor-software-house/signd/releases/latest/download/signd.pkg"
     )
     #expect(
-        UpdaterProblem.message(hasPlist: true, isLoaded: false, isCask: false, waited: 0)
+        UpdaterProblem.message(hasPlist: true, isLoaded: false, isCask: false, timedOut: false)
             == "the updater is installed but not loaded; load it with: sudo launchctl bootstrap system /Library/LaunchDaemons/com.victor-software-house.signd.updater.plist"
     )
     #expect(
-        UpdaterProblem.message(hasPlist: true, isLoaded: true, isCask: true, waited: 0)
+        UpdaterProblem.message(hasPlist: true, isLoaded: true, isCask: true, timedOut: false)
             == "the updater did not reply; restart it with: sudo launchctl kickstart -k system/com.victor-software-house.signd.updater"
     )
     #expect(
-        UpdaterProblem.message(hasPlist: true, isLoaded: true, isCask: true, waited: 1_800)
-            == "the updater is still busy after 30 minutes; signd status shows its last check when it ends"
+        UpdaterProblem.message(hasPlist: true, isLoaded: true, isCask: true, timedOut: true)
+            == "the updater did not reply within 15 minutes; if signd status shows no newer check, restart it with: sudo launchctl kickstart -k system/com.victor-software-house.signd.updater"
     )
 }

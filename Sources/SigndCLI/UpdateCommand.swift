@@ -11,7 +11,12 @@ struct UpdateNow: ParsableCommand {
     func run() throws {
         let out = colorOption.standardOutput
         let asked = Date()
-        guard let state = Updater.requestCheck() else { throw Failure(UpdaterProblem.current(waited: Date().timeIntervalSince(asked))) }
+        let state: UpdateState
+        switch Updater.requestCheck() {
+        case let .answered(answer): state = answer
+        case .timedOut: throw Failure(UpdaterProblem.current(timedOut: true))
+        case .unreachable: throw Failure(UpdaterProblem.current(timedOut: false))
+        }
         switch state.outcome {
         case .upToDate?:
             print(out.success("signd is up to date (\(state.installed ?? "unknown version"))"))
@@ -50,26 +55,25 @@ enum UpdaterProblem {
     static let package = "https://github.com/victor-software-house/signd/releases/latest/download/signd.pkg"
     static let caskrooms = ["/opt/homebrew/Caskroom/signd", "/usr/local/Caskroom/signd"]
 
-    /// A request that failed after this long met a busy updater.
-    static let busyAfter: TimeInterval = 60
-
     /// The message for this Mac.
-    /// It depends on whether the daemon's file is installed, whether launchd loaded it, whether Homebrew installed signd, and how long the request waited.
-    static func message(hasPlist: Bool, isLoaded: Bool, isCask: Bool, waited: TimeInterval) -> String {
+    /// It depends on whether the daemon's file is installed, whether launchd loaded it, whether Homebrew installed signd, and whether the request timed out.
+    static func message(hasPlist: Bool, isLoaded: Bool, isCask: Bool, timedOut: Bool) -> String {
         guard hasPlist else {
             return isCask
                 ? "the updater is not installed; reinstall signd with: brew reinstall --cask signd"
                 : "the updater is not installed; reinstall signd from \(package)"
         }
         guard isLoaded else { return "the updater is installed but not loaded; load it with: sudo launchctl bootstrap system \(plist)" }
-        guard waited < busyAfter else { return "the updater is still busy after \(Int(waited / 60)) minutes; signd status shows its last check when it ends" }
-        return "the updater did not reply; restart it with: sudo launchctl kickstart -k system/\(label)"
+        let restart = "sudo launchctl kickstart -k system/\(label)"
+        guard timedOut else { return "the updater did not reply; restart it with: \(restart)" }
+        let minutes = Int(Updater.checkTimeout / 60)
+        return "the updater did not reply within \(minutes) minutes; if signd status shows no newer check, restart it with: \(restart)"
     }
 
-    static func current(waited: TimeInterval) -> String {
+    static func current(timedOut: Bool) -> String {
         let files = FileManager.default
         return message(
-            hasPlist: files.fileExists(atPath: plist), isLoaded: isLoaded(), isCask: caskrooms.contains { files.fileExists(atPath: $0) }, waited: waited
+            hasPlist: files.fileExists(atPath: plist), isLoaded: isLoaded(), isCask: caskrooms.contains { files.fileExists(atPath: $0) }, timedOut: timedOut
         )
     }
 
