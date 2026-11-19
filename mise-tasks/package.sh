@@ -14,6 +14,12 @@ app=build/root/Applications/Signd.app
 version=$(cat VERSION)
 mkdir -p "$app/Contents/MacOS" "$app/Contents/Library/LaunchAgents"
 cp Bundle/Info.plist "$app/Contents/Info.plist"
+# actool compiles the Icon Composer icon into Assets.car and AppIcon.icns, which Info.plist names.
+mkdir -p "$app/Contents/Resources"
+xcrun actool Bundle/AppIcon.icon --compile "$app/Contents/Resources" --platform macosx --minimum-deployment-target 26.0 \
+  --app-icon AppIcon --output-partial-info-plist build/icon.plist --errors > /dev/null
+test -f "$app/Contents/Resources/Assets.car"
+test -f "$app/Contents/Resources/AppIcon.icns"
 plutil -replace CFBundleShortVersionString -string "$version" "$app/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$version" "$app/Contents/Info.plist"
 cp Bundle/com.victor-software-house.signd.plist "$app/Contents/Library/LaunchAgents/"
