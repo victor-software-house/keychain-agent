@@ -62,8 +62,16 @@
     `theLeaseIsRenewedBeforeACallOnceAThirdOfItHasPassed` and `aRenewalThatFailsBeforeAPutStopsTheRunBeforeThatCall` cover the renewal inside a put group.
   - 2026-11-19 UTC: `aTokenThatDiffersFromTheStoredOneCountsAsAChange` in `BackupTests` covers the sync report that makes a backup run due on a Mac that did not log in.
     `aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn`, `aLeaseOfAnotherFormatHoldsUntilItsExpiryAndOnlyAnUnreadableOneIsFree` and `resultsAreMatchedToTheirRequestsWhateverTheOrder` cover the rest.
-  - 2026-11-19 UTC: `onePasswordTakesEd25519AndRSAOfTheListedSizesAndExponents` and `aKeyOnePasswordRejectsGetsNoItemAndDoesNotFailTheRun` cover keys that 1Password's SSH Key item rejects.
-    The run writes no item for an elliptic curve key or a 1024-bit key, and does not fail.
+  - 2026-11-19 UTC: A key that 1Password's SSH Key item cannot take gets a Secure Note by design decision 2.
+    `anSSHKeyItemFitsEd25519AndRSAOfTheListedSizesAndExponents` in `BackupRunTests` covers `PublicKey.fitsSSHKeyItem` at the size and exponent edges.
+  - 2026-11-19 UTC: `aKeyTheSSHKeyItemCannotTakeGetsASecureNote` runs an elliptic curve key and a 1024-bit key into Secure Notes, beside two SSH Key items.
+    The next run makes only the list call, and a run with no cache writes nothing.
+  - 2026-11-19 UTC: `BackupPlannerTests` cover the notes.
+    `anECDSAKeyAndA1024BitRSAKeyEachGetASecureNote` and `anEd25519KeyAndA2048BitRSAKeyEachGetAnSSHKeyItem` cover each item's category and fields.
+  - 2026-11-19 UTC: `aSecureNoteThatHasWhatItShouldIsLeftAlone` and `aChangedSecureNoteIsPut` cover the comparison by the fingerprint of the public key field.
+    They cover a note with no readable public key.
+  - 2026-11-19 UTC: `aKeyWhoseItemIsInTheOtherCategoryGetsAnItemInTheRightOneAndTheOldGoes` covers a new item in the right category.
+    It covers the old item's removal by each `backupRemoved` value.
   - 2026-11-19 UTC: `aOnePasswordErrorIsRecordedByItsKindAndNeverItsMessage` covers a 1Password error that echoes the private key and a host.
     The recorded result shows the call, the item and the error code, and neither value.
 - [ ] 1.6 Add `signd backup restore` by design decision 7.

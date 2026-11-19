@@ -31,10 +31,27 @@ The device identifier comes from the Mac's `Device` record, never from its edita
 
 ### 2. Item shape
 
-A `key` item is an SSH Key item titled with the key's name, that contains the private key, a `hosts` text field and the comment.
+A `key` item is titled with the key's name, and contains the private key, a `hosts` text field and the comment.
 
-1Password takes only Ed25519 keys and Rivest–Shamir–Adleman (RSA) keys of 2048, 3072 or 4096 bits there ([1Password][op-ssh-types]).
-Any other key gets no item and keeps the item it has, and the plan lists it as unavailable.
+1Password's SSH Key item takes only Ed25519 keys, and Rivest–Shamir–Adleman (RSA) keys of 2048, 3072 or 4096 bits.
+An RSA key needs an exponent of at least 65537 ([1Password][op-ssh-types]).
+A key it takes gets an SSH Key item.
+
+Any other key gets a Secure Note (operator, 2026-11-19).
+Such a key is an Elliptic Curve Digital Signature Algorithm (ECDSA) key, or an RSA key of another size.
+
+A Secure Note for a key contains the OpenSSH private key in a concealed field, and the public key in a text field.
+It also has the `hosts` field, the comment, the tag and the `signd` section of an SSH Key item.
+
+A run compares an SSH Key item by the public key 1Password derives.
+It compares a note by the fingerprint of its public key field.
+A note with no readable public key counts as changed.
+
+An item keeps its category when a run puts it.
+So a key whose item is in the other category gets a new item in the right one.
+This happens after a change of the rule above.
+Once a run reads that new item, the old one goes by `backupRemoved`, on a completed read like any removal.
+
 A `secure-enclave-list` item is a Secure Note, `signd Secure Enclave keys (<device name>)`, with each key's name, public key and hosts, for recreation.
 
 ### 3. A run
