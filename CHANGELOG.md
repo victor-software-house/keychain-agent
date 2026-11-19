@@ -1,5 +1,10 @@
 # Changelog
 
+## signd 0.0.10
+
+- A package installed over a running agent takes effect at once.
+  `signd service enable` restarts an agent that reports another version ([`beb9d21`](https://github.com/victor-software-house/signd/commit/beb9d21ca186d5d3cf72c89aca4ca1d4716d4297)).
+
 ## signd 0.0.9
 
 - The package links `signd` into `/usr/local/bin`, and `signd service enable` adds `Include ~/.ssh/signd/config` to the top of `~/.ssh/config`.
