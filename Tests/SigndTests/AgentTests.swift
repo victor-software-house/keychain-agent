@@ -113,45 +113,63 @@ func memoryKey() -> PrivateKey {
     }
 }
 
-/// Signs slowly, standing in for the Secure Enclave.
-struct SlowSigner: Signer {
+/// Signs only once released, standing in for a Secure Enclave call that is still running.
+final class GatedSigner: Signer {
     let publicKey = PublicKey.ed25519(Data(repeating: 5, count: 32))
+    private let gate = DispatchSemaphore(value: 0)
+    private let entered: AsyncStream<Void>.Continuation
+
+    init(entered: AsyncStream<Void>.Continuation) { self.entered = entered }
+
     func sign(_: Data, flags _: SignFlags) throws(SignError) -> Signature {
-        usleep(5000)
+        entered.yield()
+        gate.wait()
         return Signature(algorithm: "ssh-ed25519", bytes: Data(repeating: 0, count: 64))
+    }
+
+    func release(_ count: Int) {
+        for _ in 0..<count { gate.signal() }
     }
 }
 
 @Suite struct Concurrency {
-    @Test func slowSignaturesDoNotDelayAListRequest() async throws {
+    /// Every signature waits for the release at the end, so the list request
+    /// returns only if no signature in flight delays it. If one does, the time
+    /// limit fails the test. No clock is read: a time bound fails on a busy
+    /// runner whatever the agent does.
+    @Test(.timeLimit(.minutes(1))) func signaturesInFlightDoNotDelayAListRequest() async throws {
         let store = MemoryStore()
         let stored = storedSoftwareKey("slow")
         try store.add(stored)
-        let agent = Agent(store: store, version: "test", lifetime: { 3600 }, opener: { _ throws(SignError) in SlowSigner() })
+        let (entered, continuation) = AsyncStream<Void>.makeStream()
+        let signer = GatedSigner(entered: continuation)
+        let agent = Agent(store: store, version: "test", lifetime: { 3600 }, opener: { _ throws(SignError) in signer })
         await agent.reload()
         let server = Server(agent: agent)
+        let count = 8
         try await withThrowingTaskGroup { group in
-            for _ in 0..<32 {
+            // Whatever ends the test, the signatures are let go: they wait on the
+            // shared thread pool, and one left waiting would stall other tests.
+            defer { signer.release(count) }
+            for _ in 0..<count {
                 group.addTask {
-                    // Each task keeps one signature in flight until the list
-                    // request is measured, then stops, so the queued
-                    // signatures delay no other test.
-                    for _ in 0..<100 where !Task.isCancelled {
-                        let response = await server.respond(to: .sign(keyBlob: stored.publicBlob, data: Data([1]), flags: []))
-                        // A signature still in flight when the test stops
-                        // the tasks ends in a failure, as a cancelled one should.
-                        guard case .signature = response else {
-                            if Task.isCancelled { return }
-                            throw SignError.failed("no signature")
-                        }
+                    guard case .signature = await server.respond(to: .sign(keyBlob: stored.publicBlob, data: Data([1]), flags: [])) else {
+                        // No signature started, so nothing else would end the wait below.
+                        continuation.finish()
+                        throw SignError.failed("no signature")
                     }
                 }
             }
-            try await Task.sleep(for: .milliseconds(50))
-            let start = ContinuousClock.now
-            _ = await server.respond(to: .identities)
-            #expect(ContinuousClock.now - start < .milliseconds(10))
-            group.cancelAll()
+            var signing = entered.makeAsyncIterator()
+            _ = await signing.next()
+            // A list request that waits on a signature ends only at the time limit,
+            // whose cancellation lets the signatures go, so the request returns.
+            await withTaskCancellationHandler {
+                _ = await server.respond(to: .identities)
+            } onCancel: {
+                signer.release(count)
+            }
+            signer.release(count)
             try await group.waitForAll()
         }
     }
