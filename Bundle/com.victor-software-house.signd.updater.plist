@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>Label</key>
+	<string>com.victor-software-house.signd.updater</string>
+	<!-- The package installs this daemon in /Library/LaunchDaemons, where it runs as root. -->
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/Signd.app/Contents/MacOS/signd</string>
+		<string>updater</string>
+	</array>
+	<!-- Each run checks only when the update interval has passed since the last check. -->
+	<key>StartInterval</key>
+	<integer>3600</integer>
+	<!-- signd update asks for a check on this Mach service, which starts the daemon when it is not running. -->
+	<key>MachServices</key>
+	<dict>
+		<key>com.victor-software-house.signd.updater</key>
+		<true/>
+	</dict>
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.victor-software-house.signd</string>
+	</array>
+</dict>
+</plist>

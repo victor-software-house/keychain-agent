@@ -49,6 +49,8 @@ let package = Package(
             ],
             swiftSettings: strict
         ),
+        // The updater: the check, the verified download, the swap of the app and the restart of the agents.
+        .target(name: "Updates", swiftSettings: strict),
         // The agent's state and the socket server.
         .target(
             name: "AgentServer",
@@ -65,7 +67,7 @@ let package = Package(
         .target(
             name: "SigndCLI",
             dependencies: [
-                "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHEncoding", "Sync",
+                "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHEncoding", "Sync", "Updates",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             swiftSettings: strict
@@ -78,7 +80,7 @@ let package = Package(
         .testTarget(
             name: "SigndTests",
             dependencies: [
-                "SSHEncoding", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "SigndCLI",
+                "SSHEncoding", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "Updates", "SigndCLI",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "NIOCore", package: "swift-nio"),
