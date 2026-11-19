@@ -112,7 +112,8 @@ struct AgentClient {
 
     private func backupRestore<Value: Decodable>(_ request: BackupRestoreRequest) -> Value? {
         guard let json = try? JSONEncoder().encode(request) else { return nil }
-        return decoded(PrivateExtension.backupRestore, argument: String(decoding: json, as: UTF8.self), timeout: 120)
+        // A restore shares each key through iCloud one after another, so it waits longer than a list.
+        return decoded(PrivateExtension.backupRestore, argument: String(decoding: json, as: UTF8.self), timeout: request.listOnly ? 120 : 600)
     }
 
     /// The devices of the account, or nil when no agent answers.

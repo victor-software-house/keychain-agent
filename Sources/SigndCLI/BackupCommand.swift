@@ -49,13 +49,16 @@ struct BackupAgent: BackupCommands {
             }
         }
         await agent.reload()
+        await sync.keysDidChange()
         await backup?.keysDidChange()
         return result
     }
 
     func status() async -> BackupStatus {
         let state = await backup?.snapshot() ?? BackupState.load()
-        return BackupStatus(isOn: isTokenStored(), vault: settings.text(.backupVault), state: state, schedule: BackupSchedule(settings: settings))
+        // With no CloudKit container the agent runs no backup service, so no run is ever due.
+        let isOn = backup == nil ? false : isTokenStored()
+        return BackupStatus(isOn: isOn, vault: settings.text(.backupVault), state: state, schedule: BackupSchedule(settings: settings))
     }
 
     /// Whether a token is stored; nil when the keychain cannot be read.
