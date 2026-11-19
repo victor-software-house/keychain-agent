@@ -297,6 +297,8 @@ public actor SyncService {
                     if state.stopped {
                         outcome = .stopped
                         message = Self.stoppedMessage
+                    } else if let unreadable = state.unreadable {
+                        message = "\(unreadable.count) records could not be read; the next check tries them again"
                     }
                 } else {
                     outcome = .accountUnavailable

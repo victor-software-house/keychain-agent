@@ -17,6 +17,24 @@ public enum RecordType: String, Codable, Sendable {
         case .lease: "lease-"
         }
     }
+
+    /// The type a record name belongs to, or nil for a name with no known prefix.
+    public init?(recordName: String) {
+        guard let type = [Self.device, .key, .backup, .lease].first(where: { recordName.hasPrefix($0.prefix) }) else { return nil }
+        self = type
+    }
+}
+
+/// A record that a read could not return, by type and name.
+/// It carries no payload, so it is safe in the state file.
+public struct UnreadableRecord: Codable, Sendable, Equatable {
+    public var type: RecordType
+    public var name: String
+
+    public init(type: RecordType, name: String) {
+        self.type = type
+        self.name = name
+    }
 }
 
 /// One record as signd reads and writes it.

@@ -116,7 +116,7 @@ public struct CloudKitStore: CloudStore {
                     case let .success(modification):
                         if let record = Self.record(modification.record) { result.changed.append(record) }
                     case .failure:
-                        result.unreadable.append(id.recordName)
+                        if let type = RecordType(recordName: id.recordName) { result.unreadable.append(UnreadableRecord(type: type, name: id.recordName)) }
                     }
                 }
                 result.deleted += changes.deletions.map(\.recordID.recordName)

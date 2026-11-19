@@ -158,20 +158,94 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     #expect(await a.service.snapshot().backup?.sealedFor == [a.device.recordName])
 }
 
-@Test(.timeLimit(.minutes(1))) func aFullReadThatCannotReadTheBackupRecordKeepsTheToken() async throws {
-    let (cloud, _, b) = try await loggedInAndWaiting()
+private let unreadableMessage = "1 records could not be read; the next check tries them again"
+
+/// Shares a key named `deploy` from a device that knows every other device of the account.
+private func shareDeploy(from rig: DeviceRig) async throws {
+    let (stored, _) = try localWrappedKey("deploy", hosts: ["git.example.com"])
+    try rig.store.add(stored)
+    #expect(await rig.service.share("deploy") == SyncResult(.done))
+}
+
+@Test(.timeLimit(.minutes(1))) func aFullReadThatCannotReadTheBackupRecordKeepsTheTokenAndAppliesTheRest() async throws {
+    let (cloud, a, b) = try await loggedInAndWaiting()
     _ = await b.service.checkNow()
     #expect(try b.tokens.read() == token)
+    try await shareDeploy(from: a)
+    let before = await b.service.snapshot()
 
     // The change token expires, so the next read is a full one, and CloudKit fails the Backup record in it.
     cloud.failReads(of: [BackupPayload.recordName])
     cloud.expireNextToken()
-    #expect(await b.service.checkNow().outcome == .failed)
+    let summary = await b.service.checkNow()
+    #expect(summary.outcome == .ok)
+    #expect(summary.message == unreadableMessage)
+    #expect(summary.added == ["deploy"])
     #expect(try b.tokens.read() == token)
 
+    let after = await b.service.snapshot()
+    #expect(after.databaseToken != nil)
+    #expect(after.databaseToken != before.databaseToken)
+    #expect(after.zoneToken != before.zoneToken)
+    #expect(after.backup == before.backup)
+    #expect(after.unreadable == [UnreadableRecord(type: .backup, name: BackupPayload.recordName)])
+
     cloud.failReads(of: [])
-    #expect(await b.service.checkNow().outcome == .ok)
+    let next = await b.service.checkNow()
+    #expect(next.outcome == .ok)
+    #expect(next.message == nil)
     #expect(try b.tokens.read() == token)
+    #expect(await b.service.snapshot().unreadable == nil)
+}
+
+@Test(.timeLimit(.minutes(1))) func anUnreadableRecordIsFetchedByNameAtEachCheckUntilItReads() async throws {
+    let (cloud, a, b) = try await loggedInAndWaiting()
+    _ = await b.service.checkNow()
+    try await shareDeploy(from: a)
+    let before = await b.service.snapshot()
+
+    // An incremental read applies what it can read and advances the change tokens past the record it cannot.
+    cloud.failReads(of: ["key-deploy"])
+    let first = await b.service.checkNow()
+    #expect(first.outcome == .ok)
+    #expect(first.message == unreadableMessage)
+    #expect(try b.shared().isEmpty)
+    #expect(await b.service.snapshot().zoneToken != before.zoneToken)
+    #expect(await b.service.snapshot().unreadable == [UnreadableRecord(type: .key, name: "key-deploy")])
+
+    // The read by name fails too, so the record stays listed.
+    #expect(await b.service.checkNow().message == unreadableMessage)
+    #expect(await b.service.snapshot().unreadable == [UnreadableRecord(type: .key, name: "key-deploy")])
+
+    // No change reaches the next read, so only the read by name can bring the key.
+    cloud.failReads(of: [])
+    let fetches = cloud.calls.fetch
+    let last = await b.service.checkNow()
+    #expect(last.outcome == .ok)
+    #expect(last.message == nil)
+    #expect(last.added == ["deploy"])
+    #expect(cloud.calls.fetch > fetches)
+    #expect(try b.shared().count == 1)
+    #expect(await b.service.snapshot().unreadable == nil)
+}
+
+@Test(.timeLimit(.minutes(1))) func aFullReadThatCannotReadAKeyRecordDoesNotRemoveTheKey() async throws {
+    let (cloud, a, b) = try await loggedInAndWaiting()
+    try await shareDeploy(from: a)
+    _ = await b.service.checkNow()
+    #expect(try b.shared().count == 1)
+
+    cloud.failReads(of: ["key-deploy"])
+    cloud.expireNextToken()
+    let summary = await b.service.checkNow()
+    #expect(summary.outcome == .ok)
+    #expect(summary.removed.isEmpty)
+    #expect(try b.shared().count == 1)
+    #expect(await b.service.snapshot().keys["key-deploy"] != nil)
+
+    cloud.failReads(of: [])
+    #expect(await b.service.checkNow().removed.isEmpty)
+    #expect(try b.shared().count == 1)
 }
 
 @Test(.timeLimit(.minutes(1))) func aZoneDeletedByTheUserDeletesTheToken() async throws {

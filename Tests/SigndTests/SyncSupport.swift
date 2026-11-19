@@ -158,7 +158,7 @@ final class FakeCloud: CloudStore {
             guard db.sequence > since || zone == nil else { return changes }
             changes.requests = 2
             let newer = db.records.values.filter { $0.sequence > since }.sorted { $0.sequence < $1.sequence }
-            changes.unreadable = newer.map(\.record.name).filter { state.unreadable.contains($0) }
+            changes.unreadable = newer.filter { state.unreadable.contains($0.record.name) }.map { UnreadableRecord(type: $0.record.type, name: $0.record.name) }
             changes.changed = newer.filter { !state.unreadable.contains($0.record.name) }.map { stored in
                 var record = stored.record
                 record.system = Self.token(stored.tag)
@@ -173,6 +173,7 @@ final class FakeCloud: CloudStore {
     func fetch(_: RecordType, name: String) async throws(CloudError) -> CloudRecord? {
         try await answer({ $0.fetch += 1 }) { state throws(CloudError) in
             guard let stored = state.database.records[name] else { return nil }
+            if state.unreadable.contains(name) { throw CloudError(.other, "the record cannot be read") }
             var record = stored.record
             record.system = Self.token(stored.tag)
             return record

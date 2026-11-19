@@ -75,6 +75,9 @@ public struct SyncState: Codable, Sendable, Equatable {
     public var skipped: [SkippedKey] = []
     /// The `Backup` record, when there is one. Optional, so a state file written before it existed still loads.
     public var backup: BackupEntry?
+    /// Records that a read could not return, which each check reads again by name.
+    /// Optional, so a state file written before it existed still loads.
+    public var unreadable: [UnreadableRecord]?
     public var lastCheck: Date?
     public var lastSuccess: Date?
     public var lastResult: CheckOutcome?
@@ -117,6 +120,7 @@ public struct SyncState: Codable, Sendable, Equatable {
         keys = [:]
         skipped = []
         backup = nil
+        unreadable = nil
     }
 }
 
