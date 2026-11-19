@@ -194,3 +194,28 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     b.service.accountChanged()
     #expect(await eventually { (try? b.tokens.read()) == nil })
 }
+
+@Test(.timeLimit(.minutes(1))) func theStateFileAndTheResultsNeverContainTheToken() async throws {
+    let cloud = FakeCloud()
+    let a = DeviceRig(cloud: cloud, name: "mac-a")
+    let b = DeviceRig(cloud: cloud, name: "mac-b")
+    _ = await b.service.checkNow()
+    let login = await a.service.backupLogin(token: token, vault: "signd")
+    let checks = [await a.service.checkNow(), await b.service.checkNow()]
+    #expect(login == SyncResult(.done))
+    #expect(try b.tokens.read() == token)
+
+    let text = String(decoding: token, as: UTF8.self)
+    let encoded = token.base64EncodedString()
+    for rig in [a, b] {
+        let file = try Data(contentsOf: rig.stateURL)
+        let json = String(decoding: file, as: UTF8.self)
+        #expect(file.range(of: token) == nil)
+        #expect(!json.contains(text))
+        #expect(!json.contains(encoded))
+    }
+    for message in [login.message] + checks.map(\.message) {
+        #expect(!(message ?? "").contains(text))
+        #expect(!(message ?? "").contains(encoded))
+    }
+}
