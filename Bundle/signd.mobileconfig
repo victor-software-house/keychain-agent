@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- TEAM_IDENTIFIER is the signing team: the release task writes it in from the signed app. -->
+	<!-- The payload UUIDs stay fixed, so a newer release replaces this profile on the Mac. -->
+	<key>PayloadType</key>
+	<string>Configuration</string>
+	<key>PayloadVersion</key>
+	<integer>1</integer>
+	<key>PayloadIdentifier</key>
+	<string>com.victor-software-house.signd.profile</string>
+	<key>PayloadUUID</key>
+	<string>AF0982D1-B9BA-4079-9951-DAFC4817B9C9</string>
+	<key>PayloadScope</key>
+	<string>System</string>
+	<key>PayloadDisplayName</key>
+	<string>signd login items</string>
+	<key>PayloadDescription</key>
+	<string>Approves signd's login items, so macOS shows no approval prompt for the agent or its login hook.</string>
+	<key>PayloadContent</key>
+	<array>
+		<dict>
+			<key>PayloadType</key>
+			<string>com.apple.servicemanagement</string>
+			<key>PayloadVersion</key>
+			<integer>1</integer>
+			<key>PayloadIdentifier</key>
+			<string>com.victor-software-house.signd.profile.login-items</string>
+			<key>PayloadUUID</key>
+			<string>96999533-09E3-4AC1-9AEF-2B9F9BB65357</string>
+			<key>PayloadDisplayName</key>
+			<string>signd login items</string>
+			<key>PayloadDescription</key>
+			<string>Approves the login items of the app com.victor-software-house.signd when the signing team matches.</string>
+			<key>Rules</key>
+			<array>
+				<dict>
+					<key>RuleType</key>
+					<string>BundleIdentifier</string>
+					<key>RuleValue</key>
+					<string>com.victor-software-house.signd</string>
+					<key>TeamIdentifier</key>
+					<string>TEAM_IDENTIFIER</string>
+					<key>Comment</key>
+					<string>signd, the SSH agent: its agent and its login hook</string>
+				</dict>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

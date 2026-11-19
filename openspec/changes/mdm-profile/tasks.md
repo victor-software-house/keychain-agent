@@ -20,11 +20,14 @@
 
 ## 2. Example profile
 
-- [ ] 2.1 Add `Bundle/signd.mobileconfig` with the `TEAM_IDENTIFIER` placeholder and fixed payload UUIDs.
-- [ ] 2.2 Render it in the package task from `codesign -dv` of the built app.
+- [x] 2.1 Add `Bundle/signd.mobileconfig` with the `TEAM_IDENTIFIER` placeholder and fixed payload UUIDs.
+  - 2026-11-19 UTC: `plutil -lint` accepts the file, which has one `com.apple.servicemanagement` rule.
+- [x] 2.2 Render it in the `package:mobileconfig` task from `codesign -dv` of the built app.
   Fail unless the team matches `^[A-Z0-9]{10}$`.
   Check it with `plutil -lint` and for a left placeholder, and upload it in the release.
   Verify the attached file's team matches the app's.
+  - 2026-11-19 UTC: with a stub `codesign`, the task wrote the team into the profile and refused `not set` and a short value.
+    The Release workflow runs and uploads it; that has not run yet.
 - [ ] 2.3 Add a README section for Mobile Device Management (MDM) admins, titled "Deploy with MDM".
   It covers the package, the profile, the rule's values, what it grants and why not a label rule.
   It also covers removal: the hook's commands, and what other users keep after an uninstall.
