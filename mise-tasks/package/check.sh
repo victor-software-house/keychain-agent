@@ -1,12 +1,40 @@
 #!/bin/sh
-#MISE description="Expand build/signd.pkg and check the title, the host architecture and the macOS floor that its Installer distribution sets"
-# The Release workflow runs this on the package it built.
+#MISE description="Check the exported Signd.app and build/signd.pkg against the packaging spec: entitlements, layout, icon, Gatekeeper, and the Installer distribution's title, architecture and macOS floor"
+# The Release workflow runs this on the package it built, after notarization.
 set -eu
 
 fail() {
   echo "✘ $1" >&2
   exit 1
 }
+
+app=build/export/Signd.app
+
+[ -x "$app/Contents/MacOS/signd" ] || fail "the bundle has no Contents/MacOS/signd"
+[ -f "$app/Contents/Library/LaunchAgents/com.victor-software-house.signd.plist" ] || fail "the bundle has no agent plist in Contents/Library/LaunchAgents"
+codesign --verify --strict --deep --verbose=2 "$app" || fail "the bundle's signature does not verify"
+
+# The icon: actool compiled AppIcon into Assets.car, and Xcode merged its name into the Info.plist.
+[ "$(plutil -extract CFBundleIconName raw -o - "$app/Contents/Info.plist")" = AppIcon ] || fail "the Info.plist's CFBundleIconName is not AppIcon"
+xcrun assetutil --info "$app/Contents/Resources/Assets.car" | grep -q '"Name" *: *"AppIcon"' || fail "Contents/Resources/Assets.car has no AppIcon"
+
+# The entitlements of the signature. PlistBuddy steps through a key path at each colon, so a name keeps its dots.
+codesign -d --entitlements :- "$app" > build/entitlements.plist 2> /dev/null
+entitlement() { /usr/libexec/PlistBuddy -c "Print :$1" build/entitlements.plist 2> /dev/null; }
+case "$(entitlement keychain-access-groups:0)" in
+  ?*.com.victor-software-house.signd) ;;
+  *) fail "the keychain access group is not <team>.com.victor-software-house.signd" ;;
+esac
+[ "$(entitlement com.apple.developer.icloud-container-identifiers:0)" = "${CLOUDKIT_CONTAINER:?}" ] || fail "the iCloud container is not $CLOUDKIT_CONTAINER"
+! entitlement com.apple.developer.icloud-container-identifiers:1 > /dev/null || fail "the bundle lists more than one iCloud container"
+[ "$(entitlement com.apple.developer.icloud-services:0)" = CloudKit ] || fail "the iCloud services are not CloudKit"
+[ "$(entitlement com.apple.developer.icloud-container-environment)" = Production ] || fail "the container environment is not Production"
+[ "$(entitlement com.apple.developer.aps-environment)" = production ] || fail "the push environment is not production"
+echo "✔ the bundle has the agent plist, the AppIcon, and the keychain group, the container $CLOUDKIT_CONTAINER, CloudKit, Production and the push environment in its signature"
+
+spctl --assess --type execute -vv "$app" || fail "Gatekeeper rejects the bundle"
+spctl --assess --type install -vv build/signd.pkg || fail "Gatekeeper rejects the package"
+echo "✔ Gatekeeper accepts the bundle and the package"
 
 rm -rf build/expanded
 pkgutil --expand build/signd.pkg build/expanded
