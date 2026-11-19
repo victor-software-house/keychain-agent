@@ -2,6 +2,17 @@
 
 lockfile_version = 4
 
+[[tools."aqua:yonaskolb/XcodeGen"]]
+version = "2.47.0"
+backend = "aqua:yonaskolb/XcodeGen"
+specifiers = ["2.47.0"]
+
+[tools."aqua:yonaskolb/XcodeGen"."platforms.macos-arm64"]
+checksum = "sha256:6ef12a3ef5327c2c713397f46d9160550f8b1cdc5c925cd884d65c77c9f696cd"
+checksum_source = "mise-versions"
+url = "https://github.com/yonaskolb/XcodeGen/releases/download/2.47.0/xcodegen.zip"
+url_api = "https://api.github.com/repos/yonaskolb/XcodeGen/releases/assets/759233409"
+
 [[tools.conftest]]
 version = "0.71.1"
 backend = "aqua:open-policy-agent/conftest"
