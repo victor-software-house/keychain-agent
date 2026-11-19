@@ -1,5 +1,15 @@
 # Changelog
 
+## signd 0.0.15
+
+- `signd update` checks for a newer release now, installs it, restarts the agents on it, and prints the result ([`c6423c3`](https://github.com/victor-software-house/signd/commit/c6423c321b146f4a4e7887aa60c6eb2d61043a5f)).
+
+  `signd status` shows whether updates are on, the interval and its source, and the last update check.
+
+  `signd updater` is the launch daemon's own command, hidden from `--help`: it checks on a schedule as root and answers `signd update`.
+
+  The package installs the updater daemon in `/Library/LaunchDaemons` and loads it, and each release attaches the stapled `Signd.app.zip` that the updater downloads.
+
 ## signd 0.0.14
 
 - `signd backup restore` lists the keys of the 1Password backup, and restores the ones named or all with `--all`.
