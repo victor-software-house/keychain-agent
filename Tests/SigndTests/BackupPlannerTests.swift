@@ -407,7 +407,6 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
 
 @Test func onlyNewItemsAndItemsThatMovedAreRead() throws {
     let current = try keyItem(key("current"), id: "item-current")
-    let moved = try keyItem(key("moved"), id: "item-moved")
     let added = try keyItem(key("added"), id: "item-added")
     let cache = [
         "item-current": BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: "tag-1"),
