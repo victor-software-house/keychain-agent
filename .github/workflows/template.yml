@@ -87,6 +87,7 @@ jobs:
         stylex.plugin.ts
         tsconfig.json
         tsdown.config.ts
+        xcodegen/settings.yml
     secrets:
       RELEASE_MIRROR_URL: ${{ secrets.RELEASE_MIRROR_URL }}
       RELEASE_MIRROR_CI_KEY: ${{ secrets.RELEASE_MIRROR_CI_KEY }}

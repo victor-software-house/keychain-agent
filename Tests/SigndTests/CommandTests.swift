@@ -1,7 +1,7 @@
 import Foundation
 @testable import KeyStore
 import Testing
-@testable import signd
+@testable import SigndCLI
 @testable import Sync
 
 @Test func theJSONReportCarriesTheLoginItemAndTheSSHInclude() throws {

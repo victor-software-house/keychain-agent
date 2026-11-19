@@ -1,0 +1,50 @@
+name: Signd
+include:
+  - xcodegen/settings.yml
+options:
+  bundleIdPrefix: com.victor-software-house
+  deploymentTarget:
+    macOS: "26.0"
+  createIntermediateGroups: true
+packages:
+  signd:
+    path: .
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    ARCHS: arm64
+    MARKETING_VERSION: "0.0.0"
+    CURRENT_PROJECT_VERSION: "0.0.0"
+targets:
+  Signd:
+    type: application
+    platform: macOS
+    sources:
+      - path: App/main.swift
+      - path: Bundle/AppIcon.icon
+      # SMAppService.agent(plistName:) reads the agent's plist from here.
+      - path: Bundle/com.victor-software-house.signd.plist
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
+    # XcodeGen writes this file at every generate; git ignores it.
+    info:
+      path: App/Info.plist
+      properties:
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSUIElement: true
+    settings:
+      base:
+        PRODUCT_NAME: Signd
+        # The agent plist's BundleProgram and the link in /usr/local/bin name Contents/MacOS/signd.
+        EXECUTABLE_NAME: signd
+        PRODUCT_BUNDLE_IDENTIFIER: com.victor-software-house.signd
+        CODE_SIGN_ENTITLEMENTS: App/Signd.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Only this target takes a profile: a library target of the package fails the archive with one.
+        PROVISIONING_PROFILE_SPECIFIER: $(SIGND_PROFILE_UUID)
+    dependencies:
+      - package: signd
+        product: SigndCLI

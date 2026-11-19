@@ -1,2 +1,5 @@
 .build/
 build/
+# XcodeGen writes both at every generate.
+Signd.xcodeproj/
+App/Info.plist
