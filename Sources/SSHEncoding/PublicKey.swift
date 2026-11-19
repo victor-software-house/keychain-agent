@@ -47,7 +47,7 @@ public enum PublicKey: Sendable, Equatable {
     /// Reads a public key blob; nil for an unsupported type or a malformed blob.
     public init?(blob: Data) {
         var reader = Reader(blob)
-        guard let type = reader.text(), let key = Self.read(type: type, from: &reader), reader.isAtEnd else { return nil }
+        guard let type = reader.readText(), let key = Self.read(type: type, from: &reader), reader.isAtEnd else { return nil }
         self = key
     }
 
@@ -55,14 +55,14 @@ public enum PublicKey: Sendable, Equatable {
     public static func read(type: String, from reader: inout Reader) -> PublicKey? {
         switch type {
         case "ssh-ed25519":
-            guard let key = reader.string(), key.count == 32 else { return nil }
+            guard let key = reader.readString(), key.count == 32 else { return nil }
             return .ed25519(key)
         case "ssh-rsa":
-            guard let exponent = reader.unsignedMPInt(), let modulus = reader.unsignedMPInt() else { return nil }
+            guard let exponent = reader.readUnsignedMPInt(), let modulus = reader.readUnsignedMPInt() else { return nil }
             return .rsa(exponent: exponent, modulus: modulus)
         default:
             guard let curve = Curve.allCases.first(where: { $0.keyType == type }),
-                  reader.text() == curve.rawValue, let point = reader.string() else { return nil }
+                  reader.readText() == curve.rawValue, let point = reader.readString() else { return nil }
             return .ecdsa(curve, point)
         }
     }

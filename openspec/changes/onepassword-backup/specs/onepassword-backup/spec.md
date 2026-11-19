@@ -67,7 +67,7 @@ For a removed key, signd SHALL delete its item by default, archive it when `back
 
 ### Requirement: Runs follow the schedule and one Mac runs at a time
 
-signd SHALL run the backup `backupDelay` after the last key change, at most once per `backupInterval`, and once per `backupDailyInterval` with no change.
+signd SHALL run the backup `backupDelay` after the last key change, at most once per `backupMinInterval`, and once per `backupMaxInterval` with no change.
 
 It SHALL run only while it has the `Lease` record.
 It SHALL renew the lease before each batch and stop when a renewal fails.

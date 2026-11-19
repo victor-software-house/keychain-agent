@@ -44,7 +44,7 @@ For a passphrase-protected file, `signd key import NAME FILE` SHALL take the pas
 #### Scenario: Protected key on stdin
 
 - **WHEN** a passphrase-protected key is piped into `signd key import legacy -`
-- **THEN** the command fails with an error that a protected key must be given as a file
+- **THEN** the command fails with an error that an encrypted key must be given as a file
 
 ### Requirement: Generate wrapped keys
 

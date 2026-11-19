@@ -7,7 +7,7 @@ import Foundation
 import KeyStore
 import os
 import ServiceManagement
-import SSHWire
+import SSHEncoding
 import Sync
 import SystemConfiguration
 
@@ -187,8 +187,8 @@ struct KeyCommand: ParsableCommand {
                 switch try KeyImport.parse(data) {
                 case let .key(key, own):
                     imported = (key, own)
-                case .protected:
-                    if fromStdin { throw ImportError.protectedOnStdin }
+                case .encrypted:
+                    if fromStdin { throw ImportError.encryptedKeyOnStdin }
                     imported = try KeyImport.importWithSSHAdd(file: file)
                 }
                 let key = try KeychainStore.makeWrappedKey(name: name, privateKey: imported.0, comment: comment ?? imported.1, hosts: hosts, source: "import")
@@ -270,7 +270,12 @@ struct Status: ParsableCommand {
         let agent: AgentStatus?
         let sync: SyncStatus
         let loginItem: LoginItemState
-        let sshInclude: Bool
+        let isSSHIncludeEnabled: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case version, socket, agentAnswers, agent, sync, loginItem
+            case isSSHIncludeEnabled = "sshInclude"
+        }
     }
 
     func run() throws {
@@ -278,8 +283,8 @@ struct Status: ParsableCommand {
         let agent = client.status()
         let sync = SyncStatus(state: client.syncState() ?? SyncState.load())
         let loginItem = Service.loginItem
-        let sshInclude = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
-        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, loginItem: loginItem, sshInclude: sshInclude)
+        let isSSHIncludeEnabled = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
+        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, loginItem: loginItem, isSSHIncludeEnabled: isSSHIncludeEnabled)
         if output.json {
             try output.print(report)
         } else {
@@ -288,13 +293,13 @@ struct Status: ParsableCommand {
             if let agent {
                 print("agent   answers (pid \(agent.pid), \(agent.version))")
                 if let error = agent.storeError { print("store   \(error)") }
-                for key in agent.keys { print("key     \(key.name)  \(key.inMemory ? "in memory" : "not in memory")") }
+                for key in agent.keys { print("key     \(key.name)  \(key.isInMemory ? "in memory" : "not in memory")") }
                 if agent.memoryOnlyKeys > 0 { print("memory-only keys  \(agent.memoryOnlyKeys)") }
             } else {
                 print("agent   does not answer")
             }
             print("login item  \(loginItem.text)\(loginItem == .enabled ? "" : "; run signd service enable")")
-            print("ssh config  \(sshInclude ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable")")
+            print("ssh config  \(isSSHIncludeEnabled ? "includes ~/.ssh/signd/config" : "has no Include line for ~/.ssh/signd/config; run signd service enable")")
             print("icloud  \(sync.state)\(sync.lastMessage.map { ": \($0)" } ?? "")")
             print("interval  \(sync.interval.value) (\(sync.interval.source.rawValue))")
             if let at = sync.lastCheck, let result = sync.lastResult {
@@ -385,7 +390,7 @@ struct Config: ParsableCommand {
         @Argument var name: SettingName
         @Argument var value: String
         func run() throws {
-            do { try Settings().set(name.key, value) } catch { throw Failure(error) }
+            do { try Settings().set(name.key, to: value) } catch { throw Failure(error) }
         }
     }
 
@@ -581,7 +586,7 @@ struct Serve: ParsableCommand {
         let log = Logger(subsystem: "com.victor-software-house.signd", category: "agent")
         let agent = Agent(
             store: store, version: signdVersion, lifetime: { settings.resolve(.keyLifetime).seconds },
-            keysRead: { keys in
+            onKeysRead: { keys in
                 do {
                     try Routing.write(keys, socket: socketPath, home: FileManager.default.homeDirectoryForCurrentUser)
                 } catch {
@@ -600,7 +605,7 @@ struct Serve: ParsableCommand {
             let run = BackupRun(
                 BackupRun.Dependencies(
                     cloud: cloud, store: store, tokens: tokens, device: readDevice, open: openKey, openVault: OnePasswordVault.opener(version: signdVersion),
-                    removed: { BackupRemoved(rawValue: settings.text(.backupRemoved)) ?? .delete }
+                    removal: { BackupRemoval(rawValue: settings.text(.backupRemoved)) ?? .delete }
                 )
             )
             return BackupService(BackupService.Dependencies(run: { await run.perform() }, schedule: { BackupSchedule(settings: settings) }))
@@ -609,15 +614,15 @@ struct Serve: ParsableCommand {
             SyncService.Dependencies(
                 cloud: cloud, store: store, device: readDevice, open: openKey,
                 tokens: tokens, openSecret: { sealed, device in try Wrapping.openSecret(sealed, handle: device.handle) }, version: signdVersion,
-                interval: { settings.resolve(.interval).seconds }, changed: {
+                interval: { settings.resolve(.interval).seconds }, onSharedKeysChanged: {
                     await agent.reload()
-                    await backup?.keysChanged()
+                    await backup?.keysDidChange()
                 }
             )
         )
         let server = Server(
             agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)),
-            keysChanged: { await backup?.keysChanged() }
+            onKeysChanged: { await backup?.keysDidChange() }
         )
         Task.detached {
             await backup?.start()

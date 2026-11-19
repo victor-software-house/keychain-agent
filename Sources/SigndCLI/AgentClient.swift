@@ -2,7 +2,7 @@ import AgentProtocol
 import AgentServer
 import Darwin
 import Foundation
-import SSHWire
+import SSHEncoding
 import Sync
 
 /// The agent socket, `~/.ssh/signd.sock`.
@@ -58,7 +58,7 @@ struct AgentClient {
     func status() -> AgentStatus? {
         guard let reply = callExtension(PrivateExtension.status), reply.first == MessageType.extensionResponse.rawValue else { return nil }
         var reader = Reader(reply.dropFirst())
-        guard reader.text() == PrivateExtension.status, let json = reader.string() else { return nil }
+        guard reader.readText() == PrivateExtension.status, let json = reader.readString() else { return nil }
         return try? JSONDecoder().decode(AgentStatus.self, from: json)
     }
 
@@ -84,13 +84,13 @@ struct AgentClient {
     }
 
     /// Asks the agent to store the backup token on every Mac, or nil when no agent answers.
-    func backupLogin(_ request: BackupLoginRequest) -> SyncResult? {
+    func logInToBackup(_ request: BackupLoginRequest) -> SyncResult? {
         guard let json = try? JSONEncoder().encode(request) else { return nil }
         return decoded(PrivateExtension.backupLogin, argument: String(decoding: json, as: UTF8.self), timeout: 120)
     }
 
     /// Asks the agent to delete the backup token on every Mac, or nil when no agent answers.
-    func backupLogout() -> SyncResult? {
+    func logOutOfBackup() -> SyncResult? {
         decoded(PrivateExtension.backupLogout, timeout: 120)
     }
 
@@ -107,7 +107,7 @@ struct AgentClient {
     private func decoded<Value: Decodable>(_ name: String, argument: String? = nil, timeout: Int) -> Value? {
         guard let reply = callExtension(name, argument: argument, timeout: timeout), reply.first == MessageType.extensionResponse.rawValue else { return nil }
         var reader = Reader(reply.dropFirst())
-        guard reader.text() == name, let json = reader.string() else { return nil }
+        guard reader.readText() == name, let json = reader.readString() else { return nil }
         return try? JSONDecoder().decode(Value.self, from: json)
     }
 

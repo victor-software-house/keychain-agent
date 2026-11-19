@@ -4,7 +4,7 @@ import Foundation
 import KeyStore
 import OnePassword
 import os
-import SSHWire
+import SSHEncoding
 import Sync
 
 private let log = Logger(subsystem: "com.victor-software-house.signd", category: "backup")
@@ -25,7 +25,7 @@ struct LeaseLost: Error, CustomStringConvertible {
 public struct BackupRun: Sendable {
     public struct Dependencies: Sendable {
         public var cloud: any CloudStore
-        public var store: any KeyStore
+        public var store: any KeyStorage
         /// Where this Mac keeps the backup token.
         public var tokens: any TokenStore
         public var device: @Sendable () throws(StoreError) -> DeviceKey
@@ -33,14 +33,14 @@ public struct BackupRun: Sendable {
         /// Opens a stored wrapped key to its private key.
         public var open: KeyOpener
         public var openVault: BackupVaultOpener
-        public var removed: @Sendable () -> BackupRemoved
+        public var removal: @Sendable () -> BackupRemoval
         public var now: @Sendable () -> Date
         public var cacheURL: URL
 
         public init(
-            cloud: any CloudStore, store: any KeyStore, tokens: any TokenStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey,
+            cloud: any CloudStore, store: any KeyStorage, tokens: any TokenStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey,
             deviceName: @escaping @Sendable () -> String = { ThisDevice.name() }, open: @escaping KeyOpener, openVault: @escaping BackupVaultOpener,
-            removed: @escaping @Sendable () -> BackupRemoved, now: @escaping @Sendable () -> Date = { Date() }, cacheURL: URL = BackupCache.defaultURL
+            removal: @escaping @Sendable () -> BackupRemoval, now: @escaping @Sendable () -> Date = { Date() }, cacheURL: URL = BackupCache.defaultURL
         ) {
             self.cloud = cloud
             self.store = store
@@ -49,7 +49,7 @@ public struct BackupRun: Sendable {
             self.deviceName = deviceName
             self.open = open
             self.openVault = openVault
-            self.removed = removed
+            self.removal = removal
             self.now = now
             self.cacheURL = cacheURL
         }
@@ -110,8 +110,8 @@ public struct BackupRun: Sendable {
         try await renew(&lease, onlyIfDue: true)
         let overviews = try await vault.list()
         let loaded = BackupCache.load(from: dependencies.cacheURL)
-        let removed = dependencies.removed()
-        var plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: [], cache: loaded, removed: removed)
+        let removal = dependencies.removal()
+        var plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: [], cache: loaded, removal: removal)
         if !plan.fetch.isEmpty {
             var items: [Item] = []
             var unread: [String] = []
@@ -128,7 +128,7 @@ public struct BackupRun: Sendable {
                     }
                 }
             }
-            plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: items, unread: unread, cache: loaded, removed: removed)
+            plan = BackupPlanner.plan(sources: gathered.sources, overviews: overviews, items: items, unread: unread, cache: loaded, removal: removal)
             guard plan.fetch.isEmpty else { throw BackupFailure("the plan still asks for item reads after they were made") }
         }
 

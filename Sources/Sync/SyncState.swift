@@ -66,9 +66,9 @@ public struct SyncState: Codable, Sendable, Equatable {
     public var databaseToken: Data?
     public var zoneToken: Data?
     /// Whether the zone and the subscription have been saved.
-    public var prepared = false
+    public var isPrepared = false
     /// The user deleted the zone in iCloud settings, so checks wait for `signd sync`.
-    public var stopped = false
+    public var isStopped = false
     /// The `Device` and `Key` records, by record name.
     public var devices: [String: DeviceEntry] = [:]
     public var keys: [String: KeyEntry] = [:]
@@ -88,6 +88,13 @@ public struct SyncState: Codable, Sendable, Equatable {
     /// Failed checks in a row, which grow the wait.
     public var failures = 0
     public var lastPush: Date?
+
+    enum CodingKeys: String, CodingKey {
+        case format, user, databaseToken, zoneToken
+        case isPrepared = "prepared"
+        case isStopped = "stopped"
+        case devices, keys, skipped, backup, unreadable, lastCheck, lastSuccess, lastResult, lastMessage, requests, nextAttempt, failures, lastPush
+    }
 
     public init() {}
 
@@ -115,7 +122,7 @@ public struct SyncState: Codable, Sendable, Equatable {
     mutating func forgetRecords() {
         databaseToken = nil
         zoneToken = nil
-        prepared = false
+        isPrepared = false
         devices = [:]
         keys = [:]
         skipped = []
@@ -141,7 +148,7 @@ public struct CheckSummary: Codable, Sendable, Equatable {
         self.message = message
     }
 
-    public var changed: Bool { !(added.isEmpty && replaced.isEmpty && removed.isEmpty) }
+    public var hasChanges: Bool { !(added.isEmpty && replaced.isEmpty && removed.isEmpty) }
 }
 
 /// The result of a request to the agent that changes shared keys or Macs.

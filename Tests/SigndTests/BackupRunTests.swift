@@ -5,7 +5,7 @@ import Foundation
 @testable import Backup
 @testable import KeyStore
 import OnePassword
-import SSHWire
+import SSHEncoding
 import Synchronization
 import Testing
 @testable import Sync
@@ -156,7 +156,7 @@ private final class BackupRig: Sendable {
     let device: DeviceKey
     let run: BackupRun
 
-    init(removed: BackupRemoved = .delete) throws {
+    init(removal: BackupRemoval = .delete) throws {
         let device = DeviceKey(handle: agreement.rawRepresentation, publicKey: agreement.publicKey.x963Representation)
         self.device = device
         let cloud = cloud
@@ -172,7 +172,7 @@ private final class BackupRig: Sendable {
                     vault.recordOpen(name)
                     return vault
                 },
-                removed: { removed }, now: { clock.now }, cacheURL: cacheURL
+                removal: { removal }, now: { clock.now }, cacheURL: cacheURL
             )
         )
         cloud.put(.backup, BackupPayload.recordName, payload: Payload.encode(BackupPayload(vault: "signd", sealed: [:])))
@@ -223,20 +223,20 @@ private final class BackupRig: Sendable {
 
 @Test func aRunIsDueTheDelayAfterTheLastKeyChange() {
     let schedule = BackupSchedule()
-    #expect(schedule.due(lastChange: at(1000), lastRun: at(-100_000)) == at(1300))
-    #expect(schedule.wait(lastChange: at(1000), lastRun: at(-100_000), now: at(1100)) == 200)
-    #expect(schedule.wait(lastChange: at(1000), lastRun: at(-100_000), now: at(5000)) == 0)
+    #expect(schedule.nextRun(lastChange: at(1000), lastRun: at(-100_000)) == at(1300))
+    #expect(schedule.timeUntilNextRun(lastChange: at(1000), lastRun: at(-100_000), now: at(1100)) == 200)
+    #expect(schedule.timeUntilNextRun(lastChange: at(1000), lastRun: at(-100_000), now: at(5000)) == 0)
 }
 
 @Test func aRunIsDueAtMostOncePerInterval() {
     // The delay ends at 1300, but the last run began at 1000, and its interval ends at 4600.
-    #expect(BackupSchedule().due(lastChange: at(1000), lastRun: at(1000)) == at(4600))
+    #expect(BackupSchedule().nextRun(lastChange: at(1000), lastRun: at(1000)) == at(4600))
 }
 
 @Test func withNoChangeARunIsDueOncePerDayAndAMacThatNeverRanIsDueAtOnce() {
     let schedule = BackupSchedule()
-    #expect(schedule.due(lastChange: nil, lastRun: at(0)) == at(86400))
-    #expect(schedule.wait(lastChange: nil, lastRun: nil, now: at(0)) == 0)
+    #expect(schedule.nextRun(lastChange: nil, lastRun: at(0)) == at(86400))
+    #expect(schedule.timeUntilNextRun(lastChange: nil, lastRun: nil, now: at(0)) == 0)
 }
 
 @Test func theScheduleReadsTheThreeSettings() {
@@ -244,12 +244,12 @@ private final class BackupRig: Sendable {
     let settings = Settings(local: { key in
         switch key {
         case .backupDelay: "10s"
-        case .backupInterval: "2m"
-        case .backupDailyInterval: "2h"
+        case .backupMinInterval: "2m"
+        case .backupMaxInterval: "2h"
         default: nil
         }
     })
-    #expect(BackupSchedule(settings: settings) == BackupSchedule(delay: 10, interval: 120, daily: 7200))
+    #expect(BackupSchedule(settings: settings) == BackupSchedule(delay: 10, minimumInterval: 120, maximumInterval: 7200))
 }
 
 /// The backup service with a fake clock, a state file and runs that return the results in order.
@@ -286,7 +286,7 @@ private final class ServiceRig: Sendable {
     // No change is waiting, so the next run is a day after the last.
     #expect(await eventually { rig.clock.requestedSleeps.contains(82400) })
 
-    await rig.service.keysChanged()
+    await rig.service.keysDidChange()
     #expect(await eventually { rig.clock.requestedSleeps.contains(300) })
     #expect(await rig.service.snapshot().lastChange == at(0))
     #expect(rig.runs.value == 0)
@@ -299,7 +299,7 @@ private final class ServiceRig: Sendable {
     await rig.service.start()
     let service = rig.service
     // The command that imports, creates or deletes a key on this Mac asks the agent to reload, as the command line does.
-    let server = Server(agent: await makeAgent(MemoryStore()), keysChanged: { await service.keysChanged() })
+    let server = Server(agent: await makeAgent(MemoryStore()), onKeysChanged: { await service.keysDidChange() })
     let reload = Request.extension(name: PrivateExtension.reload, contents: Data())
     #expect(await server.respond(to: reload, on: Connection(peerPID: getpid())) == .success)
 
@@ -307,7 +307,7 @@ private final class ServiceRig: Sendable {
     #expect(await eventually { rig.clock.requestedSleeps.contains(300) })
     #expect(rig.runs.value == 0)
     // The delay ends 300 seconds after the change, and the interval since the last run ended long before.
-    #expect(BackupSchedule().due(lastChange: at(0), lastRun: at(-4000)) == at(300))
+    #expect(BackupSchedule().nextRun(lastChange: at(0), lastRun: at(-4000)) == at(300))
 }
 
 @Test(.timeLimit(.minutes(1))) func aFailedRunRecordsItsErrorAndWaitsForTheNextSlot() async throws {
@@ -572,7 +572,7 @@ private func rigWithThreePuts() async throws -> BackupRig {
 }
 
 @Test(.timeLimit(.minutes(1))) func aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn() async throws {
-    let rig = try BackupRig(removed: .archive)
+    let rig = try BackupRig(removal: .archive)
     for name in ["alpha", "beta", "gamma", "delta"] { try rig.share(name) }
     #expect(await rig.run.perform() == BackupResult(.ok))
     let alpha = try #require(rig.vault.item(titled: "alpha")).id
@@ -688,7 +688,7 @@ private func wrappedKey(_ name: String, _ privateKey: PrivateKey) throws -> Stor
     }
 }
 
-@Test(.timeLimit(.minutes(1))) func aKeyTheSSHKeyItemCannotTakeGetsASecureNote() async throws {
+@Test(.timeLimit(.minutes(1))) func aKeyTheSSHKeyItemDoesNotSupportGetsASecureNote() async throws {
     let rig = try BackupRig()
     try rig.share("good")
     let signing = P256.Signing.PrivateKey()

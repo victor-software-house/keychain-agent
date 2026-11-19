@@ -21,20 +21,20 @@ public enum PrivateKey: Sendable, Equatable {
 
     /// Reads a key type name and its fields; nil for an unsupported type or malformed fields.
     public static func read(from reader: inout Reader) -> PrivateKey? {
-        guard let type = reader.text() else { return nil }
+        guard let type = reader.readText() else { return nil }
         switch type {
         case "ssh-ed25519":
             // The private field is the seed followed by the public key, 64 bytes in all.
-            guard let publicKey = reader.string(), publicKey.count == 32,
-                  let secret = reader.string(), secret.count == 64, secret.suffix(32) == publicKey else { return nil }
+            guard let publicKey = reader.readString(), publicKey.count == 32,
+                  let secret = reader.readString(), secret.count == 64, secret.suffix(32) == publicKey else { return nil }
             return .ed25519(seed: Data(secret.prefix(32)), publicKey: publicKey)
         case "ssh-rsa":
-            guard let n = reader.unsignedMPInt(), let e = reader.unsignedMPInt(), let d = reader.unsignedMPInt(),
-                  let iqmp = reader.unsignedMPInt(), let p = reader.unsignedMPInt(), let q = reader.unsignedMPInt() else { return nil }
+            guard let n = reader.readUnsignedMPInt(), let e = reader.readUnsignedMPInt(), let d = reader.readUnsignedMPInt(),
+                  let iqmp = reader.readUnsignedMPInt(), let p = reader.readUnsignedMPInt(), let q = reader.readUnsignedMPInt() else { return nil }
             return .rsa(n: n, e: e, d: d, iqmp: iqmp, p: p, q: q)
         default:
-            guard let curve = Curve.allCases.first(where: { $0.keyType == type }), reader.text() == curve.rawValue,
-                  let point = reader.string(), let scalar = reader.unsignedMPInt() else { return nil }
+            guard let curve = Curve.allCases.first(where: { $0.keyType == type }), reader.readText() == curve.rawValue,
+                  let point = reader.readString(), let scalar = reader.readUnsignedMPInt() else { return nil }
             return .ecdsa(curve, point: point, scalar: scalar)
         }
     }

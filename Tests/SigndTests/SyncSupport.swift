@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 import KeyStore
-import SSHWire
+import SSHEncoding
 import Synchronization
 @testable import Sync
 
@@ -313,7 +313,7 @@ final class DeviceRig: Sendable {
             SyncService.Dependencies(
                 cloud: cloud, store: store, device: { device }, open: softwareOpen, tokens: tokens, openSecret: softwareOpenSecret, deviceName: { name }, version: "1.0.0",
                 interval: { interval }, now: { clock.now }, sleep: { try await clock.sleep($0) },
-                schedule: SyncSchedule(random: { random }), stateURL: stateURL, changed: { changes.increment() }
+                schedule: SyncSchedule(random: { random }), stateURL: stateURL, onSharedKeysChanged: { changes.increment() }
             )
         )
     }

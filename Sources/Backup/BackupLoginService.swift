@@ -25,7 +25,7 @@ public struct BackupLoginService: Sendable {
 
     /// Checks that the service account lists `vault`, then stores the token on this Mac and seals it to every device.
     /// A vault the account lists but cannot write to shows at the first run.
-    public func login(token: String, vault: String) async -> SyncResult {
+    public func logIn(token: String, vault: String) async -> SyncResult {
         let titles: [String]
         do {
             titles = try await vaults(token)
@@ -35,10 +35,10 @@ public struct BackupLoginService: Sendable {
         guard titles.contains(vault) else {
             return SyncResult(.failed, "the service account does not list a vault named \(vault); create it, grant the account access, or change the backup-vault setting")
         }
-        return await sync.backupLogin(token: Data(token.utf8), vault: vault)
+        return await sync.logInToBackup(token: Data(token.utf8), vault: vault)
     }
 
-    public func logout() async -> SyncResult {
-        await sync.backupLogout()
+    public func logOut() async -> SyncResult {
+        await sync.logOutOfBackup()
     }
 }

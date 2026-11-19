@@ -2,7 +2,7 @@ import AgentProtocol
 import Crypto
 import CryptoExtras
 import Foundation
-import SSHWire
+import SSHEncoding
 
 /// Why a signature failed.
 public enum SignError: Error, Sendable {

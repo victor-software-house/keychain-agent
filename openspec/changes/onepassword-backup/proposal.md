@@ -34,4 +34,4 @@ A key lost with every Mac, or deleted by mistake, needs a copy outside iCloud (o
 - The rule that no private key leaves signd gains one exception: the backup vault, written only through its own service account.
 - `swift-onepassword` returns as a dependency, and gains batch create and delete, `put` and `archive`.
 - The production CloudKit schema gains the `Lease` record type.
-- Settings from the declarative configuration change (`openspec/changes/declarative-config`): `backupVault`, `backupDelay`, `backupInterval`, `backupDailyInterval` and `backupRemoved`.
+- Settings from the declarative configuration change (`openspec/changes/declarative-config`): `backupVault`, `backupDelay`, `backupMinInterval`, `backupMaxInterval` and `backupRemoved`.

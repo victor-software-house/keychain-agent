@@ -37,7 +37,7 @@ public struct CloudKitStore: CloudStore {
                 try await body(database)
             }
         } catch {
-            throw Self.map(error)
+            throw Self.cloudError(from: error)
         }
     }
 
@@ -58,7 +58,7 @@ public struct CloudKitStore: CloudStore {
                 return .unavailable("macOS reported an iCloud account status signd does not know")
             }
         } catch {
-            throw Self.map(error)
+            throw Self.cloudError(from: error)
         }
     }
 
@@ -200,14 +200,14 @@ public struct CloudKitStore: CloudStore {
     }
 
     /// The kind of a CloudKit error, with its retry-after time.
-    static func map(_ error: any Error) -> CloudError {
+    static func cloudError(from error: any Error) -> CloudError {
         if let error = error as? CloudError { return error }
         guard let error = error as? CKError else {
             let ns = error as NSError
             return CloudError(ns.domain == NSURLErrorDomain ? .network : .other, ns.localizedDescription)
         }
         if error.code == .partialFailure, let first = error.partialErrorsByItemID?.values.first {
-            return map(first)
+            return cloudError(from: first)
         }
         let retryAfter = error.retryAfterSeconds
         let kind: CloudError.Kind = switch error.code {

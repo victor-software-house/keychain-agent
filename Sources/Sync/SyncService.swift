@@ -12,7 +12,7 @@ public actor SyncService {
         /// The iCloud database.
         /// It is nil in a build without signd's iCloud entitlement, and that build keeps every key local.
         public var cloud: (any CloudStore)?
-        public var store: any KeyStore
+        public var store: any KeyStorage
         public var device: @Sendable () throws(StoreError) -> DeviceKey
         public var open: KeyOpener
         /// Where this Mac keeps the backup token.
@@ -29,17 +29,17 @@ public actor SyncService {
         public var schedule: SyncSchedule
         public var stateURL: URL
         /// Called after shared keys changed, so the agent reads them.
-        public var changed: @Sendable () async -> Void
+        public var onSharedKeysChanged: @Sendable () async -> Void
 
         public init(
-            cloud: (any CloudStore)?, store: any KeyStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey, open: @escaping KeyOpener,
+            cloud: (any CloudStore)?, store: any KeyStorage, device: @escaping @Sendable () throws(StoreError) -> DeviceKey, open: @escaping KeyOpener,
             tokens: any TokenStore, openSecret: @escaping SecretOpener,
             deviceName: @escaping @Sendable () -> String = { ThisDevice.name() }, version: String,
             interval: @escaping @Sendable () -> TimeInterval,
             now: @escaping @Sendable () -> Date = { Date() },
             sleep: @escaping @Sendable (_ seconds: TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0), tolerance: .milliseconds(250)) },
             schedule: SyncSchedule = SyncSchedule(), stateURL: URL = SyncState.defaultURL,
-            changed: @escaping @Sendable () async -> Void
+            onSharedKeysChanged: @escaping @Sendable () async -> Void
         ) {
             self.cloud = cloud
             self.store = store
@@ -54,7 +54,7 @@ public actor SyncService {
             self.sleep = sleep
             self.schedule = schedule
             self.stateURL = stateURL
-            self.changed = changed
+            self.onSharedKeysChanged = onSharedKeysChanged
         }
     }
 
@@ -88,7 +88,7 @@ public actor SyncService {
             persist(force: true)
             return
         }
-        guard !state.stopped else { return }
+        guard !state.isStopped else { return }
         startTimer(0)
     }
 
@@ -106,7 +106,7 @@ public actor SyncService {
 
     private func pushed() {
         lastPush = dependencies.now()
-        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.stopped else { return }
+        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.isStopped else { return }
         startTimer(0)
     }
 
@@ -117,20 +117,20 @@ public actor SyncService {
 
     private func forgetAccount() {
         account = nil
-        guard dependencies.cloud != nil, current == nil, !state.stopped else { return }
+        guard dependencies.cloud != nil, current == nil, !state.isStopped else { return }
         startTimer(0)
     }
 
     /// Called when a command changed the store.
     /// It starts a check soon, so a name that a deleted local key freed is taken.
-    public func reloaded() {
-        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.stopped else { return }
+    public func keysDidChange() {
+        guard dependencies.cloud != nil, current == nil, state.failures == 0, !state.isStopped else { return }
         startTimer(0)
     }
 
     /// What `signd sync` requests: a check now.
     /// It also starts again after the zone was deleted in iCloud settings.
-    public func syncRequested() async -> CheckSummary {
+    public func syncNow() async -> CheckSummary {
         await check(forced: true)
     }
 
@@ -162,13 +162,13 @@ public actor SyncService {
     }
 
     /// Stores the backup token on this Mac and seals it to every device, so one login serves every Mac.
-    public func backupLogin(token: Data, vault: String) async -> SyncResult {
+    public func logInToBackup(token: Data, vault: String) async -> SyncResult {
         guard dependencies.cloud != nil else { return SyncResult(.off, Self.offMessage) }
-        return await exclusive { service in await service.runBackupLogin(token: token, vault: vault) }
+        return await exclusive { service in await service.runLogInToBackup(token: token, vault: vault) }
     }
 
     /// Deletes the `Backup` record, which makes every Mac delete its token at its next check, and this Mac's token.
-    public func backupLogout() async -> SyncResult {
+    public func logOutOfBackup() async -> SyncResult {
         guard dependencies.cloud != nil else {
             do {
                 try dependencies.tokens.delete()
@@ -178,7 +178,7 @@ public actor SyncService {
             }
         }
         return await exclusive { service in await service.runCommand { work, state, requests, _ in
-            try await work.backupLogout(state: &state, requests: &requests)
+            try await work.logOutOfBackup(state: &state, requests: &requests)
         } }
     }
 
@@ -200,7 +200,7 @@ public actor SyncService {
         }
     }
 
-    private func runBackupLogin(token: Data, vault: String) async -> SyncResult {
+    private func runLogInToBackup(token: Data, vault: String) async -> SyncResult {
         // A login seals the token to the devices of the account, so a device that has not checked yet checks first.
         if state.databaseToken == nil || account == nil {
             _ = await runCheck(forced: false)
@@ -209,7 +209,7 @@ public actor SyncService {
             return SyncResult(.off, state.lastMessage ?? "no iCloud account is available")
         }
         return await runCommand { work, state, requests, _ in
-            try await work.backupLogin(token: token, vault: vault, state: &state, requests: &requests)
+            try await work.logInToBackup(token: token, vault: vault, state: &state, requests: &requests)
         }
     }
 
@@ -222,10 +222,10 @@ public actor SyncService {
             try await body(work, &updated, &requests, &changes)
             state = updated
             persist(force: true)
-            await dependencies.changed()
+            await dependencies.onSharedKeysChanged()
             return SyncResult(.done)
         } catch {
-            if !changes.isEmpty { await dependencies.changed() }
+            if !changes.isEmpty { await dependencies.onSharedKeysChanged() }
             return SyncResult(.failed, Display.clean(String(describing: error)))
         }
     }
@@ -268,7 +268,7 @@ public actor SyncService {
             // The token belongs to the old account's backup.
             try dependencies.tokens.delete()
             state.forgetRecords()
-            if !changes.isEmpty { await dependencies.changed() }
+            if !changes.isEmpty { await dependencies.onSharedKeysChanged() }
         }
         state.user = user
         return work
@@ -278,23 +278,23 @@ public actor SyncService {
         // The check ends here, so a request after this point starts a new one instead of joining this one's result.
         defer { current = nil }
         guard dependencies.cloud != nil else { return CheckSummary(outcome: .off, message: Self.offMessage) }
-        if forced && state.stopped {
-            state.stopped = false
-            state.prepared = false
+        if forced && state.isStopped {
+            state.isStopped = false
+            state.isPrepared = false
         }
         var requests = 0
         var changes = Changes()
         var outcome = CheckOutcome.ok
         var message: String?
         var retryAfter: TimeInterval?
-        if state.stopped {
+        if state.isStopped {
             outcome = .stopped
             message = Self.stoppedMessage
         } else {
             do {
                 if let work = try await work() {
                     state = try await work.run(from: state, requests: &requests, changes: &changes)
-                    if state.stopped {
+                    if state.isStopped {
                         outcome = .stopped
                         message = Self.stoppedMessage
                     } else if let unreadable = state.unreadable {
@@ -355,7 +355,7 @@ public actor SyncService {
             let detail = state.lastMessage ?? ""
             log.notice("check \(outcome.rawValue, privacy: .public): \(detail, privacy: .public)")
         }
-        if !changes.isEmpty { await dependencies.changed() }
+        if !changes.isEmpty { await dependencies.onSharedKeysChanged() }
         if let delay { startTimer(delay) }
 
         var summary = CheckSummary(outcome: outcome, message: state.lastMessage)

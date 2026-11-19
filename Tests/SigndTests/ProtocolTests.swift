@@ -1,6 +1,6 @@
 import AgentProtocol
 import Foundation
-import SSHWire
+import SSHEncoding
 import Testing
 
 private let ed25519 = PrivateKey.ed25519(seed: Data(repeating: 1, count: 32), publicKey: Data(repeating: 2, count: 32))
@@ -35,7 +35,7 @@ private func addBody(constrained: Bool, comment: String = "work", constraints: D
         constraints.appendUInt32(30)
         constraints.append(2)
         let request = Request(body: addBody(constrained: true, constraints: constraints))
-        #expect(request == .add(key: ed25519, comment: "work", constraints: Constraints(lifetime: 30, confirm: true)))
+        #expect(request == .add(key: ed25519, comment: "work", constraints: Constraints(lifetime: 30, requiresConfirmation: true)))
     }
 
     @Test func addWithAnExtensionConstraint() {
@@ -96,10 +96,10 @@ private func addBody(constrained: Bool, comment: String = "work", constraints: D
 
     @Test func queryListsTheSupportedExtensions() {
         var reader = Reader(Response.query.body)
-        #expect(reader.byte() == 29)
-        #expect(reader.text() == "query")
-        #expect(reader.text() == "query")
-        #expect(reader.text() == "session-bind@openssh.com")
+        #expect(reader.readByte() == 29)
+        #expect(reader.readText() == "query")
+        #expect(reader.readText() == "query")
+        #expect(reader.readText() == "session-bind@openssh.com")
         #expect(reader.isAtEnd)
     }
 

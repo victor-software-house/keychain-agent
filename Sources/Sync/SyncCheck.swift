@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import KeyStore
 import os
-import SSHWire
+import SSHEncoding
 
 private let log = Logger(subsystem: "com.victor-software-house.signd", category: "sync")
 
@@ -20,9 +20,9 @@ struct Changes: Sendable {
     /// Keys this device sealed for other devices.
     var sealed: [String] = []
     /// The backup token this device stores changed, so a backup run is due.
-    var backupToken = false
+    var backupTokenChanged = false
 
-    var isEmpty: Bool { added.isEmpty && replaced.isEmpty && removed.isEmpty && !backupToken }
+    var isEmpty: Bool { added.isEmpty && replaced.isEmpty && removed.isEmpty && !backupTokenChanged }
 }
 
 /// A request the agent refuses, with the reason the command prints.
@@ -34,7 +34,7 @@ struct SyncRefusal: Error, CustomStringConvertible {
 /// The work of design decisions 4 to 6, on the state of one device: a check, and the commands that change shared keys and devices.
 struct SyncCheck {
     let cloud: any CloudStore
-    let store: any KeyStore
+    let store: any KeyStorage
     let device: DeviceKey
     /// This device's name, a Mac's `LocalHostName` in lowercase.
     let deviceName: String
@@ -52,10 +52,10 @@ struct SyncCheck {
     /// Reads the changes since the state's tokens, brings the store in line, publishes this device's record and seals keys for new devices.
     func run(from old: SyncState, requests: inout Int, changes: inout Changes) async throws -> SyncState {
         var state = old
-        if !state.prepared {
+        if !state.isPrepared {
             try await cloud.prepare()
             requests += 1
-            state.prepared = true
+            state.isPrepared = true
         }
         var full = state.databaseToken == nil
         var fetched: CloudChanges
@@ -81,7 +81,7 @@ struct SyncCheck {
             // The zone's records are gone, so the backup login ended.
             try tokens.delete()
             state.forgetRecords()
-            state.stopped = loss == .deletedByUser
+            state.isStopped = loss == .deletedByUser
             return state
         }
         state.databaseToken = fetched.databaseToken
@@ -228,7 +228,7 @@ struct SyncCheck {
         defer { token.resetBytes(in: 0..<token.count) }
         if try tokens.read() != token {
             try tokens.save(token)
-            changes.backupToken = true
+            changes.backupTokenChanged = true
         }
     }
 
@@ -397,7 +397,7 @@ struct SyncCheck {
     // MARK: Commands
 
     /// Logs in to the backup: seals the token to every known device, saves the `Backup` record, and stores this device's copy.
-    func backupLogin(token: Data, vault: String, state: inout SyncState, requests: inout Int) async throws {
+    func logInToBackup(token: Data, vault: String, state: inout SyncState, requests: inout Int) async throws {
         try await publish(&state, requests: &requests)
         var devices = state.devices
         if devices[me] == nil { devices[me] = DeviceEntry(name: deviceName, publicKey: device.publicKey, system: nil) }
@@ -422,7 +422,7 @@ struct SyncCheck {
     }
 
     /// Deletes the `Backup` record and this device's token; every other device deletes its token at its next check.
-    func backupLogout(state: inout SyncState, requests: inout Int) async throws {
+    func logOutOfBackup(state: inout SyncState, requests: inout Int) async throws {
         requests += 1
         try await cloud.delete(.backup, name: BackupPayload.recordName)
         try tokens.delete()

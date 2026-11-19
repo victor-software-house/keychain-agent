@@ -2,7 +2,7 @@ import AgentProtocol
 import Foundation
 import KeyStore
 import os
-import SSHWire
+import SSHEncoding
 
 let log = Logger(subsystem: "com.victor-software-house.signd", category: "agent")
 
@@ -19,7 +19,7 @@ public actor Agent {
         let expires: Date?
     }
 
-    private let store: any KeyStore
+    private let store: any KeyStorage
     let lifetime: @Sendable () -> TimeInterval
     private let version: String
     private var stored: [StoredKey] = []
@@ -34,18 +34,18 @@ public actor Agent {
     public typealias Opener = @Sendable (StoredKey) throws(SignError) -> any Signer
 
     private let opener: Opener
-    private let keysRead: @Sendable ([StoredKey]) -> Void
+    private let onKeysRead: @Sendable ([StoredKey]) -> Void
 
-    /// `keysRead` runs after each successful read of the stored keys, as the SSH routing files follow them.
+    /// `onKeysRead` runs after each successful read of the stored keys, as the SSH routing files follow them.
     public init(
-        store: any KeyStore, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openStored,
-        keysRead: @escaping @Sendable ([StoredKey]) -> Void = { _ in }
+        store: any KeyStorage, version: String, lifetime: @escaping @Sendable () -> TimeInterval, opener: @escaping Opener = Agent.openStored,
+        onKeysRead: @escaping @Sendable ([StoredKey]) -> Void = { _ in }
     ) {
         self.store = store
         self.version = version
         self.lifetime = lifetime
         self.opener = opener
-        self.keysRead = keysRead
+        self.onKeysRead = onKeysRead
     }
 
     /// Opens a key by its type: a Secure Enclave key through its handle, a wrapped key by opening its seal into memory.
@@ -64,7 +64,7 @@ public actor Agent {
             failed = []
             let blobs = Set(stored.map(\.publicBlob))
             open = open.filter { blobs.contains($0.key) }
-            keysRead(stored)
+            onKeysRead(stored)
         } catch {
             stored = []
             open = [:]
@@ -108,7 +108,7 @@ public actor Agent {
 
     /// Adds a memory-only key, as ssh-add expects.
     public func add(_ privateKey: PrivateKey, comment: String, constraints: Constraints) -> Response {
-        guard !constraints.confirm, constraints.extensions.isEmpty else { return .failure }
+        guard !constraints.requiresConfirmation, constraints.extensions.isEmpty else { return .failure }
         let signer: any Signer
         do {
             signer = try SoftwareSigner(privateKey)
@@ -151,7 +151,7 @@ public actor Agent {
         return AgentStatus(
             version: version,
             pid: getpid(),
-            keys: listed.map { .init(name: $0.name, inMemory: open[$0.publicBlob] != nil) },
+            keys: listed.map { .init(name: $0.name, isInMemory: open[$0.publicBlob] != nil) },
             memoryOnlyKeys: session.count,
             sessionBinds: sessionBinds,
             storeError: storeError?.description
@@ -163,7 +163,12 @@ public actor Agent {
 public struct AgentStatus: Codable, Sendable {
     public struct Key: Codable, Sendable {
         public let name: String
-        public let inMemory: Bool
+        public let isInMemory: Bool
+
+        enum CodingKeys: String, CodingKey {
+            case name
+            case isInMemory = "inMemory"
+        }
     }
 
     public let version: String

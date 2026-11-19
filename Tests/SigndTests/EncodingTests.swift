@@ -1,5 +1,5 @@
 import Foundation
-import SSHWire
+import SSHEncoding
 import Testing
 
 @Suite struct Encoding {
@@ -18,12 +18,12 @@ import Testing
 
     @Test func readerRefusesCutFields() {
         var reader = Reader(Data([0, 0, 0, 5, 1, 2]))
-        #expect(reader.string() == nil)
+        #expect(reader.readString() == nil)
     }
 
     @Test func readerRefusesNegativeMPInt() {
         var reader = Reader(Data([0, 0, 0, 1, 0x80]))
-        #expect(reader.unsignedMPInt() == nil)
+        #expect(reader.readUnsignedMPInt() == nil)
     }
 }
 

@@ -3,7 +3,7 @@
 signd is an SSH agent for macOS whose keys only its signed app can use.
 It is a Swift 6.4 package.
 
-`SSHWire` and `AgentProtocol` contain the SSH encoding and the agent messages, with no platform code.
+`SSHEncoding` and `AgentProtocol` contain the SSH encoding and the agent messages, with no platform code.
 `KeyStore` contains keys and signing, and `Sync` shares keys between devices through CloudKit.
 `AgentServer` contains the agent's state and the SwiftNIO socket server.
 The `signd` executable is both the command line and the agent.

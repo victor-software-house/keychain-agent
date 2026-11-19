@@ -39,7 +39,7 @@ private func loggedInAndWaiting() async throws -> (cloud: FakeCloud, a: DeviceRi
     let a = DeviceRig(cloud: cloud, name: "mac-a")
     let b = DeviceRig(cloud: cloud, name: "mac-b")
     _ = await b.service.checkNow()
-    #expect(await a.service.backupLogin(token: token, vault: "signd") == SyncResult(.done))
+    #expect(await a.service.logInToBackup(token: token, vault: "signd") == SyncResult(.done))
     return (cloud, a, b)
 }
 
@@ -68,7 +68,7 @@ private func loggedInAndWaiting() async throws -> (cloud: FakeCloud, a: DeviceRi
     #expect(b.changes.value == before + 1)
 
     // A login with another token replaces the stored one, which is a change again.
-    #expect(await a.service.backupLogin(token: newerToken, vault: "signd") == SyncResult(.done))
+    #expect(await a.service.logInToBackup(token: newerToken, vault: "signd") == SyncResult(.done))
     _ = await b.service.checkNow()
     #expect(try b.tokens.read() == newerToken)
     #expect(b.changes.value == before + 2)
@@ -88,7 +88,7 @@ private func loggedInAndWaiting() async throws -> (cloud: FakeCloud, a: DeviceRi
 @Test(.timeLimit(.minutes(1))) func aDeletedBackupRecordDeletesTheTokenOnEveryMac() async throws {
     let (_, a, b) = try await loggedInAndWaiting()
     _ = await b.service.checkNow()
-    #expect(await a.service.backupLogout() == SyncResult(.done))
+    #expect(await a.service.logOutOfBackup() == SyncResult(.done))
     #expect(try a.tokens.read() == nil)
 
     #expect(await b.service.checkNow().outcome == .ok)
@@ -108,7 +108,7 @@ private func loggedInAndWaiting() async throws -> (cloud: FakeCloud, a: DeviceRi
     let cloud = FakeCloud()
     let a = DeviceRig(cloud: cloud, name: "mac-a")
     let b = DeviceRig(cloud: cloud, name: "mac-b")
-    #expect(await a.service.backupLogin(token: token, vault: "signd") == SyncResult(.done))
+    #expect(await a.service.logInToBackup(token: token, vault: "signd") == SyncResult(.done))
 
     // The new device publishes its record, and has no copy yet.
     _ = await b.service.checkNow()
@@ -135,7 +135,7 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     let c = DeviceRig(cloud: cloud, name: "mac-c")
     for rig in [a, b, c] { _ = await rig.service.checkNow() }
     _ = await a.service.checkNow()
-    #expect(await a.service.backupLogin(token: token, vault: "signd") == SyncResult(.done))
+    #expect(await a.service.logInToBackup(token: token, vault: "signd") == SyncResult(.done))
     for rig in [b, c] { _ = await rig.service.checkNow() }
     for rig in [a, b, c] { #expect(try rig.tokens.read() == token) }
 
@@ -143,7 +143,7 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     // The new record then has no copy for it.
     try await cloud.delete(.device, name: c.device.recordName)
     _ = await a.service.checkNow()
-    #expect(await a.service.backupLogin(token: newerToken, vault: "signd") == SyncResult(.done))
+    #expect(await a.service.logInToBackup(token: newerToken, vault: "signd") == SyncResult(.done))
 
     #expect(await c.service.checkNow().outcome == .ok)
     #expect(try c.tokens.read() == nil)
@@ -347,7 +347,7 @@ private func shareDeploy(from rig: DeviceRig) async throws {
     let a = DeviceRig(cloud: cloud, name: "mac-a")
     let b = DeviceRig(cloud: cloud, name: "mac-b")
     _ = await b.service.checkNow()
-    let login = await a.service.backupLogin(token: token, vault: "signd")
+    let login = await a.service.logInToBackup(token: token, vault: "signd")
     let checks = [await a.service.checkNow(), await b.service.checkNow()]
     #expect(login == SyncResult(.done))
     #expect(try b.tokens.read() == token)

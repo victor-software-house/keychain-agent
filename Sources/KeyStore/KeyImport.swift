@@ -1,14 +1,14 @@
 import Crypto
 import CryptoExtras
 import Foundation
-import SSHWire
+import SSHEncoding
 import SwiftASN1
 
 /// A private key file read for import.
 public enum ImportedKey: Sendable, Equatable {
     case key(PrivateKey, comment: String)
     /// The file is encrypted with a passphrase.
-    case protected
+    case encrypted
 }
 
 /// The key types `key create --type` generates besides Secure Enclave keys.
@@ -22,14 +22,14 @@ public enum GeneratedKeyType: String, Sendable, CaseIterable {
 public enum ImportError: Error, Sendable, Equatable, CustomStringConvertible {
     case unsupported(String)
     case unreadable(String)
-    case protectedOnStdin
+    case encryptedKeyOnStdin
     case sshAdd(String)
 
     public var description: String {
         switch self {
         case let .unsupported(reason): "unsupported key: \(reason)"
         case let .unreadable(reason): "cannot read the key: \(reason)"
-        case .protectedOnStdin: "a protected key must be given as a file, so ssh-add can ask for its passphrase"
+        case .encryptedKeyOnStdin: "an encrypted key must be given as a file, so ssh-add can ask for its passphrase"
         case let .sshAdd(reason): "ssh-add: \(reason)"
         }
     }
@@ -47,14 +47,14 @@ public enum KeyImport {
         case "OPENSSH PRIVATE KEY":
             imported = try openSSH(text)
         case "RSA PRIVATE KEY":
-            imported = text.contains("Proc-Type: 4,ENCRYPTED") ? .protected : .key(try rsa(pem: text), comment: "")
+            imported = text.contains("Proc-Type: 4,ENCRYPTED") ? .encrypted : .key(try rsa(pem: text), comment: "")
         case "PRIVATE KEY":
             imported = .key(try pkcs8(pem: text), comment: "")
         case "EC PRIVATE KEY":
             let der = try wrap("PEM") { try PEMDocument(pemString: text).derBytes }
             imported = .key(try ecdsa(sec1: der, fallback: nil), comment: "")
         case "ENCRYPTED PRIVATE KEY":
-            imported = .protected
+            imported = .encrypted
         default:
             throw .unsupported("\(label) files")
         }
@@ -107,7 +107,7 @@ public enum KeyImport {
         do throws(OpenSSHKeyFile.Failure) {
             switch try OpenSSHKeyFile.parse(text) {
             case let .key(key, comment): return .key(key, comment: comment)
-            case .protected: return .protected
+            case .encrypted: return .encrypted
             }
         } catch {
             switch error {

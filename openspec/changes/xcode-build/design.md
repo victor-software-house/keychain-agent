@@ -41,7 +41,7 @@ The command code moves from `Sources/signd` into a `SigndCLI` target with a libr
 The `signd` executable target and `App/main.swift` each call `Signd.main()`.
 XcodeGen (`xcodegen`, `XcodeGenCLI`) and Mint (`Mint`, `MintCLI`) use this layout.
 
-signd's logic already lives in `SSHWire`, `AgentProtocol`, `KeyStore`, `Sync` and `AgentServer`.
+signd's logic already lives in `SSHEncoding`, `AgentProtocol`, `KeyStore`, `Sync` and `AgentServer`.
 So no `Kit` target is added.
 
 Alternative: the app target compiles `Sources/signd` itself, which builds the same code two ways and breaks `swift test` imports.

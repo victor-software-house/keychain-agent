@@ -3,7 +3,7 @@ import CryptoExtras
 import CryptoKit
 import Foundation
 import KeyStore
-import SSHWire
+import SSHEncoding
 import Testing
 
 /// Rivest-Shamir-Adleman (RSA) keys made for these tests only, as hex numbers.
@@ -45,7 +45,7 @@ func testRSAKey(_ name: String) throws -> PrivateKey {
         let signature = try signer.sign(data, flags: [])
         #expect(signature.algorithm == "ecdsa-sha2-nistp256")
         var reader = Reader(signature.bytes)
-        let (r, s) = (reader.unsignedMPInt() ?? Data(), reader.unsignedMPInt() ?? Data())
+        let (r, s) = (reader.readUnsignedMPInt() ?? Data(), reader.readUnsignedMPInt() ?? Data())
         func padded(_ value: Data) -> Data { Data(repeating: 0, count: 32 - value.count) + value }
         let raw = try P256.Signing.ECDSASignature(rawRepresentation: padded(r) + padded(s))
         #expect(key.publicKey.isValidSignature(raw, for: data))

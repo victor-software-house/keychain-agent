@@ -1,7 +1,7 @@
 import Darwin
 import Foundation
 import KeyStore
-import SSHWire
+import SSHEncoding
 
 /// The SSH configuration signd writes for its keys' hosts, under `~/.ssh/signd/`.
 public enum Routing {

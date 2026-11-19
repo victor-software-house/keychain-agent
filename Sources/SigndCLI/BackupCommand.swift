@@ -9,9 +9,9 @@ import Sync
 struct BackupAgent: BackupLogin {
     let service: BackupLoginService
 
-    func login(token: String, vault: String) async -> SyncResult { await service.login(token: token, vault: vault) }
+    func logIn(token: String, vault: String) async -> SyncResult { await service.logIn(token: token, vault: vault) }
 
-    func logout() async -> SyncResult { await service.logout() }
+    func logOut() async -> SyncResult { await service.logOut() }
 }
 
 struct BackupCommand: ParsableCommand {
@@ -55,7 +55,7 @@ struct BackupCommand: ParsableCommand {
             guard argument == nil else { throw Failure("pass the token on stdin, never as an argument") }
             guard let token = BackupCommand.token(from: readInput()) else { throw Failure("stdin has no token, or one that is not text") }
             let vault = settings.text(.backupVault)
-            guard let result = client.backupLogin(BackupLoginRequest(token: token, vault: vault)) else { throw Failure("the agent does not answer") }
+            guard let result = client.logInToBackup(BackupLoginRequest(token: token, vault: vault)) else { throw Failure("the agent does not answer") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the login failed") }
             print("logged in; the backup uses the vault \(vault)")
         }
@@ -65,7 +65,7 @@ struct BackupCommand: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Delete the backup token on every Mac.")
 
         func run() throws {
-            guard let result = AgentClient(path: defaultSocketPath).backupLogout() else { throw Failure("the agent does not answer") }
+            guard let result = AgentClient(path: defaultSocketPath).logOutOfBackup() else { throw Failure("the agent does not answer") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the logout failed") }
             print("logged out")
         }

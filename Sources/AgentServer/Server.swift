@@ -6,7 +6,7 @@ import NIOCore
 import NIOFoundationCompat
 import NIOPosix
 import os
-import SSHWire
+import SSHEncoding
 import Sync
 import Synchronization
 
@@ -48,8 +48,8 @@ public struct BackupLoginRequest: Codable, Sendable {
 
 /// The backup login and logout the agent answers; the agent is the only process that calls CloudKit.
 public protocol BackupLogin: Sendable {
-    func login(token: String, vault: String) async -> SyncResult
-    func logout() async -> SyncResult
+    func logIn(token: String, vault: String) async -> SyncResult
+    func logOut() async -> SyncResult
 }
 
 /// A file by its device and inode, so two paths to one file match.
@@ -109,21 +109,21 @@ public struct Server: Sendable {
     let sync: SyncService?
     let backup: (any BackupLogin)?
     /// Called after a command reloaded the keys, as a key imported, created or deleted on this Mac.
-    let keysChanged: (@Sendable () async -> Void)?
+    let onKeysChanged: (@Sendable () async -> Void)?
     let pool: NIOThreadPool
     /// The file this agent runs; nil refuses every private extension.
     /// A connection must run the same file to use a private extension.
     let executable: FileIdentity?
 
-    public init(agent: Agent, sync: SyncService? = nil, backup: (any BackupLogin)? = nil, keysChanged: (@Sendable () async -> Void)? = nil) {
-        self.init(agent: agent, sync: sync, backup: backup, keysChanged: keysChanged, executable: FileIdentity(executableOf: getpid()))
+    public init(agent: Agent, sync: SyncService? = nil, backup: (any BackupLogin)? = nil, onKeysChanged: (@Sendable () async -> Void)? = nil) {
+        self.init(agent: agent, sync: sync, backup: backup, onKeysChanged: onKeysChanged, executable: FileIdentity(executableOf: getpid()))
     }
 
-    init(agent: Agent, sync: SyncService?, backup: (any BackupLogin)? = nil, keysChanged: (@Sendable () async -> Void)? = nil, executable: FileIdentity?) {
+    init(agent: Agent, sync: SyncService?, backup: (any BackupLogin)? = nil, onKeysChanged: (@Sendable () async -> Void)? = nil, executable: FileIdentity?) {
         self.agent = agent
         self.sync = sync
         self.backup = backup
-        self.keysChanged = keysChanged
+        self.onKeysChanged = onKeysChanged
         pool = .singleton
         self.executable = executable
     }
@@ -231,12 +231,12 @@ public struct Server: Sendable {
             return .success
         case PrivateExtension.reload:
             await agent.reload()
-            await sync?.reloaded()
-            await keysChanged?()
+            await sync?.keysDidChange()
+            await onKeysChanged?()
             return .success
         case PrivateExtension.sync:
             guard let sync else { return .failure }
-            return Self.json(await sync.syncRequested(), name: name)
+            return Self.json(await sync.syncNow(), name: name)
         case PrivateExtension.syncState:
             guard let sync else { return .failure }
             return Self.json(await sync.snapshot(), name: name)
@@ -256,10 +256,10 @@ public struct Server: Sendable {
             guard let backup, let argument = Self.argument(contents),
                   let request = try? JSONDecoder().decode(BackupLoginRequest.self, from: Data(argument.utf8))
             else { return .failure }
-            return Self.json(await backup.login(token: request.token, vault: request.vault), name: name)
+            return Self.json(await backup.logIn(token: request.token, vault: request.vault), name: name)
         case PrivateExtension.backupLogout:
             guard let backup else { return .failure }
-            return Self.json(await backup.logout(), name: name)
+            return Self.json(await backup.logOut(), name: name)
         case PrivateExtension.status:
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys
@@ -281,7 +281,7 @@ public struct Server: Sendable {
     /// The one string argument of a private extension.
     private static func argument(_ contents: Data) -> String? {
         var reader = Reader(contents)
-        guard let text = reader.text(), reader.isAtEnd else { return nil }
+        guard let text = reader.readText(), reader.isAtEnd else { return nil }
         return text
     }
 
@@ -298,7 +298,7 @@ public struct Server: Sendable {
     /// the session identifier and the signature.
     static func isForwarding(_ contents: Data) -> Bool {
         var reader = Reader(contents)
-        guard reader.string() != nil, reader.string() != nil, reader.string() != nil, let flag = reader.byte() else { return false }
+        guard reader.readString() != nil, reader.readString() != nil, reader.readString() != nil, let flag = reader.readByte() else { return false }
         return flag != 0
     }
 

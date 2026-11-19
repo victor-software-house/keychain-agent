@@ -25,26 +25,26 @@ let package = Package(
     ],
     targets: [
         // The SSH encoding of keys and signatures, with no platform code.
-        .target(name: "SSHWire", swiftSettings: strict),
+        .target(name: "SSHEncoding", swiftSettings: strict),
         // The SSH agent messages (RFC 9987), with no platform code.
-        .target(name: "AgentProtocol", dependencies: ["SSHWire"], swiftSettings: strict),
+        .target(name: "AgentProtocol", dependencies: ["SSHEncoding"], swiftSettings: strict),
         // Keys: the keychain store, the Secure Enclave, and signing in memory.
         .target(
             name: "KeyStore",
             dependencies: [
-                "SSHWire", "AgentProtocol",
+                "SSHEncoding", "AgentProtocol",
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "SwiftASN1", package: "swift-asn1"),
             ],
             swiftSettings: strict
         ),
         // Sharing keys between devices through iCloud, and the SSH routing files for their hosts.
-        .target(name: "Sync", dependencies: ["KeyStore", "SSHWire"], swiftSettings: strict),
+        .target(name: "Sync", dependencies: ["KeyStore", "SSHEncoding"], swiftSettings: strict),
         // The 1Password backup: the check that the service account lists the vault.
         .target(
             name: "Backup",
             dependencies: [
-                "KeyStore", "SSHWire", "Sync",
+                "KeyStore", "SSHEncoding", "Sync",
                 .product(name: "OnePassword", package: "swift-onepassword"),
             ],
             swiftSettings: strict
@@ -53,7 +53,7 @@ let package = Package(
         .target(
             name: "AgentServer",
             dependencies: [
-                "AgentProtocol", "KeyStore", "SSHWire", "Sync",
+                "AgentProtocol", "KeyStore", "SSHEncoding", "Sync",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOFoundationCompat", package: "swift-nio"),
@@ -65,7 +65,7 @@ let package = Package(
         .target(
             name: "SigndCLI",
             dependencies: [
-                "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHWire", "Sync",
+                "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHEncoding", "Sync",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             swiftSettings: strict
@@ -78,7 +78,7 @@ let package = Package(
         .testTarget(
             name: "SigndTests",
             dependencies: [
-                "SSHWire", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "SigndCLI",
+                "SSHEncoding", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "SigndCLI",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "NIOCore", package: "swift-nio"),
