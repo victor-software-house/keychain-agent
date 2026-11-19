@@ -24,6 +24,7 @@ pieces:
 - openspec
 - ci
 - drift_check
+- xcode_settings
 pieces_extra:
 - lint_workflows
 platforms:

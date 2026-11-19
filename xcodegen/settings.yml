@@ -1,0 +1,52 @@
+# The template renders this file: build settings every XcodeGen project shares.
+# project.yml pulls them in with `include: [xcodegen/settings.yml]`.
+# XcodeGen merges an include first and project.yml on top.
+# A setting in the settings.base of project.yml therefore wins over the same
+# setting here.
+#
+# A repository that ships an app bundle builds it from a project.yml that
+# includes this file. An app bundle is anything with an Info.plist,
+# entitlements, a provisioning profile, embedded helpers or extensions, or
+# Xcode's signing.
+# A library or a command-line tool with no bundle builds with SwiftPM alone and
+# leaves the file unused.
+#
+# Each setting comes with its source.
+# "Xcode 27.2 spec" is the build setting definitions that ship in Xcode 27.2
+# (`SwiftBuild.framework`, `CoreBuildSystem.xcspec` and `Swift.xcspec`).
+# "Xcode 27.2 project template" is its `Base_ProjectSettings` template, which
+# sets the same values in a new project.
+settings:
+  base:
+    # Xcode reuses compiled outputs from its compilation cache only when the
+    # build setting is on; an environment variable does not turn it on. Build
+    # machines that share one cache path then reuse each other's outputs.
+    # Source: Xcode 26 release notes, "Compilation caching".
+    COMPILATION_CACHE_ENABLE_CACHING: YES
+    # xcodebuild deletes the compilation cache's directory when a build ends,
+    # unless this is on, and the CI cache would then restore nothing.
+    # Source: swift-build, `BuildOperation.cleanupCompilationCache`, the engine
+    # of xcodebuild; the macro is in the `SWBCore.framework` of Xcode 27.2.
+    COMPILATION_CACHE_KEEP_CAS_DIRECTORY: YES
+    # One directory shared by every checkout and worktree of a machine, which the
+    # CI caches at the same path. Source: swift-build, `WorkspaceContext.swift`,
+    # where `COMPILATION_CACHE_CAS_PATH` is one of the cache directory macros.
+    COMPILATION_CACHE_CAS_PATH: $(HOME)/Library/Caches/CompilationCache.noindex
+    # A script phase that reads or writes a file it does not declare as an input
+    # or output fails the build. Source: Xcode 14 release notes, "Build System",
+    # and the Xcode 27.2 project template, which sets it on.
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+  configs:
+    # Configurations of the debug type and of the release type, whatever their
+    # names, as XcodeGen matches them.
+    debug:
+      # Source: Xcode 27.2 project template, Debug configuration.
+      DEBUG_INFORMATION_FORMAT: dwarf
+    release:
+      # A dSYM keeps crash reports symbolicatable. Source: Xcode 27.2 project
+      # template, Release configuration.
+      DEBUG_INFORMATION_FORMAT: dwarf-with-dsym
+      # One compilation of the whole module in a release build. Source: Xcode
+      # 27.2 project template, Release configuration; the Xcode 27.2 spec's
+      # default is singlefile.
+      SWIFT_COMPILATION_MODE: wholemodule
