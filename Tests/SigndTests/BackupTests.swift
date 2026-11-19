@@ -120,7 +120,8 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     for rig in [b, c] { _ = await rig.service.checkNow() }
     for rig in [a, b, c] { #expect(try rig.tokens.read() == token) }
 
-    // Mac c is missing from mac a's list of devices when mac a logs in again, so the new record has no copy for it.
+    // Mac c is missing from mac a's list of devices when mac a logs in again.
+    // The new record then has no copy for it.
     try await cloud.delete(.device, name: c.device.recordName)
     _ = await a.service.checkNow()
     #expect(await a.service.backupLogin(token: newerToken, vault: "signd") == SyncResult(.done))
