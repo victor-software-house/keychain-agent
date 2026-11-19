@@ -55,6 +55,25 @@ private func loggedInAndWaiting() async throws -> (cloud: FakeCloud, a: DeviceRi
     #expect(try b.tokens.read() == token)
 }
 
+@Test(.timeLimit(.minutes(1))) func aTokenThatDiffersFromTheStoredOneCountsAsAChange() async throws {
+    let (_, a, b) = try await loggedInAndWaiting()
+    let before = b.changes.value
+
+    // The first check stores the token, so the agent is told.
+    // A check that finds the same token reports no change.
+    _ = await b.service.checkNow()
+    #expect(try b.tokens.read() == token)
+    #expect(b.changes.value == before + 1)
+    _ = await b.service.checkNow()
+    #expect(b.changes.value == before + 1)
+
+    // A login with another token replaces the stored one, which is a change again.
+    #expect(await a.service.backupLogin(token: newerToken, vault: "signd") == SyncResult(.done))
+    _ = await b.service.checkNow()
+    #expect(try b.tokens.read() == newerToken)
+    #expect(b.changes.value == before + 2)
+}
+
 @Test(.timeLimit(.minutes(1))) func aCompletedFullReadWithoutTheBackupRecordDeletesTheToken() async throws {
     let (cloud, _, b) = try await loggedInAndWaiting()
     _ = await b.service.checkNow()
