@@ -247,3 +247,15 @@ horizon:
     outcome: The README banner is redesigned beyond the seal and lettering side by side.
     reason: deferred
     open: The operator names what the banner should show or say.
+
+  - id: SGD-018
+    title: Apply one removal setting across the Macs that share a backup vault
+    scope: Sources/Backup
+    outcome: >-
+      Every Mac that writes to a backup vault removes the item of a deleted key the
+      same way.
+    reason: deferred
+    open: "The operator decides where the setting lives: in a vault-wide record, or on each Mac with the most keeping setting winning."
+    notes:
+      - '2026-11-19: backup-removed is a setting of each Mac, but every Mac runs the backup on the one shared vault.'
+      - With keep on one Mac and the default delete on the other, the other Mac deleted an item the first one kept, at 20:46:58 UTC.
