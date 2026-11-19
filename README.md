@@ -220,6 +220,24 @@ signd backup status                   # whether the backup is on, its last run a
 - `signd status` prints the same backup lines.
   `backup  off; run signd backup login` shows that no token is stored.
 
+## Updates
+
+A launch daemon, the updater, checks the latest GitHub release of signd and installs a newer one by itself.
+It installs the app only when it is notarized and signed by the running updater's team with the identifier `com.victor-software-house.signd`.
+
+The updater then restarts each user's agent on the new version.
+The app stays owned by root, so no user process can change it.
+
+```sh
+signd update    # check now, install a newer release, and report the result
+```
+
+- `signd status` shows whether updates are on, the interval, where each came from, and the last check with its error.
+- The updater reads two settings from the machine-wide preferences, never from a user's.
+  `updates` is a boolean, on by default, and `update-interval` is a duration from 1h to 30d, 6h by default.
+- A Mobile Device Management (MDM) profile sets them in its `com.victor-software-house.signd` preference domain, and its values win.
+  An admin sets them with `sudo defaults write /Library/Preferences/com.victor-software-house.signd updates -bool false`.
+
 ## Settings
 
 | Setting | Default | Range | Controls |
