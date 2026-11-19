@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The package installs this into /Library/LaunchAgents. At each login it registers the agent for that user when it is not set up. -->
+	<key>Label</key>
+	<string>com.victor-software-house.signd.login</string>
+	<key>ProgramArguments</key>
+	<array>
+		<string>/Applications/Signd.app/Contents/MacOS/signd</string>
+		<string>service</string>
+		<string>enable</string>
+		<string>--at-login</string>
+	</array>
+	<key>RunAtLoad</key>
+	<true/>
+	<key>LimitLoadToSessionType</key>
+	<string>Aqua</string>
+	<!-- Login Items lists this hook under signd, so the profile's rule approves it too. -->
+	<key>AssociatedBundleIdentifiers</key>
+	<array>
+		<string>com.victor-software-house.signd</string>
+	</array>
+</dict>
+</plist>

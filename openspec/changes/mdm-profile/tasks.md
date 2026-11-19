@@ -5,12 +5,16 @@
 - [x] 1.1 Add `--at-login` to `signd service enable`.
   It registers and starts the agent when it is not set up, exits with no output when it is, and never opens System Settings.
   It exits 0 while approval is pending.
-  Verify a unit test that the flag parses, and the set-up and not-registered paths in `mise run e2e:hardware`.
-  Verify the pending path in 3.1, since the e2e cannot revoke an approval.
-  - 2026-11-19 UTC: the flag, the early return for a set-up agent and the silent return while approval is pending are in `Service.Enable`.
-    `serviceEnableTakesAtLoginFromTheHook` and the two e2e steps are written; neither has run yet. CI runs the test, and the e2e needs a Mac.
-- [ ] 1.2 Add `Bundle/com.victor-software-house.signd.login.plist` and install it into `/Library/LaunchAgents` from the package task.
+  Verify a unit test of the flag, and the first two paths in `mise run e2e:hardware`.
+  Verify the third in 3.1.
+  - 2026-11-19 UTC: written in `Service.Enable`; the test and e2e steps have not run.
+- [x] 1.2 Add `Bundle/com.victor-software-house.signd.login.plist` and install it into `/Library/LaunchAgents` from the package task.
   Verify `pkgutil --payload-files build/signd.pkg` lists it.
+  Verify the expanded package's bill of materials gives it root:wheel and mode 0644.
+  - 2026-11-19 UTC: `package.sh` copies the hook into the package root and passes `--ownership recommended` to `pkgbuild`.
+    `package:check` reads the payload list and the bill of materials.
+    `plutil -lint` accepts the plist, and the owner filter ran on a system receipt.
+    The package is not built yet: the Release workflow builds it.
 - [ ] 1.3 Delete the hook in the cask's `uninstall` in the Homebrew tap.
   Verify the spec scenario on a Mac.
 
