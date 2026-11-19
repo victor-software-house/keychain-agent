@@ -1,5 +1,12 @@
 # Changelog
 
+## signd 0.0.11
+
+- `signd backup login` reads a 1Password service account token from stdin.
+  It checks that the account lists the vault named by the `backup-vault` setting.
+  Then it stores the token on every Mac, sealed to each Mac's Secure Enclave key.
+  `signd backup logout` deletes it on every Mac ([`3ea5976`](https://github.com/victor-software-house/signd/commit/3ea5976b4ed38b1c1b4f0be97ccf307213f924c7)).
+
 ## signd 0.0.10
 
 - A package installed over a running agent takes effect at once.
