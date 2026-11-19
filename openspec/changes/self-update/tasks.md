@@ -42,8 +42,11 @@
 
 ## 2. Integration
 
-- [ ] 2.1 On a test Mac, update from one release to the next.
+- [x] 2.1 On a test Mac, update from one release to the next.
   Verify that Login Items still lists signd as allowed, the app stays `root:wheel`, and each user's agent answers from the new version.
+  - 2026-11-19 UTC: on both Macs, `signd update` on 0.0.15 printed `installed 0.0.16; the agents restart on it`, at 19:39:43 and 19:40:09.
+    `signd status` then printed `signd 0.0.16`, `agent   answers` on 0.0.16 and `login item  enabled`.
+    `Signd.app` and its executable stayed `root:wheel`, and Gatekeeper accepted the swapped app as notarized Developer ID.
 - [ ] 2.2 Repeat 2.1 with a standard account logged in beside an admin.
 
 [dry-0015]: https://github.com/victor-software-house/signd/actions/runs/44583391486

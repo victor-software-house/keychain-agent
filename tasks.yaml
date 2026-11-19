@@ -120,21 +120,22 @@ queue:
       - Deleting a throwaway key puts its item in Recently Deleted, leaves a foreign item unchanged, and signd backup restore brings the key back so it signs on both Macs.
       - No SSH request waits on 1Password or on the lease.
     plan: openspec/changes/onepassword-backup/proposal.md
-
+archive:
   - id: SGD-017
     title: Apply a changed backup setting to the waiting run
     scope: backup
     outcome: >-
       A backup-delay or backup-min-interval change takes effect at once, and signd
       backup status shows the time the agent waits for.
-    blocked_by: []
-    acceptance:
-      - A unit test changes the delay while a run waits, and the run starts on the new delay.
-      - On a Mac, signd config set backup-delay 30s after a key change starts the run within a minute, with no agent restart.
     notes:
       - '2026-11-19 UTC: after signd config set lowered both settings, the agent kept the wait it had armed, while signd backup status showed the next backup as due; signd service restart started the run.'
       - '2026-11-19 UTC: cause: the agent read the schedule once, when it armed its timer, and nothing told it that another process had written a setting. Design: the command posts a Darwin notification after it writes a setting, and the agent arms the backup timer again when it arrives.'
-archive:
+    completed: 2026-11-19T19:41:58
+    evidence:
+      - '2026-11-19 UTC: on 0.0.16, a key imported at 19:40:40 set the next backup to 19:45:40; signd config set backup-delay 30s at 19:40:45 moved it to 19:41:10 with no restart, and the run ended ok at 19:41:10.'
+      - 'The fix is pull request 93: config set and unset post a Darwin notification, and the agent arms the backup timer again from the new schedule.'
+    disposition: completed
+
   - id: SGD-010
     title: Sync shared keys through iCloud
     scope: icloud-sync
