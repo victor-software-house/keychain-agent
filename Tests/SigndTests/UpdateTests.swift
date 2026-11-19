@@ -355,6 +355,57 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     #expect(feed.requests == [ReleaseFeed.latestURL])
 }
 
+// MARK: Download
+
+private func response(for url: URL) throws -> HTTPURLResponse {
+    try #require(HTTPURLResponse(url: url, statusCode: 200, httpVersion: nil, headerFields: nil))
+}
+
+@Test func aDownloadMovesTheZipIntoTheDirectory() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let asset = URL(filePath: "/Signd.app.zip")
+    let downloaded = directory.appending(path: "download.tmp")
+    try Data("zip".utf8).write(to: downloaded)
+    let requests = RunCount()
+    let feed = ReleaseFeed(downloader: { request in
+        requests.increment()
+        return (downloaded, try response(for: request.url ?? asset))
+    })
+    let zip = try await feed.download(Release(tag: "v0.0.14", assetURL: asset, assetSize: 3), to: directory)
+    #expect(zip.lastPathComponent == "Signd.app.zip")
+    #expect(try Data(contentsOf: zip) == Data("zip".utf8))
+    #expect(requests.count == 1)
+}
+
+@Test func aDownloadOverTheLimitIsRefusedByTheReportedSize() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let requests = RunCount()
+    let feed = ReleaseFeed(downloader: { _ in
+        requests.increment()
+        throw URLError(.badServerResponse)
+    })
+    let release = Release(tag: "v0.0.14", assetURL: URL(filePath: "/Signd.app.zip"), assetSize: ReleaseFeed.maximumAssetSize + 1)
+    await #expect(throws: UpdateError.self) { try await feed.download(release, to: directory) }
+    #expect(requests.count == 0)
+}
+
+@Test func aDownloadOverTheLimitIsRefusedByTheFileSize() async throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let asset = URL(filePath: "/Signd.app.zip")
+    let downloaded = directory.appending(path: "download.tmp")
+    try Data().write(to: downloaded)
+    let handle = try FileHandle(forWritingTo: downloaded)
+    try handle.truncate(atOffset: UInt64(ReleaseFeed.maximumAssetSize + 1))
+    try handle.close()
+    let feed = ReleaseFeed(downloader: { request in (downloaded, try response(for: request.url ?? asset)) })
+    // The feed reported a small size, so only the file's own size can refuse it.
+    await #expect(throws: UpdateError.self) { try await feed.download(Release(tag: "v0.0.14", assetURL: asset, assetSize: 3), to: directory) }
+    #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "Signd.app.zip").path))
+}
+
 // MARK: Staging
 
 @Test func stagingMakesAFreshPrivateDirectoryEachTime() throws {

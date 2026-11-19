@@ -4,10 +4,13 @@ import Foundation
 public struct Release: Sendable, Equatable {
     public let tag: String
     public let assetURL: URL
+    /// The zip's size in bytes, as the release feed reports it.
+    public let assetSize: Int?
 
-    public init(tag: String, assetURL: URL) {
+    public init(tag: String, assetURL: URL, assetSize: Int? = nil) {
         self.tag = tag
         self.assetURL = assetURL
+        self.assetSize = assetSize
     }
 
     /// The tag without its leading `v`, which the app's `CFBundleShortVersionString` equals.
@@ -33,15 +36,33 @@ public struct Release: Sendable, Equatable {
 /// Neither request carries a credential.
 public struct ReleaseFeed: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
+    /// Downloads to a file and returns where it is, which the caller owns.
+    public typealias Downloader = @Sendable (URLRequest) async throws -> (URL, URLResponse)
+
+    /// The largest zip the updater downloads: 200 MB.
+    public static let maximumAssetSize = 200_000_000
+
+    /// A session with a 60 second wait for data and 10 minutes for the whole download.
+    private static let downloadSession: URLSession = {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 60
+        configuration.timeoutIntervalForResource = 600
+        return URLSession(configuration: configuration)
+    }()
 
     public static let latestURL = URL(string: "https://api.github.com/repos/victor-software-house/signd/releases/latest")!
     public static let assetName = "Signd.app.zip"
 
     private let transport: Transport
+    private let downloader: Downloader
 
-    /// `transport` sends each request; tests pass one that never uses the network.
-    public init(transport: @escaping Transport = { try await URLSession.shared.data(for: $0) }) {
+    /// `transport` reads the release and `downloader` fetches its zip; tests pass ones that never use the network.
+    public init(
+        transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
+        downloader: @escaping Downloader = { try await ReleaseFeed.downloadSession.download(for: $0) }
+    ) {
         self.transport = transport
+        self.downloader = downloader
     }
 
     /// The latest release, with the URL of its `Signd.app.zip`.
@@ -58,19 +79,42 @@ public struct ReleaseFeed: Sendable {
         guard let asset = reply.assets.first(where: { $0.name == Self.assetName }) else {
             throw UpdateError("the latest release \(reply.tag) has no \(Self.assetName)")
         }
-        return Release(tag: reply.tag, assetURL: asset.url)
+        return Release(tag: reply.tag, assetURL: asset.url, assetSize: asset.size)
     }
 
     /// Downloads the release's zip into `directory` and returns its file.
+    /// It refuses a zip over `maximumAssetSize`, by the size the feed reports and by the size of the file.
     public func download(_ release: Release, to directory: URL) async throws -> URL {
-        let data = try await fetch(URLRequest(url: release.assetURL))
+        if let size = release.assetSize, size > Self.maximumAssetSize {
+            throw UpdateError("\(Self.assetName) is \(size) bytes, over the limit of \(Self.maximumAssetSize)")
+        }
+        let host = release.assetURL.host ?? "the release server"
+        let result: (URL, URLResponse)
+        do {
+            result = try await downloader(URLRequest(url: release.assetURL))
+        } catch {
+            throw UpdateError("cannot reach \(host): \(error.localizedDescription)")
+        }
+        let file = result.0
+        defer { try? FileManager.default.removeItem(at: file) }
+        try Self.requireOK(result.1, from: host)
+        let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
+        guard let size = attributes?[.size] as? Int else { throw UpdateError("cannot read the size of the downloaded \(Self.assetName)") }
+        guard size <= Self.maximumAssetSize else {
+            throw UpdateError("the downloaded \(Self.assetName) is \(size) bytes, over the limit of \(Self.maximumAssetSize)")
+        }
         let zip = directory.appending(path: Self.assetName)
         do {
-            try data.write(to: zip)
+            try FileManager.default.moveItem(at: file, to: zip)
         } catch {
             throw UpdateError("cannot save \(Self.assetName): \(error)")
         }
         return zip
+    }
+
+    private static func requireOK(_ response: URLResponse, from host: String) throws {
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        guard status == 200 else { throw UpdateError("\(host) did not answer with the release: status \(status)") }
     }
 
     private func fetch(_ request: URLRequest) async throws -> Data {
@@ -81,9 +125,7 @@ public struct ReleaseFeed: Sendable {
         } catch {
             throw UpdateError("cannot reach \(host): \(error.localizedDescription)")
         }
-        guard let status = (result.1 as? HTTPURLResponse)?.statusCode, status == 200 else {
-            throw UpdateError("\(host) did not answer with the release: status \((result.1 as? HTTPURLResponse)?.statusCode ?? 0)")
-        }
+        try Self.requireOK(result.1, from: host)
         return result.0
     }
 
@@ -91,9 +133,10 @@ public struct ReleaseFeed: Sendable {
         struct Asset: Decodable {
             let name: String
             let url: URL
+            let size: Int?
 
             enum CodingKeys: String, CodingKey {
-                case name
+                case name, size
                 case url = "browser_download_url"
             }
         }
