@@ -1,3 +1,3 @@
 import SigndCLI
 
-Signd.main()
+Signd.runMain()

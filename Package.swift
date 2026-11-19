@@ -21,6 +21,8 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
         .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.4"),
+        .package(url: "https://github.com/tuist/Noora.git", exact: "0.57.7"),
+        .package(url: "https://github.com/onevcat/Rainbow.git", exact: "4.2.2"),
         .package(url: "https://github.com/victor-software-house/swift-onepassword.git", exact: "0.0.4"),
     ],
     targets: [
@@ -69,6 +71,8 @@ let package = Package(
             dependencies: [
                 "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHEncoding", "Sync", "Updates",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "Noora", package: "Noora"),
+                .product(name: "Rainbow", package: "Rainbow"),
             ],
             swiftSettings: strict
         ),

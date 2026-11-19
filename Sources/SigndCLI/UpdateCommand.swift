@@ -6,17 +6,19 @@ import Updates
 
 struct UpdateNow: ParsableCommand {
     static let configuration = CommandConfiguration(commandName: "update", abstract: "Check for a newer release now, install it, and report the result.")
+    @OptionGroup var colorOption: ColorOption
 
     func run() throws {
+        let out = colorOption.standardOutput
         guard let state = Updater.requestCheck() else { throw Failure("the updater does not answer; install signd from its package") }
         switch state.outcome {
         case .upToDate?:
-            print("signd is up to date (\(state.installed ?? "unknown version"))")
+            print(out.success("signd is up to date (\(state.installed ?? "unknown version"))"))
         case .installed?:
             if let error = state.error { throw Failure(error) }
-            print("installed \(state.installed ?? "the new version"); the agents restart on it")
+            print(out.success("installed \(state.installed ?? "the new version"); the agents restart on it"))
         case .off?:
-            print("updates are off (\(UpdateSettings().enabledSource.rawValue))")
+            print(out.warning("updates are off (\(UpdateSettings().enabledSource.rawValue))"))
         case .failed?:
             throw Failure(state.error ?? "the update failed")
         case nil:
