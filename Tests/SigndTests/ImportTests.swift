@@ -2,7 +2,7 @@ import AgentProtocol
 import CryptoKit
 import Foundation
 import KeyStore
-import SSHWire
+import SSHEncoding
 import Testing
 
 /// A directory for one test, removed when the test ends.

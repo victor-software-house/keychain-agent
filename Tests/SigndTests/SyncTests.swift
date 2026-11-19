@@ -3,7 +3,7 @@ import AgentProtocol
 import CryptoKit
 import Foundation
 @testable import KeyStore
-import SSHWire
+import SSHEncoding
 import Testing
 @testable import Sync
 

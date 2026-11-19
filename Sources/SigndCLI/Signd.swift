@@ -7,7 +7,7 @@ import Foundation
 import KeyStore
 import os
 import ServiceManagement
-import SSHWire
+import SSHEncoding
 import Sync
 import SystemConfiguration
 

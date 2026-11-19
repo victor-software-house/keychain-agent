@@ -1,5 +1,5 @@
 import Foundation
-import SSHWire
+import SSHEncoding
 import Testing
 
 @Suite struct Encoding {

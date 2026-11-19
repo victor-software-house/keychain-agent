@@ -2,7 +2,7 @@ import CryptoKit
 import Foundation
 import KeyStore
 import os
-import SSHWire
+import SSHEncoding
 
 private let log = Logger(subsystem: "com.victor-software-house.signd", category: "sync")
 

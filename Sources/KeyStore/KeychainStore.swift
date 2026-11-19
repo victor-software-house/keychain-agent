@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 import Security
-import SSHWire
+import SSHEncoding
 
 /// Stores keys as data-protection keychain items in signd's access group.
 ///

@@ -2,7 +2,7 @@ import AgentProtocol
 import Foundation
 import KeyStore
 import os
-import SSHWire
+import SSHEncoding
 
 let log = Logger(subsystem: "com.victor-software-house.signd", category: "agent")
 

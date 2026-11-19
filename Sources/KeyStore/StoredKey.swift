@@ -1,5 +1,5 @@
 import Foundation
-import SSHWire
+import SSHEncoding
 
 /// How a stored key keeps its private part.
 public enum KeyKind: String, Codable, Sendable {

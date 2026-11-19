@@ -5,7 +5,7 @@ import Darwin
 import Foundation
 import KeyStore
 import Synchronization
-import SSHWire
+import SSHEncoding
 import Testing
 
 /// An in-memory store, for tests on runners that lack a Secure Enclave and signd's entitlements.

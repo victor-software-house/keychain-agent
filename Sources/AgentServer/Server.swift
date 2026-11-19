@@ -6,7 +6,7 @@ import NIOCore
 import NIOFoundationCompat
 import NIOPosix
 import os
-import SSHWire
+import SSHEncoding
 import Sync
 import Synchronization
 

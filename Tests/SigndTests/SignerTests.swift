@@ -3,7 +3,7 @@ import CryptoExtras
 import CryptoKit
 import Foundation
 import KeyStore
-import SSHWire
+import SSHEncoding
 import Testing
 
 /// Rivest-Shamir-Adleman (RSA) keys made for these tests only, as hex numbers.

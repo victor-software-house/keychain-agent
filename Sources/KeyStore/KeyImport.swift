@@ -1,7 +1,7 @@
 import Crypto
 import CryptoExtras
 import Foundation
-import SSHWire
+import SSHEncoding
 import SwiftASN1
 
 /// A private key file read for import.

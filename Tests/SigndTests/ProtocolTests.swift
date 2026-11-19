@@ -1,6 +1,6 @@
 import AgentProtocol
 import Foundation
-import SSHWire
+import SSHEncoding
 import Testing
 
 private let ed25519 = PrivateKey.ed25519(seed: Data(repeating: 1, count: 32), publicKey: Data(repeating: 2, count: 32))

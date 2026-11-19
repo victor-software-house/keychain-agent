@@ -1,7 +1,7 @@
 import CryptoKit
 import Foundation
 import KeyStore
-import SSHWire
+import SSHEncoding
 import Testing
 
 @Suite struct WrappingRoundTrip {

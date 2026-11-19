@@ -1,6 +1,6 @@
 import Foundation
 import KeyStore
-import SSHWire
+import SSHEncoding
 import Testing
 @testable import Sync
 

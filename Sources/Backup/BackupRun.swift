@@ -4,7 +4,7 @@ import Foundation
 import KeyStore
 import OnePassword
 import os
-import SSHWire
+import SSHEncoding
 import Sync
 
 private let log = Logger(subsystem: "com.victor-software-house.signd", category: "backup")

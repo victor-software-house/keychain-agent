@@ -1,5 +1,5 @@
 import Foundation
-import SSHWire
+import SSHEncoding
 
 // The SSH agent messages signd reads and writes (RFC 9987).
 

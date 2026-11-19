@@ -1,6 +1,6 @@
 import Foundation
 import OnePassword
-import SSHWire
+import SSHEncoding
 import Sync
 
 extension ItemCategory {

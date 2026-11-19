@@ -1,6 +1,6 @@
 import CryptoKit
 import Foundation
-import SSHWire
+import SSHEncoding
 
 /// A private key sealed with Hybrid Public Key Encryption (HPKE) to a key-agreement key, as a wrapped key's keychain item stores it.
 public struct WrappedKey: Codable, Sendable, Equatable {

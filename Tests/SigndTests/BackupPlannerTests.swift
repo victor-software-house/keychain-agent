@@ -2,7 +2,7 @@ import Foundation
 @testable import Backup
 @testable import KeyStore
 import OnePassword
-import SSHWire
+import SSHEncoding
 import Testing
 @testable import Sync
 

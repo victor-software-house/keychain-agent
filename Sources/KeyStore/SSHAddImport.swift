@@ -2,7 +2,7 @@ import AgentProtocol
 import Darwin
 import Dispatch
 import Foundation
-import SSHWire
+import SSHEncoding
 import Synchronization
 
 /// What the private agent socket has seen: the first key ssh-add added, and whether the import is over.

@@ -2,7 +2,7 @@ import AgentProtocol
 import AgentServer
 import Darwin
 import Foundation
-import SSHWire
+import SSHEncoding
 import Sync
 
 /// The agent socket, `~/.ssh/signd.sock`.
