@@ -82,7 +82,9 @@ The release job decodes `SIGND_PROVISIONING_PROFILE` into `~/Library/Developer/X
 Then four mise tasks run, one command each:
 
 1. `generate`: `xcodegen generate`.
-2. `archive`: `xcodebuild archive`, with manual Developer ID signing; `DEVELOPMENT_TEAM`, `PROVISIONING_PROFILE_SPECIFIER`, `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` come from the environment.
+2. `archive`: `xcodebuild archive`, with manual Developer ID signing.
+   `DEVELOPMENT_TEAM`, `SIGND_PROFILE_UUID`, `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` come from the environment.
+   Only the `Signd` target sets `PROVISIONING_PROFILE_SPECIFIER: $(SIGND_PROFILE_UUID)` in `project.yml`, because a library target of the package takes no profile and fails the archive when one is set.
 3. `export`: `xcodebuild -exportArchive` with `method: developer-id`, `signingStyle: manual` and the profile's UUID.
 4. `package`: the existing `pkgbuild`, `productbuild`, `notarytool` and `stapler` steps on the exported app.
 
@@ -100,7 +102,7 @@ The template's Xcode compilation cache entry covers this build.
   The release runner runs Xcode 27.
 - `-exportArchive` with a profile named by UUID was not run in the research → the first release dry run on `main` checks it, before publishing.
 - Moving the command code is a large diff with no behaviour change → the existing tests run unchanged against `SigndCLI`.
-- The unsigned Xcode build adds CI time → the compilation cache covers it, and its time is recorded under task 3.
+- The unsigned Xcode build adds CI time → the compilation cache covers it, and its time is recorded under task 1.4.
 
 ## Migration Plan
 
