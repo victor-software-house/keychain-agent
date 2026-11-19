@@ -83,8 +83,9 @@ Then four mise tasks run, one command each:
 
 1. `generate`: `xcodegen generate`.
 2. `archive`: `xcodebuild archive`, with manual Developer ID signing.
-   `DEVELOPMENT_TEAM`, `SIGND_PROFILE_UUID`, `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` come from the environment.
-   Only the `Signd` target sets `PROVISIONING_PROFILE_SPECIFIER: $(SIGND_PROFILE_UUID)` in `project.yml`, because a library target of the package takes no profile and fails the archive when one is set.
+   `SIGND_TEAM`, `SIGND_PROFILE_UUID`, `MARKETING_VERSION` and `CURRENT_PROJECT_VERSION` come from the environment.
+   Only the `Signd` target sets the identity, `DEVELOPMENT_TEAM: $(SIGND_TEAM)` and `PROVISIONING_PROFILE_SPECIFIER: $(SIGND_PROFILE_UUID)` in `project.yml`.
+   A package target that takes any of them fails the archive: a resource bundle is signed automatically, and a library takes no profile.
 3. `export`: `xcodebuild -exportArchive` with `method: developer-id`, `signingStyle: manual` and the profile's UUID.
 4. `package`: the existing `pkgbuild`, `productbuild`, `notarytool` and `stapler` steps on the exported app.
 

@@ -45,6 +45,10 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # The release signs with a Developer ID profile, and Xcode checks the entitlements against it.
         CODE_SIGN_STYLE: Manual
+        # Only this target takes the Developer ID and the team.
+        # A package's resource bundle that took them would fail the archive.
+        CODE_SIGN_IDENTITY: Developer ID Application
+        DEVELOPMENT_TEAM: $(SIGND_TEAM)
         ENABLE_HARDENED_RUNTIME: YES
         # Only this target takes a profile: a library target of the package fails the archive with one.
         PROVISIONING_PROFILE_SPECIFIER: $(SIGND_PROFILE_UUID)
