@@ -7,8 +7,12 @@
   - 2026-11-19 UTC: [swift-onepassword 0.0.4][so-004] ships the writes.
     Its live test creates, reads, updates and deletes two items in its test vault, and leaves none behind.
     It does not archive: the SDK cannot delete an archived item, so a Go stub test covers `archive`.
-- [ ] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`.
+- [x] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`.
   Verify unit tests that no file, argument or log contains it.
+  - 2026-11-19 UTC: [CI run on the pull request][ci-1-2] passed Build and test.
+    Unit tests cover a sealed payload that never contains the token.
+    They cover a login with an argument, which exits with the stdin message.
+    They also cover a check that stores, deletes and seals the token.
 - [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
   Verify unit tests of the plan for new, changed, removed and foreign items, and for each `backupRemoved` value.
   Verify unit tests for a tagged item with no section, a `--local` key, and a Secure Enclave list per Mac.
@@ -42,3 +46,4 @@
   Verify the key signs on both Macs.
 
 [so-004]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.4
+[ci-1-2]: https://github.com/victor-software-house/signd/actions/runs/44494294193
