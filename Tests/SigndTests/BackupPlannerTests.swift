@@ -529,6 +529,32 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(result.delete == [["item-gone"]])
 }
 
+// MARK: Private keys in printed values
+
+@Test func aPrintedKeyOrPlanLeavesOutThePrivateKey() throws {
+    let wanted = key("work", hosts: ["*.example.com"])
+    let existing = try keyItem(key("changed", hosts: ["old"]), id: "item-changed")
+    let result = plan(sources(shared: [wanted, key("changed", hosts: ["new"], tag: "tag-2")]), vault: [existing])
+    #expect(result.create.count == 1 && result.put.count == 1)
+    let desired = try #require(result.create.first?.first)
+
+    var dumped = ""
+    dump(result, to: &dumped)
+    dump(wanted, to: &dumped)
+    dump(desired, to: &dumped)
+    let printed = [
+        "\(result)", String(reflecting: result), "\(result.put)", String(reflecting: result.put), "\(result.create)", "\(result.cache)",
+        "\(wanted)", String(reflecting: wanted), "\(desired)", String(reflecting: desired), dumped,
+    ]
+    for text in printed {
+        #expect(!text.contains("private-"))
+        #expect(!text.contains("example.com"))
+    }
+    // What is left names the key and the item.
+    #expect("\(wanted)".contains("work") && "\(wanted)".contains(fingerprint("work")))
+    #expect("\(desired)".contains("work") && "\(result)".contains("item-changed"))
+}
+
 // MARK: The setting
 
 @Test func backupRemovedHasTheChoicesOfTheSetting() {

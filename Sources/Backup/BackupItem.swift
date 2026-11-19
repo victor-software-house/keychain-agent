@@ -103,6 +103,17 @@ public struct BackupKey: Sendable, Equatable {
     }
 }
 
+/// A key's description, debug description and mirror leave out the private key.
+extension BackupKey: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    private var redacted: [Mirror.Child] {
+        [("name", name), ("fingerprint", fingerprint), ("changeTag", changeTag), ("hasPrivateKey", privateKey != nil)]
+    }
+
+    public var description: String { describeRedacted("BackupKey", redacted) }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: redacted, displayStyle: .struct) }
+}
+
 /// A Secure Enclave key, which the backup lists and cannot copy.
 public struct BackupSecureEnclaveKey: Sendable, Equatable {
     public var name: String
@@ -155,6 +166,13 @@ public struct BackupDesiredItem: Sendable, Equatable {
         )
     }
 
+    fileprivate var redacted: [Mirror.Child] {
+        [
+            ("slot", slot), ("changeTag", changeTag), ("category", content.category.rawValue), ("title", content.title),
+            ("fieldTitles", content.fields.map(\.title)),
+        ]
+    }
+
     private static func sectionFields(kind: BackupSlot.Kind, scope: String, fingerprint: String?, name: String?) -> [Item.Field] {
         let values: [(title: String, value: String?)] = [("kind", kind.rawValue), ("scope", scope), ("fingerprint", fingerprint), ("name", name)]
         return values.compactMap { entry in
@@ -189,6 +207,17 @@ public struct BackupDesiredItem: Sendable, Equatable {
     }
 
     private static func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+}
+
+/// An item's description, debug description and mirror leave out the value of every field, which includes the private key.
+extension BackupDesiredItem: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    public var description: String { describeRedacted("BackupDesiredItem", redacted) }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: redacted, displayStyle: .struct) }
+}
+
+func describeRedacted(_ type: String, _ children: [Mirror.Child]) -> String {
+    type + "(" + children.map { "\($0.label ?? ""): \($0.value)" }.joined(separator: ", ") + ")"
 }
 
 /// What a Mac remembers about one tagged item of the vault.

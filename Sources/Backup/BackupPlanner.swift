@@ -91,6 +91,26 @@ public struct BackupPlan: Sendable, Equatable {
     public var isIdle: Bool { fetch.isEmpty && create.isEmpty && put.isEmpty && delete.isEmpty && archive.isEmpty }
 }
 
+/// A plan's description, debug description and mirror list the items it touches by identifier and slot, never their fields.
+extension BackupPlan: CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    private var redacted: [Mirror.Child] {
+        let fetched: [String] = Array(fetch.joined())
+        let created: [BackupSlot] = create.joined().map(\.slot)
+        let written: [String] = put.map(\.itemID)
+        let deleted: [String] = Array(delete.joined())
+        let skipped: String = skippedRemovals ?? "none"
+        let cached: [String] = cache.keys.sorted()
+        return [
+            ("fetch", fetched), ("create", created), ("put", written), ("delete", deleted), ("archive", archive), ("keep", keep),
+            ("unavailable", unavailable), ("skippedRemovals", skipped), ("unread", unread), ("cache", cached),
+        ]
+    }
+
+    public var description: String { describeRedacted("BackupPlan", redacted) }
+    public var debugDescription: String { description }
+    public var customMirror: Mirror { Mirror(self, children: redacted, displayStyle: .struct) }
+}
+
 /// Plans a run from the sources and the vault, with no call to 1Password or CloudKit.
 public enum BackupPlanner {
     public static let fetchBatch = 50
