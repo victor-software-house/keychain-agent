@@ -414,6 +414,24 @@ struct Service: ParsableCommand {
         return false
     }
 
+    /// Restarts the agent's job and waits up to 5 seconds for a new process to answer.
+    static func restart() throws {
+        let old = AgentClient(path: defaultSocketPath).status()?.pid
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+        process.arguments = ["kickstart", "-k", "gui/\(getuid())/com.victor-software-house.signd"]
+        do { try process.run() } catch { throw Failure("cannot run launchctl: \(error)") }
+        process.waitUntilExit()
+        guard process.terminationStatus == 0 else { throw Failure("launchctl kickstart failed with status \(process.terminationStatus)") }
+        guard agentAnswers(within: 5, replacing: old) else {
+            // kickstart replaces only launchd's job, so a process started by hand keeps the socket.
+            if let old, AgentClient(path: defaultSocketPath).status()?.pid == old {
+                throw Failure("pid \(old) still answers on the socket, and launchd does not run it; stop that process, then try again")
+            }
+            throw Failure("the agent does not answer after the restart")
+        }
+    }
+
     struct Enable: ParsableCommand {
         func run() throws {
             // A config that cannot be written fails the command after the login item is in order, so the agent still starts.
@@ -426,7 +444,17 @@ struct Service: ParsableCommand {
             }
             switch Service.agent.status {
             case .enabled where Service.agentAnswers():
-                print("enabled")
+                // An agent started before an install over it keeps serving the old version until it restarts.
+                if let running = AgentClient(path: defaultSocketPath).status()?.version, running != signdVersion {
+                    try Service.restart()
+                    let now = AgentClient(path: defaultSocketPath).status()?.version
+                    guard now == signdVersion else {
+                        throw Failure("the restarted agent runs \(now ?? "an unknown version"), not \(signdVersion)")
+                    }
+                    print("enabled; restarted the agent, which ran \(running)")
+                } else {
+                    print("enabled")
+                }
             case .enabled:
                 // The cask's uninstall step removes the job from launchd while the login item stays enabled.
                 // An upgrade also runs that step, and registering again restores the job.
@@ -479,14 +507,7 @@ struct Service: ParsableCommand {
         static let configuration = CommandConfiguration(abstract: "Restart the agent and wait for it to answer; exits non-zero when it does not answer within 5 seconds.")
 
         func run() throws {
-            let old = AgentClient(path: defaultSocketPath).status()?.pid
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
-            process.arguments = ["kickstart", "-k", "gui/\(getuid())/com.victor-software-house.signd"]
-            do { try process.run() } catch { throw Failure("cannot run launchctl: \(error)") }
-            process.waitUntilExit()
-            guard process.terminationStatus == 0 else { throw Failure("launchctl kickstart failed with status \(process.terminationStatus)") }
-            guard Service.agentAnswers(within: 5, replacing: old) else { throw Failure("the agent does not answer after the restart") }
+            try Service.restart()
             print("restarted")
         }
     }

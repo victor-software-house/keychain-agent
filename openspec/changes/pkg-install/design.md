@@ -71,6 +71,8 @@ Installer checks both when the package opens, so an Intel Mac or an older macOS 
 | `log` | Runs `/usr/bin/log` with the predicate `subsystem == "com.victor-software-house.signd"`: `show --last 1h --info --debug` by default, `stream --level debug` with `--follow` |
 
 `restart` waits at most 5 seconds and exits non-zero when the agent does not answer.
+A kickstart replaces only the launchd job.
+When the process that answered before still answers, `restart` names its pid and says that launchd does not run it.
 
 ### 7. The cask uninstalls what the package installed
 
@@ -80,6 +82,14 @@ Its `zap` deletes `~/Library/Application Support/signd` and `~/.ssh/signd`.
 
 Neither touches the keys: they stay in the keychain and in iCloud, and `signd key delete` removes them.
 The `Include` line stays in `~/.ssh/config`; SSH skips an `Include` whose file is missing.
+
+### 8. service enable restarts an agent of another version
+
+A package installed over a running agent replaces the app, and the agent keeps serving the old version.
+The postinstall's `signd service enable` found the login item enabled and an agent answering, and changed nothing.
+
+It compares the answering agent's version with its own, and restarts the agent by decision 6 when they differ.
+Keys in memory go with the old process, and the agent reads each key again at its next use.
 
 ## Risks
 

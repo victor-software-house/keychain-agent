@@ -30,6 +30,8 @@
   Verify `brew uninstall --cask signd` on portable leaves no login item.
 - [ ] 1.7 Start the README's Install section from the package, with the cask second.
   Verify each command runs as written.
+- [ ] 1.8 Restart an agent of another version in `signd service enable` by design decision 8.
+  Verify on a Mac that runs the previous release: after `sudo installer` of the new package, `signd status` shows the agent with the new version.
 
 ## 2. Integration
 
