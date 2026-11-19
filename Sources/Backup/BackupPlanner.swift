@@ -64,6 +64,7 @@ public struct BackupPlan: Sendable, Equatable {
 
     /// Item IDs to read with `getAll`, 50 a call.
     /// When it is not empty, the rest of the plan is empty: read them, and plan again with them.
+    /// Pass the IDs whose read failed as `unread` to that second plan.
     public var fetch: [[String]] = []
     /// Items to create, 100 a call.
     public var create: [[BackupDesiredItem]] = []
@@ -77,6 +78,9 @@ public struct BackupPlan: Sendable, Equatable {
     public var unavailable: [String] = []
     /// Why no item is removed, when the read did not decide removals.
     public var skippedRemovals: String?
+    /// The items whose full read failed, which this plan leaves alone.
+    /// While it is not empty, the plan creates nothing: an item it cannot see may be the one a new item would duplicate.
+    public var unread: [String] = []
     /// The cache entries that this plan leaves as they are, by item ID.
     /// The items it creates, puts, deletes or archives are not in it: the run records them after the call.
     public var cache: [String: BackupCacheEntry] = [:]
@@ -107,23 +111,28 @@ public enum BackupPlanner {
 
     /// Plans a run.
     /// `overviews` are the vault's list; `items` are full items of it that a run read for the IDs in an earlier `plan.fetch`.
-    /// An item the list shows that is tagged, and is in neither `items` nor a current `cache` entry, goes to `plan.fetch`.
+    /// `unread` are the IDs of that fetch whose read failed.
+    /// An item the list shows that is tagged, and is in none of `items`, `unread` and a current `cache` entry, goes to `plan.fetch`.
     public static func plan(
-        sources: BackupSources, overviews: [ItemOverview], items: [Item], cache: [String: BackupCacheEntry], removed: BackupRemoved
+        sources: BackupSources, overviews: [ItemOverview], items: [Item], unread: [String] = [], cache: [String: BackupCacheEntry], removed: BackupRemoved
     ) -> BackupPlan {
         let fetched = Dictionary(items.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         var known: [Known] = []
         var missing: [String] = []
+        var failed: [String] = []
         for overview in overviews where overview.state == .active && overview.tags.contains(BackupFormat.tag) {
             if let item = fetched[overview.id] {
                 known.append(Known(id: item.id, updatedAt: item.updatedAt, owner: BackupOwner(item: item), item: item, cachedTag: nil, target: cache[item.id]?.target))
             } else if let entry = cache[overview.id], entry.updatedAt == overview.updatedAt {
                 known.append(Known(id: entry.id, updatedAt: entry.updatedAt, owner: entry.owner, item: nil, cachedTag: entry.sourceTag, target: entry.target))
+            } else if unread.contains(overview.id) {
+                failed.append(overview.id)
             } else {
                 missing.append(overview.id)
             }
         }
         var plan = BackupPlan()
+        plan.unread = failed
         guard missing.isEmpty else {
             plan.fetch = chunks(missing, fetchBatch)
             return plan
@@ -143,7 +152,7 @@ public enum BackupPlanner {
         var touched: Set<String> = []
         for want in desired {
             guard let copies = groups[want.slot] else {
-                created.append(want)
+                if failed.isEmpty { created.append(want) }
                 continue
             }
             // A slot with any current copy needs no write, so a duplicate never moves the write from one copy to another.

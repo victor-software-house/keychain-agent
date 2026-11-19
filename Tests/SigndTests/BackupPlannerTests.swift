@@ -409,6 +409,32 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(plan(sources(), vault: [second, first], removed: .archive).archive == ["copy-1", "copy-2"])
 }
 
+// MARK: Items that could not be read
+
+@Test func anItemWhoseReadFailedIsLeftAloneAndNothingIsCreated() throws {
+    let stale = try keyItem(key("work", hosts: ["old"]), id: "item-work")
+    let gone = try keyItem(key("gone"), id: "item-gone")
+    let broken = try keyItem(key("broken"), id: "item-broken")
+    let overviews = [stale, gone, broken].map { overview($0) }
+    let wanted = sources(shared: [key("work", hosts: ["new"], tag: "tag-2"), key("new")])
+
+    let first = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [], cache: [:], removed: .delete)
+    #expect(first.fetch == [["item-work", "item-gone", "item-broken"]])
+
+    let result = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [stale, gone], unread: ["item-broken"], cache: [:], removed: .delete)
+    #expect(result.fetch.isEmpty)
+    #expect(result.unread == ["item-broken"])
+    #expect(result.create.isEmpty)
+    #expect(result.put.map(\.itemID) == ["item-work"])
+    #expect(result.delete == [["item-gone"]])
+    #expect(result.cache["item-broken"] == nil)
+}
+
+@Test func aPlanWithNoUnreadItemsListsNone() throws {
+    let item = try keyItem(key("work"), id: "item-work")
+    #expect(plan(sources(shared: [key("work")]), vault: [item]).unread.isEmpty)
+}
+
 // MARK: The cache
 
 @Test func aCurrentCacheMakesOnlyTheListCall() throws {
