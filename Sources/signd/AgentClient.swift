@@ -83,6 +83,17 @@ struct AgentClient {
         decoded(PrivateExtension.deleteShared, argument: key, timeout: 120)
     }
 
+    /// Asks the agent to store the backup token on every Mac, or nil when no agent answers.
+    func backupLogin(_ request: BackupLoginRequest) -> SyncResult? {
+        guard let json = try? JSONEncoder().encode(request) else { return nil }
+        return decoded(PrivateExtension.backupLogin, argument: String(decoding: json, as: UTF8.self), timeout: 120)
+    }
+
+    /// Asks the agent to delete the backup token on every Mac, or nil when no agent answers.
+    func backupLogout() -> SyncResult? {
+        decoded(PrivateExtension.backupLogout, timeout: 120)
+    }
+
     /// The devices of the account, or nil when no agent answers.
     func devices() -> [DeviceSummary]? {
         decoded(PrivateExtension.devices, timeout: 5)

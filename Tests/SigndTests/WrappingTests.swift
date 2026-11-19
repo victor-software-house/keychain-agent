@@ -32,6 +32,14 @@ import Testing
         #expect(throws: (any Error).self) { try Wrapping.open(wrapped, publicBlob: second.publicKey.blob, with: agreement) }
     }
 
+    @Test func opensASealedSecretOnlyOnTheDeviceItWasSealedTo() throws {
+        let agreement = P256.KeyAgreement.PrivateKey()
+        let secret = Data("a secret".utf8)
+        let sealed = try Wrapping.seal(secret: secret, to: agreement.publicKey)
+        #expect(try Wrapping.open(sealed, with: agreement) == secret)
+        #expect(throws: (any Error).self) { try Wrapping.open(sealed, with: P256.KeyAgreement.PrivateKey()) }
+    }
+
     @Test func refusesAnotherRecipient() throws {
         let key = try KeyImport.generate(.ed25519)
         let wrapped = try Wrapping.seal(key, comment: "", to: P256.KeyAgreement.PrivateKey().publicKey)

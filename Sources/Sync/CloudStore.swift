@@ -24,6 +24,9 @@ public struct CloudChanges: Sendable {
     /// Nil when the zone was not read because it did not change.
     public var zoneToken: Data?
     public var zoneLoss: ZoneLoss?
+    /// The records the read could not return.
+    /// A full read with any is incomplete, so it never ends a record because the read did not list it.
+    public var unreadable: [UnreadableRecord] = []
     public var requests = 0
 
     public init() {}

@@ -7,8 +7,20 @@
   - 2026-11-19 UTC: [swift-onepassword 0.0.4][so-004] ships the writes.
     Its live test creates, reads, updates and deletes two items in its test vault, and leaves none behind.
     It does not archive: the SDK cannot delete an archived item, so a Go stub test covers `archive`.
-- [ ] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`.
+- [x] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`.
   Verify unit tests that no file, argument or log contains it.
+  - 2026-11-19 UTC: Unit tests cover a sealed payload that never contains the token.
+    They cover a login with an argument, which exits with the stdin message.
+    They also cover a check that stores the token and seals it for a new Mac.
+    Another check deletes it when the record, the zone or the account is gone.
+  - 2026-11-19 UTC: More unit tests cover a Mac with no copy in the record, which deletes its token and seals nothing.
+    They cover a removed device, whose copy leaves the record.
+  - 2026-11-19 UTC: Unit tests also cover a read with an unreadable record.
+    A full read applies every record it returns and advances the change tokens.
+    It removes what it does not list, except the records it could not read.
+    Those keep their last known state, the next check is incremental, and each check reads them by name.
+  - 2026-11-19 UTC: Unit tests also cover a state file and results that contain neither the token nor its base64.
+  - 2026-11-19 UTC: The prompt that reads the token with echo off has no test, as it needs a terminal.
 - [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
   Verify unit tests of the plan for new, changed, removed and foreign items, and for each `backupRemoved` value.
   Verify unit tests for a tagged item with no section, a `--local` key, and a Secure Enclave list per Mac.

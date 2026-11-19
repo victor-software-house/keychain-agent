@@ -54,7 +54,12 @@ Removals of shared items come only from a full CloudKit zone fetch that complete
 The fetch starts with no change token.
 Completed means every page returned, with no error and no more-coming flag left set.
 
-A partial or failed read removes nothing and records why in `signd status`.
+A failed read removes nothing and records why in `signd status`.
+
+A completed read that could not return a record still ends every record it did not list, except that record.
+The record keeps its last known state, and the read saves its change tokens.
+Each check, full or not, reads such a record again by name, and `signd status` shows how many are left.
+
 A completed full fetch is trusted even when it lists no keys, so deleting the last shared key removes its item too.
 
 No run removes an item whose fingerprint matches a key in this Mac's store, whatever its scope.
@@ -99,8 +104,9 @@ It clears the lease at the end with a conditional save too, so a late clear neve
 
 ### 6. Token
 
-`signd backup login` reads a service account token from stdin and checks that it can write to the vault.
-It stores the token in the data-protection keychain in signd's access group, on this device only.
+`signd backup login` reads a service account token from stdin and checks that the service account lists the vault; the first run reports a vault it cannot write.
+
+The command stores the token in the data-protection keychain in signd's access group, on this device only.
 Other Macs receive it sealed to their Secure Enclave keys, as keys are, so one login serves every Mac.
 
 The sealed copies live in a `Backup` record called `backup-token`.

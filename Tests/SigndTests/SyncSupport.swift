@@ -12,6 +12,8 @@ final class FakeCloud: CloudStore {
         var account = 0
         var prepare = 0
         var changes = 0
+        /// Reads of changes that began with no token.
+        var fullReads = 0
         var fetch = 0
         var save = 0
         var delete = 0
@@ -40,6 +42,9 @@ final class FakeCloud: CloudStore {
         var failure: CloudError?
         var expireNextToken = false
         var saveFailure: CloudError?
+        var changesFailure: CloudError?
+        /// Records the next reads cannot return, as CloudKit reports a record that fails to read.
+        var unreadable: Set<String> = []
         var beforeDelete: (@Sendable () -> Void)?
         var beforeSave: (@Sendable () -> Void)?
         var delay: Duration = .zero
@@ -64,6 +69,10 @@ final class FakeCloud: CloudStore {
     func fail(with error: CloudError?) { state.withLock { $0.failure = error } }
     /// Fails only saves, so a test can stop a command between its reads and its writes.
     func failSaves(with error: CloudError?) { state.withLock { $0.saveFailure = error } }
+    /// Fails only reads of changes, so a test can stop a check after the work that comes before its read.
+    func failChanges(with error: CloudError?) { state.withLock { $0.changesFailure = error } }
+    /// Makes reads of changes report these records as unreadable and leave them out.
+    func failReads(of names: Set<String>) { state.withLock { $0.unreadable = names } }
     /// Runs `action` before the next delete, as another device's write that lands while a command runs.
     func beforeNextDelete(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.beforeDelete = action } }
     /// Runs `action` before the next save, as another device's write that lands between a command's read and its write.
@@ -131,7 +140,11 @@ final class FakeCloud: CloudStore {
     }
 
     func changes(database: Data?, zone: Data?) async throws(CloudError) -> CloudChanges {
-        try await answer({ $0.changes += 1 }) { state throws(CloudError) in
+        try await answer({
+            $0.changes += 1
+            if database == nil { $0.fullReads += 1 }
+        }) { state throws(CloudError) in
+            if let failure = state.changesFailure { throw failure }
             if state.database.zoneMissing { throw CloudError(.zoneMissing, "the zone does not exist") }
             if state.expireNextToken, database != nil {
                 state.expireNextToken = false
@@ -149,12 +162,15 @@ final class FakeCloud: CloudStore {
             }
             guard db.sequence > since || zone == nil else { return changes }
             changes.requests = 2
-            changes.changed = db.records.values.filter { $0.sequence > since }.sorted { $0.sequence < $1.sequence }.map { stored in
+            let newer = db.records.values.filter { $0.sequence > since }.sorted { $0.sequence < $1.sequence }
+            changes.unreadable = newer.filter { state.unreadable.contains($0.record.name) }.map { UnreadableRecord(type: $0.record.type, name: $0.record.name) }
+            changes.changed = newer.filter { !state.unreadable.contains($0.record.name) }.map { stored in
                 var record = stored.record
                 record.system = Self.token(stored.tag)
                 return record
             }
-            changes.deleted = db.deletions.filter { $0.sequence > since }.map(\.name)
+            // CloudKit reports no deletion to a read with no token, which lists only the records that exist.
+            changes.deleted = database == nil ? [] : db.deletions.filter { $0.sequence > since }.map(\.name)
             changes.zoneToken = Self.token(db.sequence)
             return changes
         }
@@ -163,6 +179,7 @@ final class FakeCloud: CloudStore {
     func fetch(_: RecordType, name: String) async throws(CloudError) -> CloudRecord? {
         try await answer({ $0.fetch += 1 }) { state throws(CloudError) in
             guard let stored = state.database.records[name] else { return nil }
+            if state.unreadable.contains(name) { throw CloudError(.other, "the record cannot be read") }
             var record = stored.record
             record.system = Self.token(stored.tag)
             return record
@@ -222,6 +239,20 @@ let softwareOpen: KeyOpener = { key throws(SignError) in
     }
 }
 
+/// Opens a sealed secret whose device handle is a software P-256 key, in place of the Secure Enclave.
+let softwareOpenSecret: SecretOpener = { sealed, device in
+    try Wrapping.open(sealed, with: P256.KeyAgreement.PrivateKey(rawRepresentation: device.handle))
+}
+
+/// An in-memory token store, for tests on runners that lack signd's keychain access group.
+final class MemoryTokenStore: TokenStore {
+    private let token = Mutex<Data?>(nil)
+
+    func read() throws(StoreError) -> Data? { token.withLock { $0 } }
+    func save(_ token: Data) throws(StoreError) { self.token.withLock { $0 = token } }
+    func delete() throws(StoreError) { token.withLock { $0 = nil } }
+}
+
 /// A local wrapped key sealed to a software key, and its private key.
 func localWrappedKey(_ name: String, hosts: [String] = [], comment: String = "") throws -> (StoredKey, PrivateKey) {
     let privateKey = memoryKey()
@@ -262,6 +293,7 @@ final class Counter: Sendable {
 final class DeviceRig: Sendable {
     let cloud: FakeCloud?
     let store = MemoryStore()
+    let tokens = MemoryTokenStore()
     let agreement = P256.KeyAgreement.PrivateKey()
     let clock = TestClock()
     let changes = Counter()
@@ -276,9 +308,10 @@ final class DeviceRig: Sendable {
         let device = DeviceKey(handle: agreement.rawRepresentation, publicKey: agreement.publicKey.x963Representation)
         let clock = clock
         let changes = changes
+        let tokens = tokens
         service = SyncService(
             SyncService.Dependencies(
-                cloud: cloud, store: store, device: { device }, open: softwareOpen, deviceName: { name }, version: "1.0.0",
+                cloud: cloud, store: store, device: { device }, open: softwareOpen, tokens: tokens, openSecret: softwareOpenSecret, deviceName: { name }, version: "1.0.0",
                 interval: { interval }, now: { clock.now }, sleep: { try await clock.sleep($0) },
                 schedule: SyncSchedule(random: { random }), stateURL: stateURL, changed: { changes.increment() }
             )

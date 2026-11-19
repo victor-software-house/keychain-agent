@@ -1,5 +1,5 @@
 {
-  "originHash" : "b7df0c4344427b0890bb0aa9bd12e9b161dc3bf43293068081f98be7fab0c885",
+  "originHash" : "2a99c2c1825683bac7b27ff54c2579791b28b2fa0ea3e3c5bf797e54103f74db",
   "pins" : [
     {
       "identity" : "swift-argument-parser",
@@ -53,6 +53,15 @@
       "state" : {
         "revision" : "2f58d8ef84438d6517fc78bcea2f8527e3c72936",
         "version" : "2.105.0"
+      }
+    },
+    {
+      "identity" : "swift-onepassword",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/victor-software-house/swift-onepassword.git",
+      "state" : {
+        "revision" : "a37efc932e0d0743db2634cfab57fc6ace8bb8ed",
+        "version" : "0.0.4"
       }
     },
     {

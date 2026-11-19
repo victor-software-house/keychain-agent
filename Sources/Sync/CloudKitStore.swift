@@ -111,9 +111,12 @@ public struct CloudKitStore: CloudStore {
             while more {
                 let changes = try await database.recordZoneChanges(inZoneWith: zoneID, since: zoneToken)
                 result.requests += 1
-                for (_, outcome) in changes.modificationResultsByID {
-                    if case let .success(modification) = outcome, let record = Self.record(modification.record) {
-                        result.changed.append(record)
+                for (id, outcome) in changes.modificationResultsByID {
+                    switch outcome {
+                    case let .success(modification):
+                        if let record = Self.record(modification.record) { result.changed.append(record) }
+                    case .failure:
+                        if let type = RecordType(recordName: id.recordName) { result.unreadable.append(UnreadableRecord(type: type, name: id.recordName)) }
                     }
                 }
                 result.deleted += changes.deletions.map(\.recordID.recordName)

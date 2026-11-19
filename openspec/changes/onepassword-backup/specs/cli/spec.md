@@ -4,7 +4,9 @@
 
 ### Requirement: backup commands
 
-`signd backup login` SHALL read a service account token from stdin, check that it can write to the backup vault, and store it.
+`signd backup login` SHALL read a service account token from stdin, check that the service account lists the backup vault, and store it.
+The first run SHALL report a vault the account cannot write.
+
 `signd backup logout` SHALL delete the token on every Mac.
 `signd backup run` SHALL start a run at once, and `signd backup status` SHALL print the vault, the last run, its result and the next slot.
 

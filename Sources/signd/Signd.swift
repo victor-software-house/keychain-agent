@@ -1,6 +1,7 @@
 import AgentServer
 import AppKit
 import ArgumentParser
+import Backup
 import CloudKit
 import Foundation
 import KeyStore
@@ -15,7 +16,7 @@ struct Signd: ParsableCommand {
     static let configuration = CommandConfiguration(
         abstract: "An SSH agent for keys only its signed app can use, shared through iCloud.",
         version: signdVersion,
-        subcommands: [KeyCommand.self, DeviceCommand.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self, Postinstall.self]
+        subcommands: [KeyCommand.self, DeviceCommand.self, BackupCommand.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self, Postinstall.self]
     )
 }
 
@@ -586,11 +587,12 @@ struct Serve: ParsableCommand {
         let sync = SyncService(
             SyncService.Dependencies(
                 cloud: cloud, store: store, device: { () throws(StoreError) -> DeviceKey in try DeviceKeyStore().readOrCreate() },
-                open: { key throws(SignError) in try Wrapping.openStored(key) }, version: signdVersion,
+                open: { key throws(SignError) in try Wrapping.openStored(key) },
+                tokens: BackupTokenStore(), openSecret: { sealed, device in try Wrapping.openSecret(sealed, handle: device.handle) }, version: signdVersion,
                 interval: { settings.resolve(.interval).seconds }, changed: { await agent.reload() }
             )
         )
-        let server = Server(agent: agent, sync: sync)
+        let server = Server(agent: agent, sync: sync, backup: BackupAgent(service: BackupLoginService(sync: sync, version: signdVersion)))
         Task.detached {
             do {
                 try await server.run(socketPath: socketPath)
