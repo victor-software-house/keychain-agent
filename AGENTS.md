@@ -36,5 +36,8 @@ The `signd` executable is both the command line and the agent.
    Secure Enclave and keychain checks run with `mise run e2e:hardware` on a Mac, since the runners have no Secure Enclave.
 5. A pull request that changes behaviour adds a `.changeset` fragment; the Release workflow opens the Version PR and releases each merged version.
 6. Installer scripts are one line that runs a `signd` command; their logic is Swift.
-7. The iCloud container is named only in the App ID; the profile carries it into the signature, and the code reads it from there. `cloudkit/schema.ckdb` declares the CloudKit schema, and `mise run cloudkit:schema` imports it into development.
+7. `App/Signd.entitlements` derives the iCloud container from the bundle identifier.
+   The App ID and the profile must list it, and the code reads it from its own signature.
+   Xcode builds the bundle from `project.yml`, with `mise run archive` and then `mise run export`.
+   `cloudkit/schema.ckdb` declares the CloudKit schema, and `mise run cloudkit:schema` imports it into development.
 8. The shared template owns the files `.copier-answers.yml` records; change them through `copier update`, not by hand.

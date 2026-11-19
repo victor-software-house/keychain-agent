@@ -169,6 +169,8 @@ signd status                                                   # iCloud state, t
 
 `openspec/` contains the requirements and the planned changes, and `tasks.yaml` is the work queue.
 CI builds and tests on GitHub-hosted runners.
+Xcode builds the app bundle from `project.yml`: `mise run app` builds it unsigned, and the Release workflow archives and exports it signed.
+`App/Signd.entitlements` derives the iCloud container from the bundle identifier.
 
 > [!NOTE]
 > GitHub-hosted runners have no Secure Enclave, so `mise run e2e:hardware` tests Secure Enclave keys on a Mac before each release.
