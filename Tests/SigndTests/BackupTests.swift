@@ -156,3 +156,19 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     #expect(Array(try backupPayload(cloud).sealed.keys) == [a.device.recordName])
     #expect(await a.service.snapshot().backup?.sealedFor == [a.device.recordName])
 }
+
+@Test(.timeLimit(.minutes(1))) func aFullReadThatCannotReadTheBackupRecordKeepsTheToken() async throws {
+    let (cloud, _, b) = try await loggedInAndWaiting()
+    _ = await b.service.checkNow()
+    #expect(try b.tokens.read() == token)
+
+    // The change token expires, so the next read is a full one, and CloudKit fails the Backup record in it.
+    cloud.failReads(of: [BackupPayload.recordName])
+    cloud.expireNextToken()
+    #expect(await b.service.checkNow().outcome == .failed)
+    #expect(try b.tokens.read() == token)
+
+    cloud.failReads(of: [])
+    #expect(await b.service.checkNow().outcome == .ok)
+    #expect(try b.tokens.read() == token)
+}

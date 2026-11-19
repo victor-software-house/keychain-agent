@@ -40,6 +40,8 @@ final class FakeCloud: CloudStore {
         var failure: CloudError?
         var expireNextToken = false
         var saveFailure: CloudError?
+        /// Records the next reads cannot return, as CloudKit reports a record that fails to read.
+        var unreadable: Set<String> = []
         var beforeDelete: (@Sendable () -> Void)?
         var beforeSave: (@Sendable () -> Void)?
         var delay: Duration = .zero
@@ -64,6 +66,8 @@ final class FakeCloud: CloudStore {
     func fail(with error: CloudError?) { state.withLock { $0.failure = error } }
     /// Fails only saves, so a test can stop a command between its reads and its writes.
     func failSaves(with error: CloudError?) { state.withLock { $0.saveFailure = error } }
+    /// Makes reads of changes report these records as unreadable and leave them out.
+    func failReads(of names: Set<String>) { state.withLock { $0.unreadable = names } }
     /// Runs `action` before the next delete, as another device's write that lands while a command runs.
     func beforeNextDelete(_ action: @escaping @Sendable () -> Void) { state.withLock { $0.beforeDelete = action } }
     /// Runs `action` before the next save, as another device's write that lands between a command's read and its write.
@@ -149,7 +153,9 @@ final class FakeCloud: CloudStore {
             }
             guard db.sequence > since || zone == nil else { return changes }
             changes.requests = 2
-            changes.changed = db.records.values.filter { $0.sequence > since }.sorted { $0.sequence < $1.sequence }.map { stored in
+            let newer = db.records.values.filter { $0.sequence > since }.sorted { $0.sequence < $1.sequence }
+            changes.unreadable = newer.map(\.record.name).filter { state.unreadable.contains($0) }
+            changes.changed = newer.filter { !state.unreadable.contains($0.record.name) }.map { stored in
                 var record = stored.record
                 record.system = Self.token(stored.tag)
                 return record

@@ -74,6 +74,11 @@ struct SyncCheck {
         }
         requests += fetched.requests
 
+        // A read that lost a record would look like a record deleted, and a full one would end the backup login.
+        guard fetched.unreadable.isEmpty else {
+            throw CloudError(.other, "CloudKit could not read \(fetched.unreadable.count) records, so nothing changed; the next check reads again")
+        }
+
         if let loss = fetched.zoneLoss {
             try removeShared(changes: &changes)
             state.forgetRecords()
