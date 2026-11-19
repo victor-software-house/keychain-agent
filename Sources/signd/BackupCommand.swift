@@ -27,6 +27,18 @@ struct BackupCommand: ParsableCommand {
         return String(data: bytes, encoding: .utf8)
     }
 
+    /// What stdin gives: the token typed at a terminal with echo off, or everything a pipe carries.
+    static func readStandardInput() -> Data {
+        guard isatty(STDIN_FILENO) != 0 else { return FileHandle.standardInput.readDataToEndOfFile() }
+        var buffer = Data(count: 4096)
+        defer { buffer.resetBytes(in: 0..<buffer.count) }
+        let read = buffer.withUnsafeMutableBytes { raw in
+            readpassphrase("1Password service account token: ", raw.bindMemory(to: CChar.self).baseAddress, raw.count, RPP_ECHO_OFF | RPP_STDIN)
+        }
+        guard read != nil else { return Data() }
+        return Data(buffer.prefix { $0 != 0 })
+    }
+
     struct Login: ParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Store a 1Password service account token, read from stdin, on every Mac.",
@@ -36,7 +48,7 @@ struct BackupCommand: ParsableCommand {
         @Argument(help: .hidden) var argument: String?
 
         func run() throws {
-            try run(client: AgentClient(path: defaultSocketPath), settings: Settings()) { FileHandle.standardInput.readDataToEndOfFile() }
+            try run(client: AgentClient(path: defaultSocketPath), settings: Settings()) { BackupCommand.readStandardInput() }
         }
 
         func run(client: AgentClient, settings: Settings, readInput: () -> Data) throws {
