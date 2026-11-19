@@ -1,5 +1,10 @@
 # Changelog
 
+## signd 0.0.18
+
+- On a terminal, signd marks each result with a coloured symbol and colours the values of `signd status`.
+  The new `--color auto|always|never` option, `NO_COLOR` and `CLICOLOR_FORCE` set it, and piped output stays plain ([`2b6cbf6`](https://github.com/victor-software-house/signd/commit/2b6cbf6769e4fcd4af374cf34b97781d9db72e64)).
+
 ## signd 0.0.17
 
 - `signd backup restore` reads the private key, hosts and comment of an item again.
