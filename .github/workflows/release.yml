@@ -128,12 +128,18 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ needs.plan.outputs.version }}
-        run: gh release upload "$TAG" build/signd.pkg build/signd.mobileconfig
+        run: gh release upload "$TAG" build/signd.pkg build/Signd.app.zip build/signd.mobileconfig
       - if: github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signd.pkg
           path: build/signd.pkg
+          if-no-files-found: error
+      - if: github.event_name == 'workflow_dispatch' && !inputs.publish
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Signd.app.zip
+          path: build/Signd.app.zip
           if-no-files-found: error
       - if: github.event_name == 'workflow_dispatch' && !inputs.publish
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
