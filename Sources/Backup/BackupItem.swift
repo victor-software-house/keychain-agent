@@ -93,8 +93,8 @@ public struct BackupOwner: Codable, Sendable, Hashable {
 /// A key the backup copies.
 public struct BackupKey: Sendable, Equatable {
     public var name: String
-    /// The `SHA256:` fingerprint.
-    public var fingerprint: String
+    /// The public key, which decides whether the item is an SSH Key item or a Secure Note.
+    public var publicKey: PublicKey
     public var comment: String
     public var hosts: [String]
     /// The private key as the item stores it.
@@ -103,9 +103,12 @@ public struct BackupKey: Sendable, Equatable {
     /// Changes when the source of the key changes: the `Key` record's change tag for a shared key.
     public var changeTag: String
 
-    public init(name: String, fingerprint: String, comment: String, hosts: [String], privateKey: String?, changeTag: String) {
+    /// The `SHA256:` fingerprint.
+    public var fingerprint: String { publicKey.fingerprint }
+
+    public init(name: String, publicKey: PublicKey, comment: String, hosts: [String], privateKey: String?, changeTag: String) {
         self.name = name
-        self.fingerprint = fingerprint
+        self.publicKey = publicKey
         self.comment = comment
         self.hosts = hosts
         self.privateKey = privateKey
@@ -144,15 +147,24 @@ public struct BackupDesiredItem: Sendable, Equatable {
     public let changeTag: String
     public let content: ItemContent
 
-    /// The SSH Key item of `key`, or nil when this Mac has no private key for it.
+    /// The item of `key`: an SSH Key item when 1Password takes the key, and otherwise a Secure Note.
+    /// It is nil when this Mac has no private key for it.
     init?(key: BackupKey, scope: String) {
         guard let privateKey = key.privateKey else { return nil }
         slot = .key(fingerprint: key.fingerprint, scope: scope)
         changeTag = BackupFormat.changeTag(source: key.changeTag)
+        // A Secure Note has no field that derives the public key, so it has one of its own.
+        let fits = key.publicKey.fitsSSHKeyItem
+        let keyFields =
+            fits
+            ? [Item.Field(id: "private_key", title: "private key", type: .sshKey, value: privateKey)]
+            : [
+                Item.Field(id: "private_key", title: "private key", type: .concealed, value: privateKey),
+                Item.Field(id: Self.publicKeyFieldID, title: "public key", type: .text, value: key.publicKey.openSSHLine(comment: key.comment)),
+            ]
         content = ItemContent(
-            category: .sshKey, title: key.name,
-            fields: [
-                Item.Field(id: "private_key", title: "private key", type: .sshKey, value: privateKey),
+            category: fits ? .sshKey : .secureNote, title: key.name,
+            fields: keyFields + [
                 Item.Field(id: "hosts", title: "hosts", type: .text, value: key.hosts.joined(separator: " ")),
                 Item.Field(id: "comment", title: "comment", type: .text, value: key.comment),
             ] + Self.sectionFields(kind: .key, scope: scope, fingerprint: key.fingerprint, name: key.name),
@@ -183,6 +195,9 @@ public struct BackupDesiredItem: Sendable, Equatable {
         ]
     }
 
+    /// The id of the text field that shows a Secure Note's public key.
+    private static let publicKeyFieldID = "public_key"
+
     private static func sectionFields(kind: BackupSlot.Kind, scope: String, fingerprint: String?, name: String?) -> [Item.Field] {
         let values: [(title: String, value: String?)] = [("kind", kind.rawValue), ("scope", scope), ("fingerprint", fingerprint), ("name", name)]
         return values.compactMap { entry in
@@ -193,14 +208,18 @@ public struct BackupDesiredItem: Sendable, Equatable {
     /// Whether `item` already has this item's title, notes, tags and fields.
     /// Fields the item has beyond the wanted ones, such as those 1Password adds to an SSH Key item, do not count.
     /// An SSH key field matches by its public key, which 1Password derives from the private key and may write in another text form.
+    ///
+    /// A Secure Note's public key field matches by the fingerprint of its text.
+    /// A note with no readable public key does not match.
     func matches(_ item: Item) -> Bool {
         guard item.title == content.title, Self.trimmed(item.notes) == Self.trimmed(content.notes), Set(item.tags) == Set(content.tags) else { return false }
         let existing = Self.index(item.fields, item.sections)
         return Self.index(content.fields, content.sections).allSatisfy { key, wanted in
             guard let found = existing[key] else { return wanted.value.isEmpty }
             guard found.type == wanted.type else { return false }
-            if wanted.type == .sshKey {
-                guard let expected = slot.fingerprint, let actual = Self.fingerprint(ofPublicKey: found.publicKey) else { return false }
+            if wanted.type == .sshKey || wanted.id == Self.publicKeyFieldID {
+                let shown = wanted.type == .sshKey ? found.publicKey : found.value
+                guard let expected = slot.fingerprint, let actual = Self.fingerprint(ofPublicKey: shown) else { return false }
                 return actual == expected
             }
             return Self.trimmed(found.value) == Self.trimmed(wanted.value)

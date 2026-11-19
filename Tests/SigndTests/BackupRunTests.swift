@@ -646,7 +646,7 @@ private func leasePayload(format: Int, expires: Date) -> Data {
     #expect(rig.vault.items.count == 3)
 }
 
-// MARK: Keys 1Password rejects, and its errors
+// MARK: Keys the SSH Key item cannot take, and 1Password errors
 
 /// A wrapped key of this Mac, sealed to a software key, for any key type.
 private func wrappedKey(_ name: String, _ privateKey: PrivateKey) throws -> StoredKey {
@@ -658,42 +658,65 @@ private func wrappedKey(_ name: String, _ privateKey: PrivateKey) throws -> Stor
     )
 }
 
-@Test func onePasswordTakesEd25519AndRSAOfTheListedSizesAndExponents() {
+@Test func anSSHKeyItemFitsEd25519AndRSAOfTheListedSizesAndExponents() {
     func rsa(bits: Int, exponent: [UInt8] = [1, 0, 1], leadingZero: Bool = false) -> PublicKey {
         .rsa(exponent: Data(exponent), modulus: Data(leadingZero ? [0] : []) + Data([0x80]) + Data(repeating: 1, count: bits / 8 - 1))
     }
-    #expect(BackupRun.onePasswordTakes(.ed25519(Data(repeating: 1, count: 32))))
+    #expect(PublicKey.ed25519(Data(repeating: 1, count: 32)).fitsSSHKeyItem)
     for bits in [2048, 3072, 4096] {
-        #expect(BackupRun.onePasswordTakes(rsa(bits: bits)))
-        #expect(BackupRun.onePasswordTakes(rsa(bits: bits, leadingZero: true)))
+        #expect(rsa(bits: bits).fitsSSHKeyItem)
+        #expect(rsa(bits: bits, leadingZero: true).fitsSSHKeyItem)
     }
-    for bits in [1024, 1536, 2560, 8192] { #expect(!BackupRun.onePasswordTakes(rsa(bits: bits))) }
-    #expect(BackupRun.onePasswordTakes(rsa(bits: 2048, exponent: [1, 0, 0, 0, 1])))
-    #expect(!BackupRun.onePasswordTakes(rsa(bits: 2048, exponent: [3])))
-    #expect(!BackupRun.onePasswordTakes(rsa(bits: 2048, exponent: [0xFF, 0xFF])))
+    for bits in [1024, 1536, 2560, 8192] { #expect(!rsa(bits: bits).fitsSSHKeyItem) }
+    #expect(rsa(bits: 2048, exponent: [1, 0, 0, 0, 1]).fitsSSHKeyItem)
+    #expect(!rsa(bits: 2048, exponent: [3]).fitsSSHKeyItem)
+    #expect(!rsa(bits: 2048, exponent: [0xFF, 0xFF]).fitsSSHKeyItem)
     let point = P256.Signing.PrivateKey().publicKey.x963Representation
-    for curve in Curve.allCases { #expect(!BackupRun.onePasswordTakes(.ecdsa(curve, point))) }
+    for curve in Curve.allCases { #expect(!PublicKey.ecdsa(curve, point).fitsSSHKeyItem) }
 }
 
-@Test(.timeLimit(.minutes(1))) func aKeyOnePasswordRejectsGetsNoItemAndDoesNotFailTheRun() async throws {
+@Test(.timeLimit(.minutes(1))) func aKeyTheSSHKeyItemCannotTakeGetsASecureNote() async throws {
     let rig = try BackupRig()
     try rig.share("good")
     let signing = P256.Signing.PrivateKey()
     let ecdsa = PrivateKey.ecdsa(.p256, point: signing.publicKey.x963Representation, scalar: signing.rawRepresentation)
-    // The numbers of the 1024-bit key are fillers: only its size matters, and the run never opens it.
-    let filler = Data([0x80]) + Data(repeating: 1, count: 127)
-    let rsa1024 = PrivateKey.rsa(n: filler, e: Data([1, 0, 1]), d: filler, iqmp: filler, p: filler, q: filler)
+    // The numbers of a Rivest-Shamir-Adleman (RSA) key are fillers: only its size matters.
+    func rsa(bytes: Int) -> PrivateKey {
+        let filler = Data([0x80]) + Data(repeating: 1, count: bytes - 1)
+        return .rsa(n: filler, e: Data([1, 0, 1]), d: filler, iqmp: filler, p: filler, q: filler)
+    }
 
-    // The elliptic curve key is shared, so its record exists, and the other key is this Mac's own.
+    // The elliptic curve key is shared, so its record exists, and the other keys are this Mac's own.
     var shared = try wrappedKey("ecdsa-shared", ecdsa)
     shared.recordName = KeyPayload.recordName(for: shared.name)
     try rig.store.add(shared)
     rig.publish(shared, hosts: [])
-    try rig.store.add(wrappedKey("rsa-local", rsa1024))
+    try rig.store.add(wrappedKey("rsa-1024", rsa(bytes: 128)))
+    try rig.store.add(wrappedKey("rsa-2048", rsa(bytes: 256)))
 
     #expect(await rig.run.perform() == BackupResult(.ok))
-    #expect(rig.vault.calls == ["list", "create:1"])
-    #expect(rig.vault.items.map(\.title) == ["good"])
+    #expect(rig.vault.calls == ["list", "create:4"])
+    #expect(Dictionary(uniqueKeysWithValues: rig.vault.items.map { ($0.title, $0.category) }) == [
+        "good": .sshKey, "rsa-2048": .sshKey, "ecdsa-shared": .secureNote, "rsa-1024": .secureNote,
+    ])
+    let note = try #require(rig.vault.item(titled: "ecdsa-shared"))
+    let fields = Dictionary(uniqueKeysWithValues: note.fields.map { ($0.title, $0) })
+    #expect(fields["private key"]?.type == .concealed)
+    #expect(fields["private key"]?.value.hasPrefix("-----BEGIN OPENSSH PRIVATE KEY-----") == true)
+    #expect(fields["public key"]?.type == .text)
+    #expect(fields["public key"]?.value == ecdsa.publicKey.openSSHLine(comment: "ecdsa-shared@example"))
+    #expect(fields["comment"]?.value == "ecdsa-shared@example")
+    #expect(fields["kind"]?.value == "key" && fields["scope"]?.value == BackupFormat.shared)
+    #expect(note.tags == [BackupFormat.tag])
+
+    // The notes are current: the cache spares their reads, and without it each is read and left alone.
+    rig.vault.resetCalls()
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    #expect(rig.vault.calls == ["list"])
+    try FileManager.default.removeItem(at: rig.cacheURL)
+    rig.vault.resetCalls()
+    #expect(await rig.run.perform() == BackupResult(.ok))
+    #expect(rig.vault.calls == ["list", "items:4"])
 }
 
 @Test(.timeLimit(.minutes(1))) func aOnePasswordErrorIsRecordedByItsKindAndNeverItsMessage() async throws {

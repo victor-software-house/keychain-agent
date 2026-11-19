@@ -273,7 +273,7 @@ public struct BackupRun: Sendable {
                 if let local = byRecord[record.name], local.kind == .wrapped, local.publicBlob == payload.publicKey { privateKey = await armor(local) }
                 shared.append(
                     BackupKey(
-                        name: payload.name, fingerprint: publicKey.fingerprint, comment: payload.comment, hosts: payload.hosts, privateKey: privateKey,
+                        name: payload.name, publicKey: publicKey, comment: payload.comment, hosts: payload.hosts, privateKey: privateKey,
                         changeTag: Self.tag([payload.name, payload.comment, payload.hosts.joined(separator: " "), payload.publicKey.base64EncodedString()])
                     )
                 )
@@ -302,7 +302,7 @@ public struct BackupRun: Sendable {
             case .wrapped where !key.isShared:
                 local.append(
                     BackupKey(
-                        name: key.name, fingerprint: publicKey.fingerprint, comment: key.comment, hosts: key.hosts, privateKey: await armor(key),
+                        name: key.name, publicKey: publicKey, comment: key.comment, hosts: key.hosts, privateKey: await armor(key),
                         changeTag: Self.tag([key.name, key.comment, key.hosts.joined(separator: " "), key.publicBlob.base64EncodedString()])
                     )
                 )
@@ -321,14 +321,9 @@ public struct BackupRun: Sendable {
         return Gathered(sources: sources, vault: vault)
     }
 
-    /// The key as an OpenSSH private key file, or nil when this Mac cannot open it or 1Password takes no such key.
+    /// The key as an OpenSSH private key file, or nil when this Mac cannot open it.
     /// Opening runs on a dispatch queue, so a slow Secure Enclave call never blocks the actor or the event loop.
     private func armor(_ key: StoredKey) async -> String? {
-        // The key type decides before the key opens, so a key 1Password rejects is never unwrapped for the backup.
-        guard let publicKey = key.publicKey, Self.onePasswordTakes(publicKey) else {
-            log.notice("1Password takes no item for the key \(key.name, privacy: .public), so the backup has none")
-            return nil
-        }
         let opener = dependencies.open
         do {
             return try await Self.offActor { () throws -> String in
@@ -378,24 +373,6 @@ public struct BackupRun: Sendable {
             let listed = details.prefix(Self.shown)
             let more = count > listed.count ? "; and \(count - listed.count) more" : ""
             return "writes the vault rejected: \(count) (\(listed.joined(separator: "; "))\(more))"
-        }
-    }
-
-    /// Whether 1Password's SSH Key item takes the key.
-    /// Ed25519 keys fit, and so do Rivest-Shamir-Adleman (RSA) keys of 2048, 3072 or 4096 bits with an exponent of 65537 or more.
-    /// No Elliptic Curve Digital Signature Algorithm (ECDSA) key fits.
-    static func onePasswordTakes(_ key: PublicKey) -> Bool {
-        switch key {
-        case .ed25519:
-            return true
-        case .ecdsa:
-            return false
-        case let .rsa(exponent, modulus):
-            let significant = modulus.drop { $0 == 0 }
-            guard let first = significant.first else { return false }
-            let bits = (significant.count - 1) * 8 + (8 - first.leadingZeroBitCount)
-            let large = exponent.drop { $0 == 0 }
-            return [2048, 3072, 4096].contains(bits) && (large.count > 3 || large.reduce(UInt64(0)) { $0 << 8 | UInt64($1) } >= 65537)
         }
     }
 }
