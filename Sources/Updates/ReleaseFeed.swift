@@ -59,10 +59,11 @@ public struct ReleaseFeed: Sendable {
     /// `transport` reads the release and `downloader` fetches its zip; tests pass ones that never use the network.
     public init(
         transport: @escaping Transport = { try await URLSession.shared.data(for: $0) },
-        downloader: @escaping Downloader = { try await ReleaseFeed.downloadSession.download(for: $0) }
+        downloader: Downloader? = nil
     ) {
         self.transport = transport
-        self.downloader = downloader
+        // A default argument cannot name the private session, so a nil downloader means the session's.
+        self.downloader = downloader ?? { try await Self.downloadSession.download(for: $0) }
     }
 
     /// The latest release, with the URL of its `Signd.app.zip`.
