@@ -1,5 +1,11 @@
 # Changelog
 
+## signd 0.0.9
+
+- The package links `signd` into `/usr/local/bin`, and `signd service enable` adds `Include ~/.ssh/signd/config` to the top of `~/.ssh/config`.
+  `signd status` shows the login item and that line, and `signd service` gains `status`, `restart` and `log`.
+  The package opens with its own welcome, license and conclusion pages, and only on an Apple silicon Mac with macOS 26 or later ([`2befd54`](https://github.com/victor-software-house/signd/commit/2befd54dbf041306d1dd04cb1c1281eb4e90457c)).
+
 ## signd 0.0.8
 
 - The release signs Signd.app with the iCloud and push entitlements that the iCloud sync needs; 0.0.7 built no package ([`71c9abd`](https://github.com/victor-software-house/signd/commit/71c9abd011b9806c32f5fb5925ea1e11bf39247d)).
