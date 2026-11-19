@@ -110,12 +110,13 @@ jobs:
           environment-id: ${{ vars.OP_ENVIRONMENT_ID }}
           integration-key: ${{ secrets.OP_INTEGRATION_KEY }}
           installer: true
-      - run: mise run package
+      # Installs the profile for Xcode and exports its team and UUID to the later steps.
+      - run: mise run package:profile
         env:
           SIGND_PROVISIONING_PROFILE: ${{ secrets.SIGND_PROVISIONING_PROFILE }}
+      - run: mise run package
       - run: pkgutil --check-signature build/signd.pkg
       - run: mise run package:check
-      - run: spctl --assess -vv --type install build/signd.pkg
       - run: xcrun stapler validate build/signd.pkg
       # Build provenance for the package, checkable with `gh attestation verify`.
       - if: github.event_name == 'push' || inputs.publish

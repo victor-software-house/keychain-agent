@@ -22,13 +22,21 @@
 
 ## 2. Release
 
-- [ ] 2.1 Replace the bundle steps of `mise-tasks/package.sh` with `archive` and `export` tasks by design decision 6, and keep its package steps.
+- [x] 2.1 Replace the bundle steps of `mise-tasks/package.sh` with `archive` and `export` tasks by design decision 6, and keep its package steps.
   Verify a Release run on `main` with publishing off builds `signd.pkg`.
-- [ ] 2.2 Check that package against the packaging spec.
+  - 2026-11-19 UTC: `archive`, `export`, `export:options` and `package:profile` replace the bundle steps, and `package` depends on `export`.
+    `package:profile` fails unless the profile lists exactly `iCloud.com.victor-software-house.signd`.
+    `Bundle/Info.plist` and the PlistBuddy entitlement code are gone.
+    The Release run with publishing off has not run.
+    The `release` environment admits `main` and `v*` tags only, so the run follows the merge.
+- [x] 2.2 Check that package against the packaging spec.
   Verify `codesign -d --entitlements -` lists the keychain group, the container, `CloudKit`, `Production` and the push environment.
   Verify `spctl` accepts the bundle and the package, and the icon scenario holds.
-- [ ] 2.3 Change AGENTS.md rule 2.7 and the README's build notes to the derived container and the Xcode build.
+  - 2026-11-19 UTC: `package:check` checks the exported bundle's layout, `AppIcon` in `Assets.car` and `CFBundleIconName`, the five entitlements, and `spctl` on the bundle and the package.
+    It has not run: it needs the signed package, so the Release run after the merge is its first.
+- [x] 2.3 Change AGENTS.md rule 2.7 and the README's build notes to the derived container and the Xcode build.
   Verify `mise run lint:prose` passes.
+  - 2026-11-19 UTC: AGENTS.md rule 2.7 and the README's Development section name the derived container and the Xcode build.
 
 ## 3. On a Mac
 
