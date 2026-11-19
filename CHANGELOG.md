@@ -1,5 +1,22 @@
 # Changelog
 
+## signd 0.0.13
+
+- The agent now copies shared keys, this Mac's own keys and a list of its Secure Enclave keys to the 1Password vault.
+  It starts once a backup token is stored ([`d90d943`](https://github.com/victor-software-house/signd/commit/d90d94311747485793554788b812c419fb3f3ba2)).
+
+  A run starts 5 minutes after the last key change, at most once an hour, and once a day with no change.
+  Only one Mac runs the backup at a time.
+
+  The new `backup-delay`, `backup-min-interval` and `backup-max-interval` settings change the three times.
+- The app icon's seal fills more of its square, so it reads larger in Finder and Login Items ([`e13a0b7`](https://github.com/victor-software-house/signd/commit/e13a0b796421b6fad4a6e6c9c2ce869fd957c0bc)).
+- Each release attaches `signd.mobileconfig`, an example profile for a Mobile Device Management (MDM) server.
+  The package also installs a login hook.
+  An admin who pushes both gets the agent for every user at login, with no approval prompt ([`28cf760`](https://github.com/victor-software-house/signd/commit/28cf760c4da9795a56fed43d06714e128ba41cb5)).
+
+  A user on a Mac with no profile sees nothing new.
+  The hook exits at once when the agent runs, and never opens System Settings.
+
 ## signd 0.0.12
 
 - The new `backup-removed` setting chooses whether the 1Password backup deletes, archives or keeps the item of a removed key.
