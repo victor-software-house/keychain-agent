@@ -74,7 +74,7 @@ let unencryptedFormats = [
         let directory = try TestDirectory()
         let file = try sshKeygen(in: directory, format.arguments, comment: "the comment")
         guard case let .key(key, comment) = try KeyImport.parse(file.contents) else {
-            Issue.record("the key was reported as protected")
+            Issue.record("the key was reported as encrypted")
             return
         }
         #expect(key.publicKey.blob == file.publicBlob)
@@ -87,7 +87,7 @@ let unencryptedFormats = [
         let der = Data([0x30, 0x2E, 0x02, 0x01, 0x00, 0x30, 0x05, 0x06, 0x03, 0x2B, 0x65, 0x70, 0x04, 0x22, 0x04, 0x20]) + key.rawRepresentation
         let body = der.base64EncodedString(options: [.lineLength64Characters, .endLineWithLineFeed])
         guard case let .key(imported, _) = try KeyImport.parse(armor("PRIVATE KEY", body)) else {
-            Issue.record("the key was reported as protected")
+            Issue.record("the key was reported as encrypted")
             return
         }
         #expect(imported.publicKey.blob == PublicKey.ed25519(key.publicKey.rawRepresentation).blob)
@@ -96,7 +96,7 @@ let unencryptedFormats = [
     @Test func readsAPKCS8KeyWithANamedCurve() throws {
         let p384 = P384.Signing.PrivateKey()
         guard case let .key(imported, _) = try KeyImport.parse(Data(p384.pemRepresentation.utf8)) else {
-            Issue.record("the key was reported as protected")
+            Issue.record("the key was reported as encrypted")
             return
         }
         #expect(imported.publicKey.blob == PublicKey.ecdsa(.p384, p384.publicKey.x963Representation).blob)
@@ -107,10 +107,10 @@ let unencryptedFormats = [
         FormatCase(name: "pkcs1 rsa", arguments: ["-t", "rsa", "-b", "3072", "-m", "PEM"]),
         FormatCase(name: "pkcs8 ecdsa", arguments: ["-t", "ecdsa", "-b", "256", "-m", "PKCS8"]),
     ])
-    func reportsAPassphraseProtectedFileAsProtected(format: FormatCase) throws {
+    func reportsAPassphraseProtectedFileAsEncrypted(format: FormatCase) throws {
         let directory = try TestDirectory()
         let file = try sshKeygen(in: directory, format.arguments, passphrase: "secret")
-        #expect(try KeyImport.parse(file.contents) == .protected)
+        #expect(try KeyImport.parse(file.contents) == .encrypted)
     }
 
     @Test func refusesRSAUnder2048BitsByName() throws {

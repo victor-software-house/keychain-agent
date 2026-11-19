@@ -5,7 +5,7 @@ public enum OpenSSHKeyFile {
     public enum Contents: Sendable, Equatable {
         case key(PrivateKey, comment: String)
         /// The file is encrypted with a passphrase; signd does not decrypt it.
-        case protected
+        case encrypted
     }
 
     public enum Failure: Error, Sendable, Equatable {
@@ -17,7 +17,7 @@ public enum OpenSSHKeyFile {
     static let header = "-----BEGIN OPENSSH PRIVATE KEY-----"
     static let magic = Data("openssh-key-v1\0".utf8)
 
-    /// Reads the armored text of one unencrypted or protected key file.
+    /// Reads the armored text of one unencrypted or encrypted key file.
     public static func parse(_ text: String) throws(Failure) -> Contents {
         let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
         guard let start = lines.firstIndex(of: header), let end = lines.firstIndex(of: footer), start < end,
@@ -30,7 +30,7 @@ public enum OpenSSHKeyFile {
         var reader = Reader(binary.dropFirst(magic.count))
         guard let cipher = reader.readText(), reader.readText() != nil, reader.readString() != nil,
               reader.readUInt32() == 1, let publicBlob = reader.readString(), let section = reader.readString(), reader.isAtEnd else { throw .malformed }
-        guard cipher == "none" else { return .protected }
+        guard cipher == "none" else { return .encrypted }
 
         var body = Reader(section)
         guard let check = body.readUInt32(), body.readUInt32() == check else { throw .malformed }

@@ -187,8 +187,8 @@ struct KeyCommand: ParsableCommand {
                 switch try KeyImport.parse(data) {
                 case let .key(key, own):
                     imported = (key, own)
-                case .protected:
-                    if fromStdin { throw ImportError.protectedOnStdin }
+                case .encrypted:
+                    if fromStdin { throw ImportError.encryptedKeyOnStdin }
                     imported = try KeyImport.importWithSSHAdd(file: file)
                 }
                 let key = try KeychainStore.makeWrappedKey(name: name, privateKey: imported.0, comment: comment ?? imported.1, hosts: hosts, source: "import")
