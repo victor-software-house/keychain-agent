@@ -84,32 +84,22 @@ struct SyncCheck {
         }
         state.databaseToken = fetched.databaseToken
         if let token = fetched.zoneToken { state.zoneToken = token }
-        // A full read that could not return a record does not list it, so it cannot show that a record is gone.
-        // Such a read applies what it returned and infers no removal from what it left out.
-        let complete = full && fetched.unreadable.isEmpty
-        if complete {
-            state.devices = [:]
-            state.keys = [:]
-            state.backup = nil
-        }
         var changed = fetched.changed
         var deleted = fetched.deleted
         var failed: [UnreadableRecord] = []
-        if !complete {
-            // A record an earlier read could not return is read by name now.
-            // A name that still fails stays listed, and one that is gone is a deletion.
-            for record in state.unreadable ?? [] {
-                requests += 1
-                do {
-                    if let found = try await cloud.fetch(record.type, name: record.name) {
-                        changed.append(found)
-                    } else {
-                        deleted.append(record.name)
-                        changed.removeAll { $0.name == record.name }
-                    }
-                } catch where error.kind == .other {
-                    failed.append(record)
+        // A record an earlier read could not return is read by name now.
+        // A name that still fails stays listed, and one that is gone is a deletion.
+        for record in state.unreadable ?? [] {
+            requests += 1
+            do {
+                if let found = try await cloud.fetch(record.type, name: record.name) {
+                    changed.append(found)
+                } else {
+                    deleted.append(record.name)
+                    changed.removeAll { $0.name == record.name }
                 }
+            } catch where error.kind == .other {
+                failed.append(record)
             }
         }
         let read = Set(changed.map(\.name)).union(deleted)
@@ -117,6 +107,14 @@ struct SyncCheck {
         let listedNames = Set(listed.map(\.name))
         listed += fetched.unreadable.filter { !listedNames.contains($0.name) }
         state.unreadable = listed.isEmpty ? nil : listed.sorted { $0.name < $1.name }
+        // A full read lists every record it can read, so a record it does not list is gone.
+        // A record it could not read keeps its last known state.
+        let held = Set(listed.map(\.name))
+        if full {
+            state.devices = state.devices.filter { held.contains($0.key) }
+            state.keys = state.keys.filter { held.contains($0.key) }
+            if !held.contains(BackupPayload.recordName) { state.backup = nil }
+        }
 
         // A record deleted and made again in one batch comes back as changed, so deletions go first.
         var payloads: [String: KeyPayload] = [:]
@@ -164,17 +162,17 @@ struct SyncCheck {
 
         var keys = try store.list()
         let touched = Set(deleted).union(payloads.keys).union(unreadable.keys)
-        var skipped = old.skipped.filter { !touched.contains($0.record) && (!complete || state.keys[$0.record] != nil || $0.kind == .invalidRecord) }
+        var skipped = old.skipped.filter { !touched.contains($0.record) && (!full || state.keys[$0.record] != nil || $0.kind == .invalidRecord || held.contains($0.record)) }
         skipped += unreadable.values
 
         for name in deleted {
             if let local = keys.first(where: { $0.isShared && $0.recordName == name }) { try delete(local, keys: &keys, changes: &changes) }
         }
-        if complete {
+        if full {
             // A full fetch cannot tell a record deleted on another Mac from a zone made again while this Mac was away.
             // A missing record therefore never deletes this Mac's own key.
             // It stays as a local key, and only received keys go.
-            let kept = Set(state.keys.keys).union(skipped.filter { $0.kind == .invalidRecord }.map(\.record))
+            let kept = Set(state.keys.keys).union(skipped.filter { $0.kind == .invalidRecord }.map(\.record)).union(held)
             for local in keys where local.isShared && !kept.contains(local.recordName ?? "") {
                 try unshare(local, keys: &keys, changes: &changes)
             }
@@ -201,8 +199,8 @@ struct SyncCheck {
         }
         state.skipped = skipped.sorted { ($0.name, $0.record) < ($1.name, $1.record) }
 
-        // A completed full read with no `Backup` record means the login ended.
-        if complete && !backupSeen { backupGone = true }
+        // A full read that did not list the `Backup` record, and could not read it either, means the login ended.
+        if full && !backupSeen && !held.contains(BackupPayload.recordName) { backupGone = true }
         try receiveToken(backup, gone: backupGone)
 
         try await publish(&state, requests: &requests)

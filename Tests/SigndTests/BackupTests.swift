@@ -190,10 +190,13 @@ private func shareDeploy(from rig: DeviceRig) async throws {
     #expect(after.backup == before.backup)
     #expect(after.unreadable == [UnreadableRecord(type: .backup, name: BackupPayload.recordName)])
 
+    // No change reaches the next read, so only the read by name can apply the record.
     cloud.failReads(of: [])
+    let fetches = cloud.calls.fetch
     let next = await b.service.checkNow()
     #expect(next.outcome == .ok)
     #expect(next.message == nil)
+    #expect(cloud.calls.fetch > fetches)
     #expect(try b.tokens.read() == token)
     #expect(await b.service.snapshot().unreadable == nil)
 }
@@ -229,22 +232,59 @@ private func shareDeploy(from rig: DeviceRig) async throws {
     #expect(await b.service.snapshot().unreadable == nil)
 }
 
-@Test(.timeLimit(.minutes(1))) func aFullReadThatCannotReadAKeyRecordDoesNotRemoveTheKey() async throws {
-    let (cloud, a, b) = try await loggedInAndWaiting()
+@Test(.timeLimit(.minutes(1))) func aFullReadThatCannotReadAKeyRecordStillRemovesWhatWasDeletedAndKeepsTheKey() async throws {
+    let cloud = FakeCloud()
+    let a = DeviceRig(cloud: cloud, name: "mac-a")
+    let b = DeviceRig(cloud: cloud, name: "mac-b")
+    let c = DeviceRig(cloud: cloud, name: "mac-c")
+    for rig in [a, b, c] { _ = await rig.service.checkNow() }
+    _ = await a.service.checkNow()
     try await shareDeploy(from: a)
+    let (other, _) = try localWrappedKey("other")
+    try a.store.add(other)
+    #expect(await a.service.share("other") == SyncResult(.done))
     _ = await b.service.checkNow()
-    #expect(try b.shared().count == 1)
+    #expect(try b.shared().count == 2)
+    #expect(await b.service.snapshot().devices.count == 3)
 
+    // The records go while b's change token is about to expire, so b reads in full and no read lists them.
+    #expect(await a.service.removeDevice(c.device.recordName) == SyncResult(.done))
+    #expect(await a.service.deleteShared("other") == SyncResult(.done))
     cloud.failReads(of: ["key-deploy"])
     cloud.expireNextToken()
     let summary = await b.service.checkNow()
     #expect(summary.outcome == .ok)
-    #expect(summary.removed.isEmpty)
-    #expect(try b.shared().count == 1)
-    #expect(await b.service.snapshot().keys["key-deploy"] != nil)
+    #expect(summary.message == unreadableMessage)
+    #expect(summary.removed == ["other"])
+    #expect(try b.shared().map(\.name) == ["deploy"])
+
+    let after = await b.service.snapshot()
+    #expect(after.keys["key-deploy"] != nil)
+    #expect(after.keys["key-other"] == nil)
+    #expect(Set(after.devices.keys) == [a.device.recordName, b.device.recordName])
+    #expect(after.unreadable == [UnreadableRecord(type: .key, name: "key-deploy")])
 
     cloud.failReads(of: [])
     #expect(await b.service.checkNow().removed.isEmpty)
+    #expect(try b.shared().map(\.name) == ["deploy"])
+}
+
+@Test(.timeLimit(.minutes(1))) func theCheckAfterAFullReadWithAnUnreadableRecordIsIncremental() async throws {
+    let (cloud, a, b) = try await loggedInAndWaiting()
+    _ = await b.service.checkNow()
+    try await shareDeploy(from: a)
+    _ = await b.service.checkNow()
+
+    cloud.failReads(of: ["key-deploy"])
+    cloud.expireNextToken()
+    #expect(await b.service.checkNow().message == unreadableMessage)
+    let full = cloud.calls.fullReads
+    let fetches = cloud.calls.fetch
+
+    // The record keeps failing, and no check reads in full again because of it.
+    #expect(await b.service.checkNow().message == unreadableMessage)
+    #expect(cloud.calls.fullReads == full)
+    #expect(cloud.calls.fetch > fetches)
     #expect(try b.shared().count == 1)
 }
 

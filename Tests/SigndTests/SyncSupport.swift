@@ -12,6 +12,8 @@ final class FakeCloud: CloudStore {
         var account = 0
         var prepare = 0
         var changes = 0
+        /// Reads of changes that began with no token.
+        var fullReads = 0
         var fetch = 0
         var save = 0
         var delete = 0
@@ -138,7 +140,10 @@ final class FakeCloud: CloudStore {
     }
 
     func changes(database: Data?, zone: Data?) async throws(CloudError) -> CloudChanges {
-        try await answer({ $0.changes += 1 }) { state throws(CloudError) in
+        try await answer({
+            $0.changes += 1
+            if database == nil { $0.fullReads += 1 }
+        }) { state throws(CloudError) in
             if let failure = state.changesFailure { throw failure }
             if state.database.zoneMissing { throw CloudError(.zoneMissing, "the zone does not exist") }
             if state.expireNextToken, database != nil {
@@ -164,7 +169,8 @@ final class FakeCloud: CloudStore {
                 record.system = Self.token(stored.tag)
                 return record
             }
-            changes.deleted = db.deletions.filter { $0.sequence > since }.map(\.name)
+            // CloudKit reports no deletion to a read with no token, which lists only the records that exist.
+            changes.deleted = database == nil ? [] : db.deletions.filter { $0.sequence > since }.map(\.name)
             changes.zoneToken = Self.token(db.sequence)
             return changes
         }
