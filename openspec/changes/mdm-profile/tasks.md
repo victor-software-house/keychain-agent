@@ -28,9 +28,11 @@
   Verify the attached file's team matches the app's.
   - 2026-11-19 UTC: with a stub `codesign`, the task wrote the team into the profile and refused `not set` and a short value.
     The Release workflow runs and uploads it; that has not run yet.
-- [ ] 2.3 Add a README section for Mobile Device Management (MDM) admins, titled "Deploy with MDM".
+- [x] 2.3 Add a README section for Mobile Device Management (MDM) admins, titled "Deploy with MDM".
   It covers the package, the profile, the rule's values, what it grants and why not a label rule.
   It also covers removal: the hook's commands, and what other users keep after an uninstall.
+  - 2026-11-19 UTC: the section "Deploy with MDM" is in the README, and `lint:prose` and `lint:md` pass on it.
+    The section states that the cask deletes the hook, which is true once task 1.3 changes the cask.
 
 ## 3. On a Mac
 
