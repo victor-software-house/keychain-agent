@@ -2,26 +2,28 @@
 
 ## ADDED Requirements
 
-### Requirement: The agent installs a newer verified release
+### Requirement: The updater installs a newer verified release
 
-The agent SHALL check the latest release 60 seconds after start and every `updateInterval`.
+The updater SHALL check the latest release every `update-interval`.
 It SHALL install a newer version only when its app is notarized and signed by the running code's team with the identifier `com.victor-software-house.signd`.
+After the swap, it SHALL restart each running agent on the new binary.
 
 #### Scenario: A newer release
 
 - **WHEN** a newer release with a valid `Signd.app.zip` is out
-- **THEN** the installed app's version is the new one, and the agent answers from the new binary
+- **THEN** the installed app's version is the new one, it is still owned by root, and each agent answers from the new binary
 
 #### Scenario: A foreign signature
 
 - **WHEN** the zip contains an app signed by another team
 - **THEN** the installed app is unchanged, and `signd status` shows the signature error
 
-### Requirement: Updates follow the settings
+### Requirement: Updates follow the machine's settings
 
-With `updates` off, or with a bundle the user cannot write, the agent SHALL make no update request.
+With `updates` off in the managed or the machine-wide preferences, the updater SHALL make no update request.
+A user's own preferences SHALL NOT change what the updater does.
 
-#### Scenario: A root-owned bundle
+#### Scenario: A managed Mac
 
-- **WHEN** `Signd.app` belongs to root
-- **THEN** the agent sends no request to the GitHub API, and `signd status` shows `updates  managed`
+- **WHEN** a Mobile Device Management (MDM) profile sets `updates` to false
+- **THEN** the updater sends no request to the GitHub API, and `signd status` shows `updates  off (managed)`
