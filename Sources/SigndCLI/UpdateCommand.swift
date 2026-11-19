@@ -11,7 +11,7 @@ struct UpdateNow: ParsableCommand {
     func run() throws {
         let out = colorOption.standardOutput
         let asked = Date()
-        guard let state = Updater.requestCheck() else { throw Failure(UpdaterProblem.current()) }
+        guard let state = Updater.requestCheck() else { throw Failure(UpdaterProblem.current(waited: Date().timeIntervalSince(asked))) }
         switch state.outcome {
         case .upToDate?:
             print(out.success("signd is up to date (\(state.installed ?? "unknown version"))"))
@@ -29,14 +29,15 @@ struct UpdateNow: ParsableCommand {
 
     /// The line for a check that installed a version.
     /// Within 5 minutes of a check, the updater answers each request with that check's result.
-    /// A result from a check that began before the request is no new install, so the line gives the time of the install.
+    /// An install that finished before the request is no new install, so the line gives the time it finished.
     ///
-    /// An updater older than the field that records the replaced version sends none, and the line then gives only the new one.
+    /// An updater older than the fields that record the replaced version and the time of the install sends neither.
+    /// The line then gives only the new version, as a new install.
     static func installedLine(_ state: UpdateState, asked: Date) -> String {
         let version = state.installed ?? "the new version"
         let from = state.previous.map { " from \($0)" } ?? ""
-        if let at = state.lastCheck, at < asked.addingTimeInterval(-1) {
-            return "signd is up to date (\(version), updated\(from) at \(at.formatted(.iso8601)))"
+        if let done = state.installedAt, done < asked {
+            return "signd is up to date (\(version), updated\(from) at \(done.formatted(.iso8601)))"
         }
         return "updated signd\(from) to \(version) and restarted the agent"
     }
@@ -49,21 +50,26 @@ enum UpdaterProblem {
     static let package = "https://github.com/victor-software-house/signd/releases/latest/download/signd.pkg"
     static let caskrooms = ["/opt/homebrew/Caskroom/signd", "/usr/local/Caskroom/signd"]
 
-    /// The message for this Mac: whether the daemon's file is installed, whether launchd loaded it, and whether Homebrew installed signd.
-    static func message(hasPlist: Bool, isLoaded: Bool, isCask: Bool) -> String {
+    /// A request that failed after this long met a busy updater.
+    static let busyAfter: TimeInterval = 60
+
+    /// The message for this Mac.
+    /// It depends on whether the daemon's file is installed, whether launchd loaded it, whether Homebrew installed signd, and how long the request waited.
+    static func message(hasPlist: Bool, isLoaded: Bool, isCask: Bool, waited: TimeInterval) -> String {
         guard hasPlist else {
             return isCask
                 ? "the updater is not installed; reinstall signd with: brew reinstall --cask signd"
                 : "the updater is not installed; reinstall signd from \(package)"
         }
         guard isLoaded else { return "the updater is installed but not loaded; load it with: sudo launchctl bootstrap system \(plist)" }
+        guard waited < busyAfter else { return "the updater is still busy after \(Int(waited / 60)) minutes; signd status shows its last check when it ends" }
         return "the updater did not reply; restart it with: sudo launchctl kickstart -k system/\(label)"
     }
 
-    static func current() -> String {
+    static func current(waited: TimeInterval) -> String {
         let files = FileManager.default
         return message(
-            hasPlist: files.fileExists(atPath: plist), isLoaded: isLoaded(), isCask: caskrooms.contains { files.fileExists(atPath: $0) }
+            hasPlist: files.fileExists(atPath: plist), isLoaded: isLoaded(), isCask: caskrooms.contains { files.fileExists(atPath: $0) }, waited: waited
         )
     }
 

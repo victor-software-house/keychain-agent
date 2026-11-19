@@ -86,6 +86,7 @@ public struct UpdateRun: Sendable {
         try installed.swapContents(with: new)
         state.previous = current
         state.installed = release.version
+        state.installedAt = dependencies.now()
         state.outcome = .installed
         do {
             try dependencies.agents.restart(users)

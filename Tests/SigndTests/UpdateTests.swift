@@ -326,6 +326,7 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     #expect(result.outcome == .upToDate)
     #expect(result.installed == "0.0.13")
     #expect(result.previous == nil)
+    #expect(result.installedAt == nil)
     #expect(result.latest == "0.0.13")
     #expect(result.error == nil)
     #expect(feed.requests == [ReleaseFeed.latestURL])
