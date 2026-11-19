@@ -84,24 +84,6 @@ public enum PublicKey: Sendable, Equatable {
         guard case let .rsa(_, modulus) = self, let first = modulus.first else { return nil }
         return modulus.count * 8 - first.leadingZeroBitCount
     }
-
-    /// Whether 1Password's SSH Key item takes this key, as [Manage SSH keys](https://www.1password.dev/ssh/manage-keys) lists.
-    /// Ed25519 keys fit, and so do Rivest-Shamir-Adleman (RSA) keys of 2048, 3072 or 4096 bits with an exponent of 65537 or more.
-    /// Any other key, such as an ECDSA key or an RSA key of another size, goes in a Secure Note.
-    public var fitsSSHKeyItem: Bool {
-        switch self {
-        case .ed25519:
-            return true
-        case .ecdsa:
-            return false
-        case let .rsa(exponent, modulus):
-            let significant = modulus.drop { $0 == 0 }
-            guard let first = significant.first else { return false }
-            let bits = (significant.count - 1) * 8 + (8 - first.leadingZeroBitCount)
-            let large = exponent.drop { $0 == 0 }
-            return [2048, 3072, 4096].contains(bits) && (large.count > 3 || large.reduce(UInt64(0)) { $0 << 8 | UInt64($1) } >= 65537)
-        }
-    }
 }
 
 /// A signature as SSH encodes it: the algorithm name, then the signature bytes.

@@ -3,6 +3,37 @@ import OnePassword
 import SSHWire
 import Sync
 
+extension ItemCategory {
+    /// Whether an item of this category can hold `key`.
+    ///
+    /// 1Password's SSH Key item takes Ed25519 keys, and Rivest-Shamir-Adleman (RSA) keys that meet two rules.
+    /// The key has 2048, 3072 or 4096 bits, and its exponent is at least 65537.
+    /// See [Manage SSH keys](https://www.1password.dev/ssh/manage-keys).
+    ///
+    /// A Secure Note takes every key, and no other category takes any.
+    func supports(_ key: PublicKey) -> Bool {
+        switch self {
+        case .sshKey:
+            switch key {
+            case .ed25519:
+                return true
+            case .ecdsa:
+                return false
+            case let .rsa(exponent, modulus):
+                let significant = modulus.drop { $0 == 0 }
+                guard let first = significant.first else { return false }
+                let bits = (significant.count - 1) * 8 + (8 - first.leadingZeroBitCount)
+                let large = exponent.drop { $0 == 0 }
+                return [2048, 3072, 4096].contains(bits) && (large.count > 3 || large.reduce(UInt64(0)) { $0 << 8 | UInt64($1) } >= 65537)
+            }
+        case .secureNote:
+            return true
+        default:
+            return false
+        }
+    }
+}
+
 /// How the backup writes an item and how it reads one back.
 public enum BackupFormat {
     /// The tag of every item the backup writes.
@@ -15,6 +46,8 @@ public enum BackupFormat {
     /// The version of the item shape: the title, notes, tags and fields a run writes.
     /// Raise it when any of them changes, and every Mac then writes each item once.
     static let itemVersion = 1
+    /// The categories of a key's item, from the one to prefer: a key gets the first that supports it.
+    static let keyCategories: [ItemCategory] = [.sshKey, .secureNote]
 
     /// The change tag a run compares for an item: the source's tag and the item version.
     /// An item that shows the device name, such as the Secure Enclave list, adds it.
@@ -150,20 +183,19 @@ public struct BackupDesiredItem: Sendable, Equatable {
     /// The item of `key`: an SSH Key item when 1Password takes the key, and otherwise a Secure Note.
     /// It is nil when this Mac has no private key for it.
     init?(key: BackupKey, scope: String) {
-        guard let privateKey = key.privateKey else { return nil }
+        guard let privateKey = key.privateKey, let category = BackupFormat.keyCategories.first(where: { $0.supports(key.publicKey) }) else { return nil }
         slot = .key(fingerprint: key.fingerprint, scope: scope)
         changeTag = BackupFormat.changeTag(source: key.changeTag)
         // A Secure Note has no field that derives the public key, so it has one of its own.
-        let fits = key.publicKey.fitsSSHKeyItem
         let keyFields =
-            fits
+            category == .sshKey
             ? [Item.Field(id: "private_key", title: "private key", type: .sshKey, value: privateKey)]
             : [
                 Item.Field(id: "private_key", title: "private key", type: .concealed, value: privateKey),
                 Item.Field(id: Self.publicKeyFieldID, title: "public key", type: .text, value: key.publicKey.openSSHLine(comment: key.comment)),
             ]
         content = ItemContent(
-            category: fits ? .sshKey : .secureNote, title: key.name,
+            category: category, title: key.name,
             fields: keyFields + [
                 Item.Field(id: "hosts", title: "hosts", type: .text, value: key.hosts.joined(separator: " ")),
                 Item.Field(id: "comment", title: "comment", type: .text, value: key.comment),

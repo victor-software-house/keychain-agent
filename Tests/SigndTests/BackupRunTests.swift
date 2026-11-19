@@ -658,21 +658,34 @@ private func wrappedKey(_ name: String, _ privateKey: PrivateKey) throws -> Stor
     )
 }
 
-@Test func anSSHKeyItemFitsEd25519AndRSAOfTheListedSizesAndExponents() {
+@Test func anSSHKeyItemSupportsEd25519AndRSAOfTheListedSizesAndExponents() {
     func rsa(bits: Int, exponent: [UInt8] = [1, 0, 1], leadingZero: Bool = false) -> PublicKey {
         .rsa(exponent: Data(exponent), modulus: Data(leadingZero ? [0] : []) + Data([0x80]) + Data(repeating: 1, count: bits / 8 - 1))
     }
-    #expect(PublicKey.ed25519(Data(repeating: 1, count: 32)).fitsSSHKeyItem)
+    let item = ItemCategory.sshKey
+    #expect(item.supports(.ed25519(Data(repeating: 1, count: 32))))
     for bits in [2048, 3072, 4096] {
-        #expect(rsa(bits: bits).fitsSSHKeyItem)
-        #expect(rsa(bits: bits, leadingZero: true).fitsSSHKeyItem)
+        #expect(item.supports(rsa(bits: bits)))
+        #expect(item.supports(rsa(bits: bits, leadingZero: true)))
     }
-    for bits in [1024, 1536, 2560, 8192] { #expect(!rsa(bits: bits).fitsSSHKeyItem) }
-    #expect(rsa(bits: 2048, exponent: [1, 0, 0, 0, 1]).fitsSSHKeyItem)
-    #expect(!rsa(bits: 2048, exponent: [3]).fitsSSHKeyItem)
-    #expect(!rsa(bits: 2048, exponent: [0xFF, 0xFF]).fitsSSHKeyItem)
+    for bits in [1024, 1536, 2560, 8192] { #expect(!item.supports(rsa(bits: bits))) }
+    #expect(item.supports(rsa(bits: 2048, exponent: [1, 0, 0, 0, 1])))
+    #expect(!item.supports(rsa(bits: 2048, exponent: [3])))
+    #expect(!item.supports(rsa(bits: 2048, exponent: [0xFF, 0xFF])))
     let point = P256.Signing.PrivateKey().publicKey.x963Representation
-    for curve in Curve.allCases { #expect(!PublicKey.ecdsa(curve, point).fitsSSHKeyItem) }
+    for curve in Curve.allCases { #expect(!item.supports(.ecdsa(curve, point))) }
+}
+
+@Test func aSecureNoteSupportsEveryKeyAndNoOtherCategoryDoes() {
+    let point = P256.Signing.PrivateKey().publicKey.x963Representation
+    let keys: [PublicKey] = [
+        .ed25519(Data(repeating: 1, count: 32)), .ecdsa(.p256, point),
+        .rsa(exponent: Data([1, 0, 1]), modulus: Data([0x80]) + Data(repeating: 1, count: 127)),
+    ]
+    for key in keys {
+        #expect(ItemCategory.secureNote.supports(key))
+        for other in [ItemCategory.login, .password, .document, .apiCredentials] { #expect(!other.supports(key)) }
+    }
 }
 
 @Test(.timeLimit(.minutes(1))) func aKeyTheSSHKeyItemCannotTakeGetsASecureNote() async throws {

@@ -63,7 +63,8 @@
   - 2026-11-19 UTC: `aTokenThatDiffersFromTheStoredOneCountsAsAChange` in `BackupTests` covers the sync report that makes a backup run due on a Mac that did not log in.
     `aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn`, `aLeaseOfAnotherFormatHoldsUntilItsExpiryAndOnlyAnUnreadableOneIsFree` and `resultsAreMatchedToTheirRequestsWhateverTheOrder` cover the rest.
   - 2026-11-19 UTC: A key that 1Password's SSH Key item cannot take gets a Secure Note by design decision 2.
-    `anSSHKeyItemFitsEd25519AndRSAOfTheListedSizesAndExponents` in `BackupRunTests` covers `PublicKey.fitsSSHKeyItem` at the size and exponent edges.
+    `anSSHKeyItemSupportsEd25519AndRSAOfTheListedSizesAndExponents` in `BackupRunTests` covers `ItemCategory.supports` for an SSH Key item at the size and exponent edges.
+    `aSecureNoteSupportsEveryKeyAndNoOtherCategoryDoes` covers the other categories.
   - 2026-11-19 UTC: `aKeyTheSSHKeyItemCannotTakeGetsASecureNote` runs an elliptic curve key and a 1024-bit key into Secure Notes, beside two SSH Key items.
     The next run makes only the list call, and a run with no cache writes nothing.
   - 2026-11-19 UTC: `BackupPlannerTests` cover the notes.
