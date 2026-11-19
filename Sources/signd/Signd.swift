@@ -441,6 +441,9 @@ struct Service: ParsableCommand {
                 // An agent started before an install over it keeps serving the old version until it restarts.
                 if let running = AgentClient(path: defaultSocketPath).status()?.version, running != signdVersion {
                     try Service.restart()
+                    if let now = AgentClient(path: defaultSocketPath).status()?.version, now != signdVersion {
+                        throw Failure("the restarted agent runs \(now), not \(signdVersion)")
+                    }
                     print("enabled; restarted the agent, which ran \(running)")
                 } else {
                     print("enabled")

@@ -27,7 +27,7 @@ On each line that is not in order, it SHALL show `signd service enable`.
 ### Requirement: service enable replaces an agent of another version
 
 When the agent that answers reports a version other than the command's own, `signd service enable` SHALL restart it.
-It SHALL exit non-zero when no agent answers within 5 seconds of the restart.
+It SHALL exit non-zero when no agent answers within 5 seconds of the restart, or when the agent that answers then reports another version.
 
 #### Scenario: A package installed over a running agent
 
