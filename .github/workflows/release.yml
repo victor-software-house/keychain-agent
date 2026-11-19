@@ -46,6 +46,7 @@ jobs:
     with:
       publish: ${{ github.event_name == 'push' || inputs.publish }}
       version-pr: ${{ github.event_name == 'push' }}
+      mise-version: 2026.11.10
       docs: false
       runner: '["ubuntu-26.04"]'
     secrets:
@@ -72,7 +73,7 @@ jobs:
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
           # mise.toml's min_version; the action otherwise takes the newest release older than 24 h.
-          version: 2026.11.6
+          version: 2026.11.10
       - id: plan
         env:
           GH_TOKEN: ${{ github.token }}
@@ -98,7 +99,7 @@ jobs:
           ref: ${{ needs.plan.outputs.ref }}
       - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
         with:
-          version: 2026.11.6
+          version: 2026.11.10
           # The job uploads a release asset, so no cache entry may reach it.
           cache: false
       - run: xcodebuild -version
