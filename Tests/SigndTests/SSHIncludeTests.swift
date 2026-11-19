@@ -89,3 +89,23 @@ func aConfigThatCannotBeReadIsNotReplaced() throws {
     try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
     #expect(try Data(contentsOf: config) == Data(original.utf8))
 }
+
+@Test func aConfigLinkIsFollowedFromTheRealFolderWhenSSHIsALink() throws {
+    let directory = try TestDirectory()
+    let home = directory.url.appendingPathComponent("home")
+    let real = directory.url.appendingPathComponent("real-ssh")
+    let target = directory.url.appendingPathComponent("ssh_config")
+    let original = "Host example.com\n"
+    try FileManager.default.createDirectory(at: home, withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    try Data(original.utf8).write(to: target)
+    try FileManager.default.createSymbolicLink(atPath: home.appendingPathComponent(".ssh").path, withDestinationPath: "../real-ssh")
+    let config = real.appendingPathComponent("config")
+    try FileManager.default.createSymbolicLink(atPath: config.path, withDestinationPath: "../ssh_config")
+
+    #expect(try SSHInclude.enable(home: home))
+    #expect(try FileManager.default.destinationOfSymbolicLink(atPath: config.path) == "../ssh_config")
+    #expect(try String(contentsOf: target, encoding: .utf8) == includeLine + "\n\n" + original)
+    #expect(!FileManager.default.fileExists(atPath: home.appendingPathComponent("ssh_config").path))
+    #expect(SSHInclude.isEnabled(home: home))
+}

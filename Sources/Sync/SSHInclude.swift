@@ -74,7 +74,7 @@ public enum SSHInclude {
         var config = folder.appendingPathComponent("config")
         for _ in 0 ..< 32 {
             guard let destination = try? manager.destinationOfSymbolicLink(atPath: config.path) else { break }
-            config = URL(fileURLWithPath: destination, relativeTo: config.deletingLastPathComponent()).standardizedFileURL
+            config = URL(fileURLWithPath: destination, relativeTo: config.deletingLastPathComponent().resolvingSymlinksInPath()).standardizedFileURL
         }
         if (try? manager.destinationOfSymbolicLink(atPath: config.path)) != nil { throw POSIXError(.ELOOP) }
 
