@@ -78,6 +78,7 @@
 - [x] 1.6 Add `signd backup restore` by design decision 7.
   Verify a unit test that skips a key the store already has.
   - 2026-11-19 UTC: CI has not run yet, and nothing was built or tested on this Mac.
+  - 2026-11-19 UTC: CI passed on [pull request 83][pr-83], which merged as `eecb503`.
     `aRestoreSkipsAKeyTheStoreHasImportsANewOneAndNeverListsASecureEnclaveKey` in `BackupRunTests` covers a key the store has, a new key that opens to the vault's key, and a name another key uses.
     It also covers a Secure Enclave list item, which is never listed or restored.
   - 2026-11-19 UTC: `aRestoreWithNoTokenFailsWithNoKeyAndReadsNoItem` covers a restore and a list with no token.
@@ -90,20 +91,33 @@
 
 ## 2. Release
 
-- [ ] 2.1 Add the `Lease` and `Backup` record types to `cloudkit/schema.ckdb` and deploy them to production.
+- [x] 2.1 Add the `Lease` and `Backup` record types to `cloudkit/schema.ckdb` and deploy them to production.
   Verify an export of production lists both.
-- [ ] 2.2 Create the `signd` vault and a service account that can write only to it.
+  - 2026-11-19 UTC: `cktool import-schema` loaded `cloudkit/schema.ckdb` into development, and the CloudKit Console deployed it to production.
+    `cktool export-schema --environment production` then listed `Backup`, `Device`, `Key`, `Lease`, `Mac` and `Users`.
+- [x] 2.2 Create the `signd` vault and a service account that can write only to it.
   Verify the account lists that vault alone.
+  - 2026-11-19 UTC: the service account `signd backup` has `read_items` and `write_items` on the vault `signd`, and `op vault list` with its token lists that vault alone.
 
 ## 3. Integration
 
-- [ ] 3.1 Log in on one Mac.
+- [x] 3.1 Log in on one Mac.
   Verify the other Mac's `signd backup status` shows the backup on.
   Verify the vault contains one item per shared key within `backupDelay` plus a minute.
+  - 2026-11-19 UTC: `signd backup login` ran at 15:59:35 on signd 0.0.13.
+    The first run began at 16:04:35.
+    It wrote 11 SSH Key items and one Secure Enclave list by 16:04:40, 5 minutes 5 seconds after the login.
+  - 2026-11-19 UTC: on 0.0.14, the other Mac's `signd backup status` printed `backup  on, vault signd`.
+    Its run at 16:04:36 ended `held: another Mac holds the backup lease`.
 - [ ] 3.2 Delete a throwaway key.
   Verify its item lands in Recently Deleted and a foreign item in the vault is unchanged.
+  - 2026-11-19 UTC: the throwaway key `backup-test` got its item at 16:37:06.
+    `signd key delete backup-test` ran at 16:38:10, and the item left the vault by 16:39:00.
+    A Secure Note written by hand stayed at version 1, unchanged.
+    The service account cannot list Recently Deleted, so that part waits for task 3.3.
 - [ ] 3.3 Restore the throwaway key from Recently Deleted and run `signd backup restore`.
   Verify the key signs on both Macs.
 
 [so-004]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.4
 [ci-69]: https://github.com/victor-software-house/signd/actions/runs/44509529555
+[pr-83]: https://github.com/victor-software-house/signd/pull/83
