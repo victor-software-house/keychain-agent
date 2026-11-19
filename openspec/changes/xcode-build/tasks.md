@@ -10,11 +10,12 @@
   Verify `swift build` and `swift test` pass in CI with every existing test.
   - 2026-11-19 UTC: `swift build` and `swift test` passed in the [CI run][ci-44503793231], with 136 tests in 14 suites.
     The generated `Version.swift` moved to `Sources/SigndCLI` with the rest, and the `generated_paths` answer, the verctl template and two lint configs follow.
-- [ ] 1.3 Write `project.yml` and `App/Signd.entitlements` by design decisions 3 to 5, add `generate` and `app` tasks, ignore `Signd.xcodeproj`, and delete `Bundle/Info.plist`.
+- [x] 1.3 Write `project.yml` and `App/Signd.entitlements` by design decisions 3 to 5, add `generate` and `app` tasks, ignore `Signd.xcodeproj`, and delete `Bundle/Info.plist`.
   Verify the unsigned `mise run app` passes in CI, and its bundle has `Contents/MacOS/signd`, the agent plist and the icon.
   - 2026-11-19 UTC: `mise run app` passed in the [CI run][ci-44503793231].
     Its log shows the link of `Contents/MacOS/signd`, the copy of the agent plist into `Contents/Library/LaunchAgents`, and `actool` writing `Assets.car` from `Bundle/AppIcon.icon`.
     `Bundle/Info.plist` stays until task 2.1, because `mise-tasks/package.sh` still reads it.
+  - 2026-11-19 UTC: `Bundle/Info.plist` is gone from `main` at `3e9ca65`, and no task reads it.
 - [x] 1.4 Add `mise run app` to `mise run check` by design decision 7.
   Verify a CI run of a pull request lists the Xcode build, with its time.
   - 2026-11-19 UTC: `app` is a dependency of `check:local`, and the [CI run][ci-44503793231] ran it in 247.93 s, beside the other checks.
@@ -43,6 +44,10 @@
 - [ ] 3.1 Install the first published package over the previous release on a test Mac.
   Verify the agent restarts on the new version and signs with a key stored before the upgrade.
   Verify Finder and Login Items show the icon in light and dark.
+  - 2026-11-19 UTC: the [0.0.13 package][rel-0013] installed over 0.0.12 on both Macs.
+    `signd status` then showed the agent answering on 0.0.13, and `ssh -T git@github.com` through the agent signed with a key stored before the upgrade on each Mac.
+  - 2026-11-19 UTC: the installed `AppIcon.icns` shows the seal at the new size, and `Assets.car` has the light, dark and tinted icon stacks.
+    Finder and Login Items in the dark icon style are not checked yet.
 
 ## Workflow follow-up
 
@@ -51,3 +56,4 @@
 [sgd-007]: ../../../tasks.yaml
 [signd#68]: https://github.com/victor-software-house/signd/pull/68
 [ci-44503793231]: https://github.com/victor-software-house/signd/actions/runs/44503793231
+[rel-0013]: https://github.com/victor-software-house/signd/releases/tag/v0.0.13
