@@ -222,6 +222,20 @@ let softwareOpen: KeyOpener = { key throws(SignError) in
     }
 }
 
+/// Opens a sealed secret whose device handle is a software P-256 key, in place of the Secure Enclave.
+let softwareOpenSecret: SecretOpener = { sealed, device in
+    try Wrapping.open(sealed, with: P256.KeyAgreement.PrivateKey(rawRepresentation: device.handle))
+}
+
+/// An in-memory token store, for tests on runners that lack signd's keychain access group.
+final class MemoryTokenStore: TokenStore {
+    private let token = Mutex<Data?>(nil)
+
+    func read() throws(StoreError) -> Data? { token.withLock { $0 } }
+    func save(_ token: Data) throws(StoreError) { self.token.withLock { $0 = token } }
+    func delete() throws(StoreError) { token.withLock { $0 = nil } }
+}
+
 /// A local wrapped key sealed to a software key, and its private key.
 func localWrappedKey(_ name: String, hosts: [String] = [], comment: String = "") throws -> (StoredKey, PrivateKey) {
     let privateKey = memoryKey()
@@ -262,6 +276,7 @@ final class Counter: Sendable {
 final class DeviceRig: Sendable {
     let cloud: FakeCloud?
     let store = MemoryStore()
+    let tokens = MemoryTokenStore()
     let agreement = P256.KeyAgreement.PrivateKey()
     let clock = TestClock()
     let changes = Counter()
@@ -276,9 +291,10 @@ final class DeviceRig: Sendable {
         let device = DeviceKey(handle: agreement.rawRepresentation, publicKey: agreement.publicKey.x963Representation)
         let clock = clock
         let changes = changes
+        let tokens = tokens
         service = SyncService(
             SyncService.Dependencies(
-                cloud: cloud, store: store, device: { device }, open: softwareOpen, deviceName: { name }, version: "1.0.0",
+                cloud: cloud, store: store, device: { device }, open: softwareOpen, tokens: tokens, openSecret: softwareOpenSecret, deviceName: { name }, version: "1.0.0",
                 interval: { interval }, now: { clock.now }, sleep: { try await clock.sleep($0) },
                 schedule: SyncSchedule(random: { random }), stateURL: stateURL, changed: { changes.increment() }
             )

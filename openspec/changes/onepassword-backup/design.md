@@ -99,8 +99,9 @@ It clears the lease at the end with a conditional save too, so a late clear neve
 
 ### 6. Token
 
-`signd backup login` reads a service account token from stdin and checks that it can write to the vault.
-It stores the token in the data-protection keychain in signd's access group, on this device only.
+`signd backup login` reads a service account token from stdin and checks that the service account lists the vault; the first run reports a vault it cannot write.
+
+The command stores the token in the data-protection keychain in signd's access group, on this device only.
 Other Macs receive it sealed to their Secure Enclave keys, as keys are, so one login serves every Mac.
 
 The sealed copies live in a `Backup` record called `backup-token`.

@@ -15,6 +15,10 @@ public actor SyncService {
         public var store: any KeyStore
         public var device: @Sendable () throws(StoreError) -> DeviceKey
         public var open: KeyOpener
+        /// Where this Mac keeps the backup token.
+        public var tokens: any TokenStore
+        /// Opens this Mac's sealed copy of the backup token.
+        public var openSecret: SecretOpener
         public var deviceName: @Sendable () -> String
         /// The running signd's version.
         public var version: String
@@ -29,6 +33,7 @@ public actor SyncService {
 
         public init(
             cloud: (any CloudStore)?, store: any KeyStore, device: @escaping @Sendable () throws(StoreError) -> DeviceKey, open: @escaping KeyOpener,
+            tokens: any TokenStore, openSecret: @escaping SecretOpener,
             deviceName: @escaping @Sendable () -> String = { ThisDevice.name() }, version: String,
             interval: @escaping @Sendable () -> TimeInterval,
             now: @escaping @Sendable () -> Date = { Date() },
@@ -40,6 +45,8 @@ public actor SyncService {
             self.store = store
             self.device = device
             self.open = open
+            self.tokens = tokens
+            self.openSecret = openSecret
             self.deviceName = deviceName
             self.version = version
             self.interval = interval
@@ -154,6 +161,27 @@ public actor SyncService {
         } }
     }
 
+    /// Stores the backup token on this Mac and seals it to every device, so one login serves every Mac.
+    public func backupLogin(token: Data, vault: String) async -> SyncResult {
+        guard dependencies.cloud != nil else { return SyncResult(.off, Self.offMessage) }
+        return await exclusive { service in await service.runBackupLogin(token: token, vault: vault) }
+    }
+
+    /// Deletes the `Backup` record, which makes every Mac delete its token at its next check, and this Mac's token.
+    public func backupLogout() async -> SyncResult {
+        guard dependencies.cloud != nil else {
+            do {
+                try dependencies.tokens.delete()
+                return SyncResult(.done)
+            } catch {
+                return SyncResult(.failed, Display.clean(String(describing: error)))
+            }
+        }
+        return await exclusive { service in await service.runCommand { work, state, requests, _ in
+            try await work.backupLogout(state: &state, requests: &requests)
+        } }
+    }
+
     public func devices() -> [DeviceSummary] {
         let me = (try? dependencies.device())?.recordName
         return state.devices.map { DeviceSummary(id: $0.key, name: $0.value.name, isThisDevice: $0.key == me) }.sorted { ($0.name, $0.id) < ($1.name, $1.id) }
@@ -169,6 +197,19 @@ public actor SyncService {
         }
         return await runCommand { work, state, requests, _ in
             _ = try await work.share(name, state: &state, requests: &requests)
+        }
+    }
+
+    private func runBackupLogin(token: Data, vault: String) async -> SyncResult {
+        // A login seals the token to the devices of the account, so a device that has not checked yet checks first.
+        if state.databaseToken == nil || account == nil {
+            _ = await runCheck(forced: false)
+        }
+        guard case .available? = account else {
+            return SyncResult(.off, state.lastMessage ?? "no iCloud account is available")
+        }
+        return await runCommand { work, state, requests, _ in
+            try await work.backupLogin(token: token, vault: vault, state: &state, requests: &requests)
         }
     }
 
@@ -217,7 +258,10 @@ public actor SyncService {
         }
         guard case let .available(user)? = account else { return nil }
         let device = try dependencies.device()
-        let work = SyncCheck(cloud: cloud, store: dependencies.store, device: device, deviceName: dependencies.deviceName(), version: dependencies.version, open: dependencies.open)
+        let work = SyncCheck(
+            cloud: cloud, store: dependencies.store, device: device, deviceName: dependencies.deviceName(), version: dependencies.version,
+            open: dependencies.open, tokens: dependencies.tokens, openSecret: dependencies.openSecret
+        )
         if let old = state.user, old != user {
             var changes = Changes()
             try work.removeShared(changes: &changes)

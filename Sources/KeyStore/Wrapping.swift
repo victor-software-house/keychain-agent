@@ -14,6 +14,18 @@ public struct WrappedKey: Codable, Sendable, Equatable {
     }
 }
 
+/// A secret, such as the backup token, sealed with HPKE to a key-agreement key.
+public struct SealedSecret: Codable, Sendable, Equatable {
+    /// The sender's ephemeral public key, which the recipient needs to open the ciphertext.
+    public var encapsulatedKey: Data
+    public var ciphertext: Data
+
+    public init(encapsulatedKey: Data, ciphertext: Data) {
+        self.encapsulatedKey = encapsulatedKey
+        self.ciphertext = ciphertext
+    }
+}
+
 public enum WrappingError: Error, Sendable, Equatable, CustomStringConvertible {
     case malformed(String)
 
@@ -28,6 +40,7 @@ public enum WrappingError: Error, Sendable, Equatable, CustomStringConvertible {
 public enum Wrapping {
     static let ciphersuite = HPKE.Ciphersuite.P256_SHA256_AES_GCM_256
     static let info = Data("signd wrapped key v1".utf8)
+    static let secretInfo = Data("signd backup token v1".utf8)
 
     /// The key's type name and public blob, which bind the ciphertext to its public key.
     private static func authenticatedData(type: String, publicBlob: Data) -> Data {
@@ -64,6 +77,24 @@ public enum Wrapping {
 }
 
 extension Wrapping {
+    /// Seals bytes to a key-agreement key, under an info string of its own, so a sealed key never opens as a secret.
+    public static func seal(secret: Data, to recipient: P256.KeyAgreement.PublicKey) throws -> SealedSecret {
+        var sender = try HPKE.Sender(recipientKey: recipient, ciphersuite: ciphersuite, info: secretInfo)
+        let ciphertext = try sender.seal(secret, authenticating: Data())
+        return SealedSecret(encapsulatedKey: sender.encapsulatedKey, ciphertext: ciphertext)
+    }
+
+    /// Opens a sealed secret with the device's key-agreement key.
+    public static func open(_ sealed: SealedSecret, with privateKey: some HPKEDiffieHellmanPrivateKey) throws -> Data {
+        var recipient = try HPKE.Recipient(privateKey: privateKey, ciphersuite: ciphersuite, info: secretInfo, encapsulatedKey: sealed.encapsulatedKey)
+        return try recipient.open(sealed.ciphertext, authenticating: Data())
+    }
+
+    /// Opens a sealed secret with the device's Secure Enclave key-agreement key, whose handle is `handle`.
+    public static func openSecret(_ sealed: SealedSecret, handle: Data) throws -> Data {
+        try open(sealed, with: SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: handle))
+    }
+
     /// Opens a stored wrapped key with its Secure Enclave key-agreement key, whose handle is `keyData`, and returns the private key and its comment.
     public static func openStored(_ key: StoredKey) throws(SignError) -> (PrivateKey, String) {
         guard let wrapped = key.wrapped else { throw .invalidKey("\(key.name) has no wrapped key") }

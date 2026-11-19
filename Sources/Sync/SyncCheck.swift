@@ -9,6 +9,9 @@ private let log = Logger(subsystem: "com.victor-software-house.signd", category:
 /// Opens a stored wrapped key to its private key and comment, as `Wrapping.openStored` does with the Secure Enclave.
 public typealias KeyOpener = @Sendable (StoredKey) throws(SignError) -> (PrivateKey, String)
 
+/// Opens a sealed secret with this device's key-agreement key, as `Wrapping.openSecret` does with the Secure Enclave.
+public typealias SecretOpener = @Sendable (SealedSecret, DeviceKey) throws -> Data
+
 /// What a check or a command changed, by key name.
 struct Changes: Sendable {
     var added: [String] = []
@@ -35,6 +38,9 @@ struct SyncCheck {
     let deviceName: String
     let version: String
     let open: KeyOpener
+    /// Where this device keeps the backup token.
+    let tokens: any TokenStore
+    let openSecret: SecretOpener
 
     /// This device's record name.
     var me: String { device.recordName }
@@ -79,19 +85,38 @@ struct SyncCheck {
         if full {
             state.devices = [:]
             state.keys = [:]
+            state.backup = nil
         }
 
         // A record deleted and made again in one batch comes back as changed, so deletions go first.
         var payloads: [String: KeyPayload] = [:]
         var unreadable: [String: SkippedKey] = [:]
+        var backup: BackupPayload?
+        var backupSeen = false
+        var backupGone = false
         for name in fetched.deleted {
             state.devices[name] = nil
             state.keys[name] = nil
+            if name == BackupPayload.recordName {
+                state.backup = nil
+                backupGone = true
+            }
         }
         for record in fetched.changed {
             switch record.type {
             case .device:
                 state.devices[record.name] = Self.deviceEntry(record)
+            case .backup:
+                guard record.name == BackupPayload.recordName else { break }
+                backupSeen = true
+                backupGone = false
+                // A record this version cannot read keeps the token this Mac has, as a later version may read it.
+                if let payload = try? Payload.decode(BackupPayload.self, from: record.payload) {
+                    state.backup = BackupEntry(sealedFor: payload.sealed.keys.sorted())
+                    backup = payload
+                }
+            case .lease:
+                break
             case .key:
                 do throws(PayloadError) {
                     let payload = try Payload.decode(KeyPayload.self, from: record.payload)
@@ -146,9 +171,30 @@ struct SyncCheck {
         }
         state.skipped = skipped.sorted { ($0.name, $0.record) < ($1.name, $1.record) }
 
+        // A completed full read with no `Backup` record means the login ended.
+        if full && !backupSeen { backupGone = true }
+        try receiveToken(backup, gone: backupGone)
+
         try await publish(&state, requests: &requests)
         try await sealForNewMacs(&state, keys: keys, requests: &requests, changes: &changes)
+        try await sealTokenForNewMacs(&state, requests: &requests)
         return state
+    }
+
+    /// Stores the token this device's sealed copy opens to, when it differs from the stored one.
+    /// Deletes the stored token when the record is gone.
+    private func receiveToken(_ payload: BackupPayload?, gone: Bool) throws {
+        if gone { return try tokens.delete() }
+        guard let sealed = payload?.sealed[me] else { return }
+        var token: Data
+        do {
+            token = try openSecret(sealed, device)
+        } catch {
+            log.error("cannot open this Mac's copy of the backup token: \(String(describing: error), privacy: .public)")
+            return
+        }
+        defer { token.resetBytes(in: 0..<token.count) }
+        if try tokens.read() != token { try tokens.save(token) }
     }
 
     static func deviceEntry(_ record: CloudRecord) -> DeviceEntry? {
@@ -276,7 +322,68 @@ struct SyncCheck {
         }
     }
 
+    /// Seals the backup token to every device that has no copy, when this device has the token.
+    /// It never drops a copy.
+    private func sealTokenForNewMacs(_ state: inout SyncState, requests: inout Int) async throws {
+        guard let entry = state.backup, var token = try tokens.read() else { return }
+        defer { token.resetBytes(in: 0..<token.count) }
+        let missing = state.devices.keys.filter { !entry.sealedFor.contains($0) }.sorted()
+        guard !missing.isEmpty else { return }
+        requests += 1
+        guard let current = try await cloud.fetch(.backup, name: BackupPayload.recordName),
+              var payload = try? Payload.decode(BackupPayload.self, from: current.payload)
+        else { return }
+        var added = false
+        for device in missing where payload.sealed[device] == nil {
+            guard let recipient = state.devices[device].flatMap({ try? P256.KeyAgreement.PublicKey(x963Representation: $0.publicKey) }) else { continue }
+            payload.sealed[device] = try Wrapping.seal(secret: token, to: recipient)
+            added = true
+        }
+        state.backup?.sealedFor = payload.sealed.keys.sorted()
+        guard added else { return }
+        requests += 1
+        do {
+            _ = try await cloud.save(CloudRecord(type: .backup, name: BackupPayload.recordName, payload: Payload.encode(payload), system: current.system))
+        } catch where error.kind == .conflict {
+            // Another device sealed it first; the next check reads that record.
+            state.backup?.sealedFor = entry.sealedFor
+        }
+    }
+
     // MARK: Commands
+
+    /// Logs in to the backup: seals the token to every known device, saves the `Backup` record, and stores this device's copy.
+    func backupLogin(token: Data, vault: String, state: inout SyncState, requests: inout Int) async throws {
+        try await publish(&state, requests: &requests)
+        var devices = state.devices
+        if devices[me] == nil { devices[me] = DeviceEntry(name: deviceName, publicKey: device.publicKey, system: nil) }
+        var sealed: [String: SealedSecret] = [:]
+        for (id, entry) in devices {
+            guard let recipient = try? P256.KeyAgreement.PublicKey(x963Representation: entry.publicKey) else { continue }
+            sealed[id] = try Wrapping.seal(secret: token, to: recipient)
+        }
+        requests += 1
+        let existing = try await cloud.fetch(.backup, name: BackupPayload.recordName)
+        let payload = BackupPayload(vault: vault, sealed: sealed)
+        requests += 1
+        do {
+            _ = try await cloud.save(CloudRecord(type: .backup, name: BackupPayload.recordName, payload: Payload.encode(payload), system: existing?.system))
+        } catch where error.kind == .conflict {
+            throw SyncRefusal("another Mac changed the backup login at the same moment; run the command again")
+        } catch where error.kind == .quota {
+            throw SyncRefusal("your iCloud storage is full, so the backup login was not saved")
+        }
+        try tokens.save(token)
+        state.backup = BackupEntry(sealedFor: sealed.keys.sorted())
+    }
+
+    /// Deletes the `Backup` record and this device's token; every other device deletes its token at its next check.
+    func backupLogout(state: inout SyncState, requests: inout Int) async throws {
+        requests += 1
+        try await cloud.delete(.backup, name: BackupPayload.recordName)
+        try tokens.delete()
+        state.backup = nil
+    }
 
     /// Shares a key of this device: seals it to every known device, saves its record, and keeps this device's own copy in its place.
     func share(_ name: String, state: inout SyncState, requests: inout Int) async throws -> StoredKey {

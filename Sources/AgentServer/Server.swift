@@ -26,9 +26,30 @@ public enum PrivateExtension {
     public static let devices = "signd-devices@victor-software-house.com"
     /// Removes the device its contents name, and answers with a `SyncResult` as JSON.
     public static let removeDevice = "signd-remove-device@victor-software-house.com"
+    /// Stores the backup token its contents carry, with the vault, on every Mac, and answers with a `SyncResult` as JSON.
+    public static let backupLogin = "signd-backup-login@victor-software-house.com"
+    /// Deletes the backup token on every Mac, and answers with a `SyncResult` as JSON.
+    public static let backupLogout = "signd-backup-logout@victor-software-house.com"
 
     /// Every extension of signd's command line; a connection that the SSH client forwarded may use none of them.
-    static let all: Set<String> = [status, reload, sync, syncState, share, deleteShared, devices, removeDevice]
+    static let all: Set<String> = [status, reload, sync, syncState, share, deleteShared, devices, removeDevice, backupLogin, backupLogout]
+}
+
+/// What a backup login carries to the agent: the token, as JSON in the extension's one string argument.
+public struct BackupLoginRequest: Codable, Sendable {
+    public let token: String
+    public let vault: String
+
+    public init(token: String, vault: String) {
+        self.token = token
+        self.vault = vault
+    }
+}
+
+/// The backup login and logout the agent answers; the agent is the only process that calls CloudKit.
+public protocol BackupLogin: Sendable {
+    func login(token: String, vault: String) async -> SyncResult
+    func logout() async -> SyncResult
 }
 
 /// A file by its device and inode, so two paths to one file match.
@@ -86,18 +107,20 @@ struct FrameDecoder: ByteToMessageDecoder {
 public struct Server: Sendable {
     let agent: Agent
     let sync: SyncService?
+    let backup: (any BackupLogin)?
     let pool: NIOThreadPool
     /// The file this agent runs; nil refuses every private extension.
     /// A connection must run the same file to use a private extension.
     let executable: FileIdentity?
 
-    public init(agent: Agent, sync: SyncService? = nil) {
-        self.init(agent: agent, sync: sync, executable: FileIdentity(executableOf: getpid()))
+    public init(agent: Agent, sync: SyncService? = nil, backup: (any BackupLogin)? = nil) {
+        self.init(agent: agent, sync: sync, backup: backup, executable: FileIdentity(executableOf: getpid()))
     }
 
-    init(agent: Agent, sync: SyncService?, executable: FileIdentity?) {
+    init(agent: Agent, sync: SyncService?, backup: (any BackupLogin)? = nil, executable: FileIdentity?) {
         self.agent = agent
         self.sync = sync
+        self.backup = backup
         pool = .singleton
         self.executable = executable
     }
@@ -225,6 +248,14 @@ public struct Server: Sendable {
         case PrivateExtension.removeDevice:
             guard let sync, let id = Self.argument(contents) else { return .failure }
             return Self.json(await sync.removeDevice(id), name: name)
+        case PrivateExtension.backupLogin:
+            guard let backup, let argument = Self.argument(contents),
+                  let request = try? JSONDecoder().decode(BackupLoginRequest.self, from: Data(argument.utf8))
+            else { return .failure }
+            return Self.json(await backup.login(token: request.token, vault: request.vault), name: name)
+        case PrivateExtension.backupLogout:
+            guard let backup else { return .failure }
+            return Self.json(await backup.logout(), name: name)
         case PrivateExtension.status:
             let encoder = JSONEncoder()
             encoder.outputFormatting = .sortedKeys

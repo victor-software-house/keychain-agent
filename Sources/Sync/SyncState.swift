@@ -17,6 +17,12 @@ public struct KeyEntry: Codable, Sendable, Equatable {
     public var sealedFor: [String]
 }
 
+/// What signd stores about the `Backup` record; it contains no sealed copy.
+public struct BackupEntry: Codable, Sendable, Equatable {
+    /// The record names of the Macs the token is sealed to.
+    public var sealedFor: [String]
+}
+
 /// Why this device does not serve a shared key.
 public enum SkipKind: String, Codable, Sendable {
     /// No device has sealed the key to this one yet.
@@ -67,6 +73,8 @@ public struct SyncState: Codable, Sendable, Equatable {
     public var devices: [String: DeviceEntry] = [:]
     public var keys: [String: KeyEntry] = [:]
     public var skipped: [SkippedKey] = []
+    /// The `Backup` record, when there is one. Optional, so a state file written before it existed still loads.
+    public var backup: BackupEntry?
     public var lastCheck: Date?
     public var lastSuccess: Date?
     public var lastResult: CheckOutcome?
@@ -108,6 +116,7 @@ public struct SyncState: Codable, Sendable, Equatable {
         devices = [:]
         keys = [:]
         skipped = []
+        backup = nil
     }
 }
 

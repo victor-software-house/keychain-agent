@@ -20,6 +20,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "5.1.1"),
         .package(url: "https://github.com/apple/swift-argument-parser.git", exact: "1.8.2"),
         .package(url: "https://github.com/apple/swift-asn1.git", exact: "1.7.4"),
+        .package(url: "https://github.com/victor-software-house/swift-onepassword.git", exact: "0.0.4"),
     ],
     targets: [
         // The SSH encoding of keys and signatures, with no platform code.
@@ -38,6 +39,15 @@ let package = Package(
         ),
         // Sharing keys between devices through iCloud, and the SSH routing files for their hosts.
         .target(name: "Sync", dependencies: ["KeyStore", "SSHWire"], swiftSettings: strict),
+        // The 1Password backup: the check that the service account lists the vault.
+        .target(
+            name: "Backup",
+            dependencies: [
+                "KeyStore", "Sync",
+                .product(name: "OnePassword", package: "swift-onepassword"),
+            ],
+            swiftSettings: strict
+        ),
         // The agent's state and the socket server.
         .target(
             name: "AgentServer",
@@ -52,7 +62,7 @@ let package = Package(
         .executableTarget(
             name: "signd",
             dependencies: [
-                "AgentServer", "AgentProtocol", "KeyStore", "SSHWire", "Sync",
+                "AgentServer", "AgentProtocol", "Backup", "KeyStore", "SSHWire", "Sync",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
             ],
             swiftSettings: strict
@@ -60,7 +70,7 @@ let package = Package(
         .testTarget(
             name: "SigndTests",
             dependencies: [
-                "SSHWire", "AgentProtocol", "KeyStore", "AgentServer", "Sync", "signd",
+                "SSHWire", "AgentProtocol", "Backup", "KeyStore", "AgentServer", "Sync", "signd",
                 .product(name: "CryptoExtras", package: "swift-crypto"),
                 .product(name: "NIOCore", package: "swift-nio"),
             ],

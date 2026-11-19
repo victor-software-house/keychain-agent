@@ -8,19 +8,23 @@ public struct Settings: Sendable {
     public enum Key: String, CaseIterable, Sendable {
         case keyLifetime = "key-lifetime"
         case interval
+        case backupVault = "backup-vault"
 
         public var defaultValue: String {
             switch self {
             case .keyLifetime: "1h"
             case .interval: "2s"
+            case .backupVault: "signd"
             }
         }
 
         /// The shortest and longest value, in seconds: an interval of 1 second to 1 hour, and a key lifetime of 1 second to 30 days.
-        public var bounds: ClosedRange<TimeInterval> {
+        /// A text setting has no bounds.
+        public var bounds: ClosedRange<TimeInterval>? {
             switch self {
             case .keyLifetime: 1...2_592_000
             case .interval: 1...3600
+            case .backupVault: nil
             }
         }
     }
@@ -69,19 +73,19 @@ public struct Settings: Sendable {
         return CFPreferencesCopyAppValue(key.rawValue as CFString, Self.domain as CFString) as? String
     }
 
-    /// The local values that are not valid durations for their setting, which `resolve` passes over.
+    /// The local values that are not valid for their setting, which `resolve` and `text` pass over.
     public func ignored() -> [Ignored] {
         Key.allCases.compactMap { key in
-            guard let value = value(key), Self.validSeconds(key, value) == nil else { return nil }
-            return Ignored(
-                key: key.rawValue, value: value,
-                reason: "not a duration such as 90s, 30m, 1h or 2d from \(Int(key.bounds.lowerBound)) to \(Int(key.bounds.upperBound)) seconds"
-            )
+            guard let value = value(key), !Self.isValid(key, value) else { return nil }
+            let reason = key.bounds.map {
+                "not a duration such as 90s, 30m, 1h or 2d from \(Int($0.lowerBound)) to \(Int($0.upperBound)) seconds"
+            } ?? "not a name: use text with no control characters"
+            return Ignored(key: key.rawValue, value: value, reason: reason)
         }
     }
 
     public func set(_ key: Key, _ value: String) throws(SettingsError) {
-        guard Self.validSeconds(key, value) != nil else { throw .invalid(key.rawValue, value) }
+        guard Self.isValid(key, value) else { throw .invalid(key.rawValue, value) }
         write(key, value as CFString)
     }
 
@@ -93,15 +97,25 @@ public struct Settings: Sendable {
     }
 
     /// A setting's value: the local one, else the default. A local value that is not a valid duration for the setting is passed over.
+    /// The seconds are 0 for a text setting, which `text` reads without them.
     public func resolve(_ key: Key) -> Resolved {
-        if let value = value(key), let seconds = Self.validSeconds(key, value) { return Resolved(value: value, seconds: seconds, source: .local) }
+        if let value = value(key), Self.isValid(key, value) { return Resolved(value: value, seconds: Self.seconds(value) ?? 0, source: .local) }
         let value = key.defaultValue
-        return Resolved(value: value, seconds: Self.seconds(value)!, source: .default)
+        return Resolved(value: value, seconds: Self.seconds(value) ?? 0, source: .default)
+    }
+
+    /// A text setting's value: the local one, else the default. A local value that is not valid text is passed over.
+    public func text(_ key: Key) -> String { resolve(key).value }
+
+    /// Whether `text` suits `key`: a duration within its bounds, or for a text setting a non-empty name with no control characters.
+    static func isValid(_ key: Key, _ text: String) -> Bool {
+        guard key.bounds != nil else { return !text.isEmpty && !text.unicodeScalars.contains { $0.properties.generalCategory == .control } }
+        return validSeconds(key, text) != nil
     }
 
     /// A duration that suits `key`, within its bounds.
     public static func validSeconds(_ key: Key, _ text: String) -> TimeInterval? {
-        guard let seconds = seconds(text), key.bounds.contains(seconds) else { return nil }
+        guard let bounds = key.bounds, let seconds = seconds(text), bounds.contains(seconds) else { return nil }
         return seconds
     }
 
@@ -125,7 +139,9 @@ public enum SettingsError: Error, Sendable, CustomStringConvertible {
     public var description: String {
         switch self {
         case let .invalid(key, value):
-            let range = Settings.Key(rawValue: key).map { ", from \(Int($0.bounds.lowerBound)) to \(Int($0.bounds.upperBound)) seconds" } ?? ""
+            let setting = Settings.Key(rawValue: key)
+            if let setting, setting.bounds == nil { return "invalid value \(value) for \(key): use a name with no control characters" }
+            let range = setting?.bounds.map { ", from \(Int($0.lowerBound)) to \(Int($0.upperBound)) seconds" } ?? ""
             return "invalid value \(value) for \(key): use a duration such as 90s, 30m, 1h or 2d\(range)"
         }
     }
