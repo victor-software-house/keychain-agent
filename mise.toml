@@ -60,8 +60,9 @@ description = "Run the Swift package tests"
 run = "swift test"
 
 [tasks.check]
-description = "Run the repository checks, then build the package and run its tests, as CI does"
-depends = ["check:repo"]
+description = "Run the repository checks and the app build, then build the package and run its tests, as CI does"
+# app needs Xcode. A documentation-only pull request runs check:local on Linux, so app goes here.
+depends = ["check:repo", "app"]
 run = ["swift build", "swift test"]
 
 [tasks."cloudkit:schema"]
