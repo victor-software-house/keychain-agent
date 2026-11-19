@@ -17,8 +17,8 @@ Its initializer also installs signal handlers that call `exit(0)` on an interrup
 A value type `ColorChoice` (`auto`, `always`, `never`) and a function decide whether a stream gets colour.
 The inputs are the choice, the environment and whether the stream is a terminal.
 
-`never` and `NO_COLOR` turn colour off.
-`always` and `CLICOLOR_FORCE` turn it on, and `auto` follows the terminal check.
+`never` and a `NO_COLOR` that is not empty turn colour off.
+`always` and a `CLICOLOR_FORCE` that is neither empty nor `0` turn it on, and `auto` follows the terminal check.
 A flag wins over the environment.
 The function is pure, so a test covers each case with no terminal.
 

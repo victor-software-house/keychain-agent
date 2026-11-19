@@ -51,6 +51,12 @@ fileprivate func theColourFollowsTheFlagThenTheEnvironmentThenTheTerminal(_ test
     #expect(test.choice.isColored(environment: test.environment, isTerminal: test.terminal) == test.expected)
 }
 
+@Test func anEmptyNoColorOrAZeroForceCountsAsUnset() {
+    #expect(ColorChoice.auto.isColored(environment: ["NO_COLOR": ""], isTerminal: true))
+    #expect(!ColorChoice.auto.isColored(environment: ["CLICOLOR_FORCE": "0"], isTerminal: false))
+    #expect(!ColorChoice.auto.isColored(environment: ["CLICOLOR_FORCE": ""], isTerminal: false))
+}
+
 @Test func aLineWithoutColourIsTheTextAsItIs() {
     let style = TerminalStyle(isColored: false)
     #expect(!style.isColored)

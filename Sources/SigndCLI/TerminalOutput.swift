@@ -22,13 +22,14 @@ enum ColorChoice: String, ExpressibleByArgument, CaseIterable, Sendable {
 
     /// Whether a stream gets colour.
     /// The flag wins over the environment; `auto` lets `NO_COLOR` win over `CLICOLOR_FORCE`, and both win over the terminal check.
+    /// As no-color.org and the CLICOLOR convention read them, an empty `NO_COLOR` is unset, and so is an empty or `0` `CLICOLOR_FORCE`.
     func isColored(environment: [String: String], isTerminal: Bool) -> Bool {
         switch self {
         case .never: return false
         case .always: return true
         case .auto:
-            if environment["NO_COLOR"] != nil { return false }
-            if environment["CLICOLOR_FORCE"] != nil { return true }
+            if let noColor = environment["NO_COLOR"], !noColor.isEmpty { return false }
+            if let force = environment["CLICOLOR_FORCE"], !force.isEmpty, force != "0" { return true }
             return isTerminal
         }
     }
@@ -93,11 +94,17 @@ struct TerminalStyle: Sendable {
         Rainbow.outputTarget = .console
     }()
 
-    func success(_ text: String) -> String { mark("✔ \(text)", TerminalText.Component.success) }
+    func success(_ text: String) -> String { result("✔", text, TerminalText.Component.success) }
 
-    func failure(_ text: String) -> String { mark("✘ \(text)", TerminalText.Component.danger) }
+    func failure(_ text: String) -> String { result("✘", text, TerminalText.Component.danger) }
 
-    func warning(_ text: String) -> String { mark("▲ \(text)", TerminalText.Component.accent) }
+    func warning(_ text: String) -> String { result("▲", text, TerminalText.Component.accent) }
+
+    /// A result line: with colour, its symbol in front and the whole line coloured; without colour, the text alone.
+    private func result(_ symbol: String, _ text: String, _ component: (String) -> TerminalText.Component) -> String {
+        guard isColored else { return text }
+        return mark("\(symbol) \(text)", component)
+    }
 
     /// A value of `signd status`, coloured by its state and with no symbol; a value with no state stays plain.
     func value(_ text: String, _ level: Level?) -> String {
