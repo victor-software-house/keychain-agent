@@ -52,13 +52,13 @@ It then applies the difference in as few calls as the SDK allows:
 
 Removals of shared items come only from a full CloudKit zone fetch that completed in the same run.
 The fetch starts with no change token.
-Completed means every page returned, with no error, no more-coming flag left set, and no record the read could not return.
+Completed means every page returned, with no error and no more-coming flag left set.
 
 A failed read removes nothing and records why in `signd status`.
 
-A full read that could not return a record is not completed.
-It applies every record it did return and saves its change tokens, but it infers no removal from a record it did not list.
-Each check reads such a record again by name, and `signd status` shows how many are left.
+A completed read that could not return a record still ends every record it did not list, except that record.
+The record keeps its last known state, and the read saves its change tokens.
+Each check, full or not, reads such a record again by name, and `signd status` shows how many are left.
 
 A completed full fetch is trusted even when it lists no keys, so deleting the last shared key removes its item too.
 

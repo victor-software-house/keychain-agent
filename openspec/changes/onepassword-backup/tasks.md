@@ -16,8 +16,9 @@
   - 2026-11-19 UTC: More unit tests cover a Mac with no copy in the record, which deletes its token and seals nothing.
     They cover a removed device, whose copy leaves the record.
   - 2026-11-19 UTC: Unit tests also cover a read with an unreadable record.
-    A full read keeps the token and every key, applies the other records, and advances the change tokens.
-    The next check reads the record by name and applies it once it reads.
+    A full read applies every record it returns and advances the change tokens.
+    It removes what it does not list, except the records it could not read.
+    Those keep their last known state, the next check is incremental, and each check reads them by name.
   - 2026-11-19 UTC: Unit tests also cover a state file and results that contain neither the token nor its base64.
   - 2026-11-19 UTC: The prompt that reads the token with echo off has no test, as it needs a terminal.
 - [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
