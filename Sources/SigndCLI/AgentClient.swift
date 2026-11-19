@@ -101,7 +101,7 @@ struct AgentClient {
     }
 
     /// Asks the agent to restore keys from the backup, or nil when no agent answers.
-    func restoreBackupKeys(names: [String], all: Bool, local: Bool) -> [RestoredKey]? {
+    func restoreBackupKeys(names: [String], all: Bool, local: Bool) -> BackupRestoreResult? {
         backupRestore(BackupRestoreRequest(names: names, all: all, local: local, listOnly: false))
     }
 

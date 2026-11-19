@@ -49,6 +49,18 @@ public struct RestoredKey: Codable, Sendable, Equatable {
     }
 }
 
+/// What a restore did: one result per key, or why the backup itself failed.
+public struct BackupRestoreResult: Codable, Sendable, Equatable {
+    public var keys: [RestoredKey]
+    /// Why the backup could not be read, such as no token; nil when it was.
+    public var failure: String?
+
+    public init(keys: [RestoredKey] = [], failure: String? = nil) {
+        self.keys = keys
+        self.failure = failure
+    }
+}
+
 /// Seals a private key to a new Secure Enclave key of this Mac, as `KeychainStore.makeWrappedKey` does.
 public typealias BackupKeyWrapper = @Sendable (_ name: String, _ key: PrivateKey, _ comment: String, _ hosts: [String]) throws(StoreError) -> StoredKey
 
@@ -73,9 +85,6 @@ public struct BackupRestore: Sendable {
             self.wrap = wrap
         }
     }
-
-    /// The name a result takes when the backup itself failed, and no single key did.
-    public static let backupName = "the backup"
 
     private let dependencies: Dependencies
 
@@ -102,15 +111,15 @@ public struct BackupRestore: Sendable {
     }
 
     /// Imports the keys named, or every key of the backup with `all`, into the store.
-    /// A failure of the backup itself, such as no token, gives one failed result named `backupName`.
-    @concurrent public func restore(names: [String], all: Bool) async -> [RestoredKey] {
+    /// A failure of the backup itself, such as no token, is the result's `failure`, with no key.
+    @concurrent public func restore(names: [String], all: Bool) async -> BackupRestoreResult {
         let keys: [Found]
         let stored: [StoredKey]
         do {
             keys = try await found()
             stored = try dependencies.store.list()
         } catch {
-            return [RestoredKey(name: Self.backupName, outcome: .failed, reason: BackupRun.describe(error))]
+            return BackupRestoreResult(failure: BackupRun.describe(error))
         }
         var fingerprints = Set(stored.compactMap { $0.publicKey?.fingerprint })
         var used = Set(stored.map(\.name))
@@ -131,7 +140,7 @@ public struct BackupRestore: Sendable {
             }
             results.append(restore(match, fingerprints: &fingerprints, names: &used))
         }
-        return results
+        return BackupRestoreResult(keys: results)
     }
 
     /// The key items of the active, tagged items of the vault.

@@ -789,14 +789,14 @@ private func restoring(_ rig: BackupRig, into store: MemoryStore) -> BackupResto
     // A Mac that has the key skips it, and the list item is no key to restore.
     let same = restoring(rig, into: rig.store)
     #expect(await same.list() == listed)
-    #expect(await same.restore(names: ["work"], all: false) == [RestoredKey(name: "work", outcome: .skipped, reason: "already stored")])
-    #expect(await same.restore(names: ["enclave", "signd Secure Enclave keys (mac-a)"], all: false).map(\.reason) == ["no item", "no item"])
+    #expect(await same.restore(names: ["work"], all: false) == BackupRestoreResult(keys: [RestoredKey(name: "work", outcome: .skipped, reason: "already stored")]))
+    #expect(await same.restore(names: ["enclave", "signd Secure Enclave keys (mac-a)"], all: false).keys.map(\.reason) == ["no item", "no item"])
 
     // A Mac with no keys gets the key, and it opens to the key the vault has.
     let fresh = MemoryStore()
     let other = restoring(rig, into: fresh)
     #expect(await other.list() == listed)
-    #expect(await other.restore(names: [], all: true) == [RestoredKey(name: "work", outcome: .restored)])
+    #expect(await other.restore(names: [], all: true) == BackupRestoreResult(keys: [RestoredKey(name: "work", outcome: .restored)]))
     let stored = try #require(try fresh.list().first)
     #expect(stored.hosts == ["git.example.com"])
     #expect(stored.comment == "work@example")
@@ -804,13 +804,14 @@ private func restoring(_ rig: BackupRig, into store: MemoryStore) -> BackupResto
     #expect(try softwareOpen(stored).0 == work)
 
     // Restoring it again finds it stored, and a name the store uses for another key is taken.
-    #expect(await other.restore(names: ["work", "work"], all: false) == [RestoredKey(name: "work", outcome: .skipped, reason: "already stored")])
+    #expect(await other.restore(names: ["work", "work"], all: false) == BackupRestoreResult(keys: [RestoredKey(name: "work", outcome: .skipped, reason: "already stored")]))
     let taken = MemoryStore()
     try taken.add(localWrappedKey("work").0)
-    #expect(await restoring(rig, into: taken).restore(names: ["work"], all: false) == [RestoredKey(name: "work", outcome: .skipped, reason: "the name is taken")])
+    let reused = await restoring(rig, into: taken).restore(names: ["work"], all: false)
+    #expect(reused == BackupRestoreResult(keys: [RestoredKey(name: "work", outcome: .skipped, reason: "the name is taken")]))
 }
 
-@Test(.timeLimit(.minutes(1))) func aRestoreWithNoTokenFailsAsTheBackupAndReadsNoItem() async throws {
+@Test(.timeLimit(.minutes(1))) func aRestoreWithNoTokenFailsWithNoKeyAndReadsNoItem() async throws {
     let rig = try BackupRig()
     try rig.share("work")
     #expect(await rig.run.perform() == BackupResult(.ok))
@@ -820,6 +821,6 @@ private func restoring(_ rig: BackupRig, into store: MemoryStore) -> BackupResto
     let restore = restoring(rig, into: MemoryStore())
     let off = "the backup is off; run signd backup login"
     #expect(await restore.list() == BackupRestoreList(failure: off))
-    #expect(await restore.restore(names: ["work"], all: false) == [RestoredKey(name: BackupRestore.backupName, outcome: .failed, reason: off)])
+    #expect(await restore.restore(names: ["work"], all: false) == BackupRestoreResult(failure: off))
     #expect(rig.vault.calls.isEmpty)
 }

@@ -31,7 +31,7 @@ public enum PrivateExtension {
     public static let backupLogin = "signd-backup-login@victor-software-house.com"
     /// Deletes the backup token on every Mac, and answers with a `SyncResult` as JSON.
     public static let backupLogout = "signd-backup-logout@victor-software-house.com"
-    /// Lists the backup's keys, or restores the ones its contents name; answers with a `BackupRestoreList` or the `RestoredKey`s as JSON.
+    /// Lists the backup's keys, or restores the ones its contents name; answers with a `BackupRestoreList` or a `BackupRestoreResult` as JSON.
     public static let backupRestore = "signd-backup-restore@victor-software-house.com"
     /// Answers with the backup's `BackupStatus` as JSON.
     public static let backupStatus = "signd-backup-status@victor-software-house.com"
@@ -70,7 +70,7 @@ public struct BackupRestoreRequest: Codable, Sendable {
 public protocol BackupCommands: Sendable {
     func logIn(token: String, vault: String) async -> SyncResult
     func logOut() async -> SyncResult
-    func restore(names: [String], all: Bool, local: Bool) async -> [RestoredKey]
+    func restore(names: [String], all: Bool, local: Bool) async -> BackupRestoreResult
     func list() async -> BackupRestoreList
     func status() async -> BackupStatus
 }

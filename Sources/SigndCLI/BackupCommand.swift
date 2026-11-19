@@ -19,23 +19,30 @@ struct BackupAgent: BackupCommands {
 
     func logOut() async -> SyncResult { await service.logOut() }
 
-    func list() async -> BackupRestoreList { await restorer.list() }
+    /// The backup's keys, with the scope of a key from another Mac shown as that Mac's name.
+    /// A scope with no device in the sync service's list stays as it is.
+    func list() async -> BackupRestoreList {
+        var list = await restorer.list()
+        let names = Dictionary(await sync.devices().map { ($0.id, $0.name) }, uniquingKeysWith: { first, _ in first })
+        for index in list.keys.indices { list.keys[index].scope = names[list.keys[index].scope] ?? list.keys[index].scope }
+        return list
+    }
 
     /// Restores the keys into the store, shares each unless `local`, and reloads the agent once.
-    func restore(names: [String], all: Bool, local: Bool) async -> [RestoredKey] {
-        var results = await restorer.restore(names: names, all: all)
-        guard results.contains(where: { $0.outcome == .restored }) else { return results }
+    func restore(names: [String], all: Bool, local: Bool) async -> BackupRestoreResult {
+        var result = await restorer.restore(names: names, all: all)
+        guard result.keys.contains(where: { $0.outcome == .restored }) else { return result }
         if !local {
-            for index in results.indices where results[index].outcome == .restored {
-                let name = results[index].name
+            for index in result.keys.indices where result.keys[index].outcome == .restored {
+                let name = result.keys[index].name
                 let shared = await sync.share(name)
                 switch shared.outcome {
                 case .done:
                     break
                 case .off:
-                    results[index].reason = shared.message ?? "sync is off; \(name) stays on this Mac"
+                    result.keys[index].reason = shared.message ?? "sync is off; \(name) stays on this Mac"
                 case .failed:
-                    results[index] = RestoredKey(
+                    result.keys[index] = RestoredKey(
                         name: name, outcome: .failed, reason: "restored on this Mac, but not shared: \(shared.message ?? "unknown reason"); run signd key share \(name)"
                     )
                 }
@@ -43,7 +50,7 @@ struct BackupAgent: BackupCommands {
         }
         await agent.reload()
         await backup?.keysDidChange()
-        return results
+        return result
     }
 
     func status() async -> BackupStatus {
@@ -181,13 +188,14 @@ struct BackupCommand: ParsableCommand {
                 if let failure = list.failure { throw Failure(failure) }
                 return
             }
-            guard let results = client.restoreBackupKeys(names: names, all: all, local: local) else { throw Failure("the agent does not answer") }
+            guard let result = client.restoreBackupKeys(names: names, all: all, local: local) else { throw Failure("the agent does not answer") }
             if output.json {
-                try output.print(results)
+                try output.print(result)
             } else {
-                for result in results { print(result.line) }
+                for key in result.keys { print(key.line) }
             }
-            if results.contains(where: { $0.outcome == .failed }) { throw ExitCode.failure }
+            if let failure = result.failure { throw Failure(failure) }
+            if result.keys.contains(where: { $0.outcome == .failed }) { throw ExitCode.failure }
         }
     }
 

@@ -80,7 +80,7 @@
   - 2026-11-19 UTC: CI has not run yet, and nothing was built or tested on this Mac.
     `aRestoreSkipsAKeyTheStoreHasImportsANewOneAndNeverListsASecureEnclaveKey` in `BackupRunTests` covers a key the store has, a new key that opens to the vault's key, and a name another key uses.
     It also covers a Secure Enclave list item, which is never listed or restored.
-  - 2026-11-19 UTC: `aRestoreWithNoTokenFailsAsTheBackupAndReadsNoItem` covers a restore and a list with no token.
+  - 2026-11-19 UTC: `aRestoreWithNoTokenFailsWithNoKeyAndReadsNoItem` covers a restore and a list with no token.
     The command sends the request to the agent, which restores the keys, shares each unless `--local`, and reloads once.
 - [x] 1.7 Report the backup in `signd status`.
   Verify a test of the JSON report's fields.
