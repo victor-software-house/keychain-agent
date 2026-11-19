@@ -46,6 +46,15 @@ CLOUDKIT_CONTAINER = "iCloud.com.victor-software-house.signd"
 description = "Build the Swift package"
 run = "swift build"
 
+[tasks.generate]
+description = "Write Signd.xcodeproj and App/Info.plist from project.yml; git ignores both"
+run = "xcodegen generate"
+
+[tasks.app]
+description = "Build the Signd app target unsigned into build/, as a pull request's check does"
+depends = ["generate"]
+run = "xcodebuild build -project Signd.xcodeproj -scheme Signd -derivedDataPath build CODE_SIGNING_ALLOWED=NO"
+
 [tasks.test]
 description = "Run the Swift package tests"
 run = "swift test"
