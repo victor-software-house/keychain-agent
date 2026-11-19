@@ -32,6 +32,9 @@ The device identifier comes from the Mac's `Device` record, never from its edita
 ### 2. Item shape
 
 A `key` item is an SSH Key item titled with the key's name, that contains the private key, a `hosts` text field and the comment.
+
+1Password takes only Ed25519 keys and Rivest–Shamir–Adleman (RSA) keys of 2048, 3072 or 4096 bits there ([1Password][op-ssh-types]).
+Any other key gets no item and keeps the item it has, and the plan lists it as unavailable.
 A `secure-enclave-list` item is a Secure Note, `signd Secure Enclave keys (<device name>)`, with each key's name, public key and hosts, for recreation.
 
 ### 3. A run
@@ -160,3 +163,4 @@ With no token, the backup stays off, and `signd status` shows it as off.
 
 [sdk-items]: https://github.com/1Password/onepassword-sdk-js/blob/0ba88b1496f23d4c68b87dcd771651fe73a14375/client/src/items.ts
 [op-delete]: https://support.1password.com/archive-delete-items/
+[op-ssh-types]: https://www.1password.dev/ssh/manage-keys
