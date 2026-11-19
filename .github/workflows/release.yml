@@ -6,7 +6,7 @@ name: Release
 #
 # The jobs after it build signd.pkg (Developer ID, notarized, stapled) from that version's tag.
 # They build it only when the release lacks the package.
-# They attach the package and point the private tap's cask at it.
+# They attach the package and point the public tap's cask at it.
 #
 # A manual run with publish off builds the package from HEAD as a run artifact only.
 #
@@ -136,10 +136,9 @@ jobs:
       - if: always()
         uses: victor-software-house/actions/macos-signing/delete@cb43721495406000501e460309abc1cf9f899cf7 # main, 2026-11-16
 
-  # Tells the Homebrew tap about the new package, and its bump workflow points the signd cask at it.
-  # The tap is private, so its name is the secret TAP_REPOSITORY, and the logs mask it.
-  # The workflow token cannot reach another repository, so the dispatch goes as the Version
-  # Packages App.
+  # Tells the Homebrew tap, victor-software-house/homebrew-tap, about the new package, and its
+  # bump workflow points the signd cask at it. The workflow token cannot reach another
+  # repository, so the dispatch goes as the Version Packages App.
   tap:
     name: Homebrew tap
     needs: [plan, package]
@@ -154,13 +153,13 @@ jobs:
         with:
           client-id: ${{ secrets.CHANGESET_VERSION_APP_CLIENT_ID }}
           private-key: ${{ secrets.CHANGESET_VERSION_APP_PRIVATE_KEY }}
-          repositories: ${{ secrets.TAP_REPOSITORY }}
+          repositories: homebrew-tap
           permission-contents: write
       - name: Dispatch the bump
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           TAG: v${{ needs.plan.outputs.version }}
-          TAP: ${{ secrets.TAP_REPOSITORY }}
+          TAP: homebrew-tap
         run: >-
           gh api "repos/${GITHUB_REPOSITORY_OWNER}/${TAP}/dispatches"
           -f event_type=release -f "client_payload[cask]=signd" -f "client_payload[tag]=${TAG}"

@@ -20,11 +20,26 @@ No command can export a private key.
 
 ## Install
 
-Each release attaches `signd.pkg`, signed with a Developer ID, notarized and stapled, which installs `/Applications/Signd.app`.
+Each release attaches `signd.pkg`, signed with a Developer ID, notarized and stapled.
+It installs `/Applications/Signd.app`, links `signd` into `/usr/local/bin`, and starts the agent for the user at the console.
 The app's provisioning profile grants it a private keychain access group.
-The Homebrew cask links `signd` onto the `PATH`.
 
-Then start the agent and point SSH at it:
+Install the package from the [latest release](https://github.com/victor-software-house/signd/releases/latest):
+
+```sh
+curl -fLO https://github.com/victor-software-house/signd/releases/latest/download/signd.pkg
+sudo installer -pkg signd.pkg -target /
+```
+
+Or install it with Homebrew, which also upgrades it:
+
+```sh
+brew install --cask victor-software-house/tap/signd
+```
+
+The agent then runs at login, on `~/.ssh/signd.sock`.
+When nobody was logged in during the install, enable it yourself.
+Then point SSH at it:
 
 ```sh
 signd service enable                     # run the agent at login, on ~/.ssh/signd.sock
