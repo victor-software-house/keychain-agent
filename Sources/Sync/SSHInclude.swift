@@ -79,7 +79,15 @@ public enum SSHInclude {
         if (try? manager.destinationOfSymbolicLink(atPath: config.path)) != nil { throw POSIXError(.ELOOP) }
 
         var current = ""
-        if let data = manager.contents(atPath: config.path) {
+        let data: Data?
+        do {
+            data = try Data(contentsOf: config)
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile {
+            data = nil
+        } catch let error as POSIXError where error.code == .ENOENT {
+            data = nil
+        }
+        if let data {
             guard let text = String(data: data, encoding: .utf8) else { throw CocoaError(.fileReadInapplicableStringEncoding) }
             current = text
         }

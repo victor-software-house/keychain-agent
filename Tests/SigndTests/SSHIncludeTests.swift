@@ -74,3 +74,18 @@ func aLineThatDoesNotCountGetsTheLineAtTheTop(_ config: String) {
     #expect(try String(contentsOf: target, encoding: .utf8) == includeLine + "\n\nHost example.com\n")
     #expect(SSHInclude.isEnabled(home: directory.url))
 }
+
+@Test(.enabled(if: getuid() != 0))
+func aConfigThatCannotBeReadIsNotReplaced() throws {
+    let directory = try TestDirectory()
+    let folder = directory.url.appendingPathComponent(".ssh")
+    let config = folder.appendingPathComponent("config")
+    let original = "Host example.com\n  User git\n"
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+    #expect(FileManager.default.createFile(atPath: config.path, contents: Data(original.utf8), attributes: [.posixPermissions: 0o000]))
+    defer { try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path) }
+
+    #expect(throws: (any Error).self) { try SSHInclude.enable(home: directory.url) }
+    try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: config.path)
+    #expect(try Data(contentsOf: config) == Data(original.utf8))
+}
