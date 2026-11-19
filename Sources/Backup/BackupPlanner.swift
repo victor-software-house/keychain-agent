@@ -177,7 +177,7 @@ public enum BackupPlanner {
             let wanted = Set(desired.map(\.slot))
             var ids: [String] = []
             for slot in groups.keys.sorted(by: order) where !wanted.contains(slot) {
-                guard let copies = groups[slot], isRemovable(slot, copies: copies, sources: sources) else { continue }
+                guard let copies = groups[slot], isRemovable(slot, sources: sources) else { continue }
                 ids += copies.map(\.id)
             }
             switch removed {
@@ -237,16 +237,15 @@ public enum BackupPlanner {
     }
 
     /// Whether this Mac may remove the items of `slot`, which no source lists.
-    /// It never removes an item of another Mac's local key, or the list of its own Mac.
-    private static func isRemovable(_ slot: BackupSlot, copies: [Known], sources: BackupSources) -> Bool {
+    /// It never removes an item of another Mac's local key, the list of its own Mac, or a shared item while a `Key` record is unreadable.
+    private static func isRemovable(_ slot: BackupSlot, sources: BackupSources) -> Bool {
         switch slot.kind {
         case .key:
             guard let fingerprint = slot.fingerprint, !sources.storeFingerprints.contains(fingerprint) else { return false }
             if slot.scope == BackupFormat.shared {
-                let unreadable = Set(sources.unreadable.filter { $0.type == .key }.map(\.name))
                 // A key whose record could not be read is not listed, and is not gone.
-                let unread = copies.contains { copy in copy.owner?.name.map { unreadable.contains(KeyPayload.recordName(for: $0)) } ?? false }
-                return !unread && !sources.shared.contains { $0.fingerprint == fingerprint }
+                // The item's name need not match that record's name, so any unreadable `Key` record keeps every shared item.
+                return !sources.unreadable.contains { $0.type == .key } && !sources.shared.contains { $0.fingerprint == fingerprint }
             }
             return slot.scope == sources.deviceID
         case .secureEnclaveList:

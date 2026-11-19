@@ -345,11 +345,20 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(result.cache["item-last"]?.owner == ownerOfKey("last"))
 }
 
-@Test func aKeyWhoseRecordCouldNotBeReadKeepsItsItem() throws {
+@Test func anUnreadableKeyRecordKeepsEverySharedItem() throws {
     let unread = try keyItem(key("unread"), id: "item-unread")
     let gone = try keyItem(key("gone"), id: "item-gone")
-    let result = plan(sources(unreadable: [UnreadableRecord(type: .key, name: "key-unread")]), vault: [unread, gone])
-    #expect(result.delete == [["item-gone"]])
+    // The item's name need not be the unreadable record's name, so no shared item is removed.
+    let mine = try keyItem(key("mine"), scope: me, id: "item-mine")
+    for removed in BackupRemoved.allCases {
+        let result = plan(sources(unreadable: [UnreadableRecord(type: .key, name: "key-unread")]), vault: [unread, gone, mine], removed: removed)
+        #expect(!result.delete.joined().contains("item-unread") && !result.delete.joined().contains("item-gone"))
+        #expect(!result.archive.contains("item-unread") && !result.archive.contains("item-gone"))
+        #expect(!result.keep.contains("item-unread") && !result.keep.contains("item-gone"))
+    }
+    // The items of this Mac's own keys are not shared, and still go.
+    let result = plan(sources(unreadable: [UnreadableRecord(type: .key, name: "key-unread")]), vault: [unread, gone, mine])
+    #expect(result.delete == [["item-mine"]])
 }
 
 // MARK: Duplicates
