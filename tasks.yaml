@@ -223,3 +223,10 @@ horizon:
       to model this later.
     notes:
       - 2026-11-18, operator asked that how configuration may be synced be modelled later.
+
+  - id: SGD-016
+    title: Revisit the README banner
+    scope: README and assets
+    outcome: The README banner is redesigned beyond the seal and lettering side by side.
+    reason: deferred
+    open: The operator names what the banner should show or say.
