@@ -2,8 +2,11 @@
 
 ## 1. Code
 
-- [ ] 1.1 Add batch create and delete, `put` and `archive` to `swift-onepassword`.
+- [x] 1.1 Add batch create and delete, `put` and `archive` to `swift-onepassword`.
   Verify its live tests create, update, archive and delete an item in its test vault.
+  - 2026-11-19 UTC: [swift-onepassword 0.0.4][so-004] ships the writes.
+    Its live test creates, reads, updates and deletes two items in its test vault, and leaves none behind.
+    It does not archive: the SDK cannot delete an archived item, so a Go stub test covers `archive`.
 - [ ] 1.2 Store the token by design decision 6, with `signd backup login` and `logout`.
   Verify unit tests that no file, argument or log contains it.
 - [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
@@ -23,8 +26,8 @@
 
 ## 2. Release
 
-- [ ] 2.1 Deploy the `Lease` record type to production.
-  Verify an export of production lists it.
+- [ ] 2.1 Add the `Lease` and `Backup` record types to `cloudkit/schema.ckdb` and deploy them to production.
+  Verify an export of production lists both.
 - [ ] 2.2 Create the `signd` vault and a service account that can write only to it.
   Verify the account lists that vault alone.
 
@@ -37,3 +40,5 @@
   Verify its item lands in Recently Deleted and a foreign item in the vault is unchanged.
 - [ ] 3.3 Restore the throwaway key from Recently Deleted and run `signd backup restore`.
   Verify the key signs on both Macs.
+
+[so-004]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.4
