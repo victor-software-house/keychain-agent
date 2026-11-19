@@ -1,5 +1,8 @@
 # signd
 
+![signd](assets/banner-light.svg#gh-light-mode-only)
+![signd](assets/banner-dark.svg#gh-dark-mode-only)
+
 An SSH agent for macOS backed by the [Secure Enclave][secure-enclave].
 Create new keys, or import the Ed25519, Elliptic Curve Digital Signature Algorithm (ECDSA) and Rivest-Shamir-Adleman (RSA) keys you already have.
 Signed in to your Apple account, every Mac shares them through iCloud.
