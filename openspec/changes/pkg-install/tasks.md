@@ -24,8 +24,11 @@
   - 2026-11-19 UTC: the Release workflow, run by dispatch on `main` with publishing off, built, signed and notarized the package in [run 44456387525][pkg-install-package].
     `pkgutil --check-signature` reported a Developer ID Installer signature that the Apple notary service trusts, and `spctl --assess --type install` accepted the package.
   - 2026-11-19 UTC: in the same run, `mise run package:check` read back the title signd, `arm64` as the host architecture and macOS 26.0 as the floor.
-- [ ] 1.5 Add `signd service status`, `restart` and `log` by design decision 6.
+- [x] 1.5 Add `signd service status`, `restart` and `log` by design decision 6.
   Verify a unit test of the `log` arguments and the `service restart` step of `mise run e2e:hardware`.
+  - 2026-11-19 UTC: `logShowsTheLastHourAndStreamsWithFollow` passes in CI on `main`.
+  - 2026-11-19 08:57 UTC, test Mac: `mise-tasks/e2e/hardware.sh` passed against the installed 0.0.10.
+    `service restart` replaced the agent, and a Secure Enclave key signed before and after it, with the screen locked.
 - [x] 1.6 Change the cask by design decision 7 in the tap.
   Verify `brew uninstall --cask signd` on a test Mac leaves no login item.
   - 2026-11-19 07:41 UTC, test Mac: `brew uninstall --cask signd` ran on the 0.0.10 cask in the public tap.
