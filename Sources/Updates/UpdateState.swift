@@ -17,6 +17,8 @@ public struct UpdateState: Codable, Sendable, Equatable {
     public var lastCheck: Date?
     /// The installed version after the check.
     public var installed: String?
+    /// The version this check replaced; nil when it installed nothing.
+    public var previous: String?
     /// The version of the latest release, when the check found it.
     public var latest: String?
     public var outcome: Outcome?

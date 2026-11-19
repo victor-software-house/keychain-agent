@@ -11,7 +11,7 @@ struct UpdateNow: ParsableCommand {
     func run() throws {
         let out = colorOption.standardOutput
         let asked = Date()
-        guard let state = Updater.requestCheck() else { throw Failure("cannot reach the updater; reinstall signd from signd.pkg") }
+        guard let state = Updater.requestCheck() else { throw Failure(UpdaterProblem.current()) }
         switch state.outcome {
         case .upToDate?:
             print(out.success("signd is up to date (\(state.installed ?? "unknown version"))"))
@@ -30,12 +30,53 @@ struct UpdateNow: ParsableCommand {
     /// The line for a check that installed a version.
     /// Within 5 minutes of a check, the updater answers each request with that check's result.
     /// A result from a check that began before the request is no new install, so the line gives the time of the install.
+    ///
+    /// An updater older than the field that records the replaced version sends none, and the line then gives only the new one.
     static func installedLine(_ state: UpdateState, asked: Date) -> String {
         let version = state.installed ?? "the new version"
+        let from = state.previous.map { " from \($0)" } ?? ""
         if let at = state.lastCheck, at < asked.addingTimeInterval(-1) {
-            return "signd is up to date (\(version), updated at \(at.formatted(.iso8601)))"
+            return "signd is up to date (\(version), updated\(from) at \(at.formatted(.iso8601)))"
         }
-        return "updated signd to \(version) and restarted the agent"
+        return "updated signd\(from) to \(version) and restarted the agent"
+    }
+}
+
+/// Why `signd update` cannot reach the updater, and the command that fixes it.
+enum UpdaterProblem {
+    static let label = "com.victor-software-house.signd.updater"
+    static let plist = "/Library/LaunchDaemons/com.victor-software-house.signd.updater.plist"
+    static let package = "https://github.com/victor-software-house/signd/releases/latest/download/signd.pkg"
+    static let caskrooms = ["/opt/homebrew/Caskroom/signd", "/usr/local/Caskroom/signd"]
+
+    /// The message for this Mac: whether the daemon's file is installed, whether launchd loaded it, and whether Homebrew installed signd.
+    static func message(hasPlist: Bool, isLoaded: Bool, isCask: Bool) -> String {
+        guard hasPlist else {
+            return isCask
+                ? "the updater is not installed; reinstall signd with: brew reinstall --cask signd"
+                : "the updater is not installed; reinstall signd from \(package)"
+        }
+        guard isLoaded else { return "the updater is installed but not loaded; load it with: sudo launchctl bootstrap system \(plist)" }
+        return "the updater did not reply; restart it with: sudo launchctl kickstart -k system/\(label)"
+    }
+
+    static func current() -> String {
+        let files = FileManager.default
+        return message(
+            hasPlist: files.fileExists(atPath: plist), isLoaded: isLoaded(), isCask: caskrooms.contains { files.fileExists(atPath: $0) }
+        )
+    }
+
+    /// Whether launchd lists the daemon; `launchctl print` needs no root for the system domain.
+    private static func isLoaded() -> Bool {
+        let process = Process()
+        process.executableURL = URL(filePath: "/bin/launchctl")
+        process.arguments = ["print", "system/\(label)"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        do { try process.run() } catch { return false }
+        process.waitUntilExit()
+        return process.terminationStatus == 0
     }
 }
 

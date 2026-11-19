@@ -105,6 +105,8 @@ private let noUpdates = UpdateStatus(settings: UpdateSettings(managed: noPlist, 
     state.installed = "1.2.3"
     state.outcome = .installed
     #expect(UpdateNow.installedLine(state, asked: asked) == "updated signd to 1.2.3 and restarted the agent")
+    state.previous = "1.2.2"
+    #expect(UpdateNow.installedLine(state, asked: asked) == "updated signd from 1.2.2 to 1.2.3 and restarted the agent")
 }
 
 @Test func aRepeatedInstallReadsAsUpToDateWithItsTime() {
@@ -115,4 +117,22 @@ private let noUpdates = UpdateStatus(settings: UpdateSettings(managed: noPlist, 
     state.outcome = .installed
     let at = asked.addingTimeInterval(-60).formatted(.iso8601)
     #expect(UpdateNow.installedLine(state, asked: asked) == "signd is up to date (1.2.3, updated at \(at))")
+    state.previous = "1.2.2"
+    #expect(UpdateNow.installedLine(state, asked: asked) == "signd is up to date (1.2.3, updated from 1.2.2 at \(at))")
+}
+
+@Test func anUnreachableUpdaterGetsTheCommandThatFixesIt() {
+    #expect(UpdaterProblem.message(hasPlist: false, isLoaded: false, isCask: true) == "the updater is not installed; reinstall signd with: brew reinstall --cask signd")
+    #expect(
+        UpdaterProblem.message(hasPlist: false, isLoaded: false, isCask: false)
+            == "the updater is not installed; reinstall signd from https://github.com/victor-software-house/signd/releases/latest/download/signd.pkg"
+    )
+    #expect(
+        UpdaterProblem.message(hasPlist: true, isLoaded: false, isCask: false)
+            == "the updater is installed but not loaded; load it with: sudo launchctl bootstrap system /Library/LaunchDaemons/com.victor-software-house.signd.updater.plist"
+    )
+    #expect(
+        UpdaterProblem.message(hasPlist: true, isLoaded: true, isCask: true)
+            == "the updater did not reply; restart it with: sudo launchctl kickstart -k system/com.victor-software-house.signd.updater"
+    )
 }

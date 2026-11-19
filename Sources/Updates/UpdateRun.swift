@@ -84,6 +84,7 @@ public struct UpdateRun: Sendable {
         try dependencies.staging.check(new.url)
         let users = dependencies.agents.users(running: installed.executable.path)
         try installed.swapContents(with: new)
+        state.previous = current
         state.installed = release.version
         state.outcome = .installed
         do {

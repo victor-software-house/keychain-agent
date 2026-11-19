@@ -495,7 +495,7 @@ struct Service: ParsableCommand {
                     guard now == signdVersion else {
                         throw Failure("the agent restarted on \(now ?? "an unknown version"), not on \(signdVersion)")
                     }
-                    print(out.success("enabled signd and restarted the agent, which was on \(running)"))
+                    print(out.success("enabled signd and moved the agent from \(running) to \(signdVersion)"))
                 } else {
                     print(out.success("enabled"))
                 }
