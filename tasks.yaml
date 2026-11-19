@@ -27,7 +27,8 @@ queue:
       - '2026-11-18, operator decided signd updates itself with its own updater, not Sparkle: Sparkle finds the running app through NSRunningApplication, which does not list a launchd agent, so it would install under the agent and never restart it; it prompts a standard user because /Applications is root:admin 775; and its framework links AppKit and WebKit into the agent. The cask sets auto_updates true, so brew upgrade leaves the app to the updater.'
       - 2026-11-18, operator decided the pkg is needed only for the first install and for MDM, and signd updates itself after that. The pkg postinstall hands Signd.app to the console user, as a drag install would, so the updater can swap it with no prompt. Under MDM the app stays root-owned, the updater stays off because it cannot swap a root-owned app, and MDM ships updates.
       - 2026-11-18, the own updater has its own row, SGD-014, and change, self-update.
-    plan: openspec/changes/pkg-install/tasks.md
+      - 2026-11-19, the pkg-install change is archived with every task done; the MDM profile is the acceptance item left.
+    plan: openspec/changes/archive/2026-11-19-pkg-install/tasks.md
 
   - id: SGD-004
     title: "Declarative configuration: file, MDM profile, watch"
@@ -69,6 +70,7 @@ queue:
       - The released pkg keeps its signature, entitlements, provisioning profile and notarization, and the agent upgrades in place.
     notes:
       - 'Starts when the templates tag with the Swift ci piece and xcode_settings defaults exists (templates #242).'
+    plan: openspec/changes/xcode-build/tasks.md
 
   - id: SGD-008
     title: Terminal output with Noora
