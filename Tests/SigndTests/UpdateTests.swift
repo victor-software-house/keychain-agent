@@ -43,21 +43,14 @@ private func launch(_ path: String, _ arguments: [String]) throws -> Int32 {
     return process.terminationStatus
 }
 
-private final class Counter: Sendable {
+/// Counts the checks and launches a test makes, and returns the new count.
+private final class RunCount: Sendable {
     private let value = Mutex(0)
 
     @discardableResult
     func increment() -> Int { value.withLock { $0 += 1; return $0 } }
 
     var count: Int { value.withLock { $0 } }
-}
-
-private final class TestClock: Sendable {
-    private let time = Mutex(at(0))
-
-    var now: Date { time.withLock { $0 } }
-
-    func advance(_ seconds: TimeInterval) { time.withLock { $0 = $0.addingTimeInterval(seconds) } }
 }
 
 /// Keeps a task waiting until a test opens it.
@@ -232,7 +225,7 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let gate = Gate()
-    let runs = Counter()
+    let runs = RunCount()
     let updater = Updater(
         run: {
             runs.increment()
@@ -257,7 +250,7 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let clock = TestClock()
-    let runs = Counter()
+    let runs = RunCount()
     let url = directory.appending(path: "update.json")
     let updater = Updater(run: { state(at: clock.now, outcome: runs.increment() == 1 ? .installed : .upToDate) }, now: { clock.now }, stateURL: url)
     #expect(await updater.check().outcome == .installed)
@@ -274,7 +267,7 @@ func aTagIsNewerNumberByNumber(tag: String, installed: String, isNewer: Bool) {
     let directory = try temporaryDirectory()
     defer { try? FileManager.default.removeItem(at: directory) }
     let clock = TestClock()
-    let runs = Counter()
+    let runs = RunCount()
     let updater = Updater(
         run: { state(at: clock.now, outcome: runs.increment() == 1 ? .off : .upToDate) }, now: { clock.now },
         stateURL: directory.appending(path: "update.json")
@@ -472,7 +465,7 @@ private let calculator = URL(filePath: "/System/Applications/Calculator.app", di
 }
 
 @Test func aFailedRestartDoesNotStopTheOthers() throws {
-    let launched = Counter()
+    let launched = RunCount()
     let agents = AgentRestart(
         processes: { [] },
         kickstart: { uid in
