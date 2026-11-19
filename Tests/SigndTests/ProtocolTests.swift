@@ -96,10 +96,10 @@ private func addBody(constrained: Bool, comment: String = "work", constraints: D
 
     @Test func queryListsTheSupportedExtensions() {
         var reader = Reader(Response.query.body)
-        #expect(reader.byte() == 29)
-        #expect(reader.text() == "query")
-        #expect(reader.text() == "query")
-        #expect(reader.text() == "session-bind@openssh.com")
+        #expect(reader.readByte() == 29)
+        #expect(reader.readText() == "query")
+        #expect(reader.readText() == "query")
+        #expect(reader.readText() == "session-bind@openssh.com")
         #expect(reader.isAtEnd)
     }
 

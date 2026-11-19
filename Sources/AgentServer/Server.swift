@@ -281,7 +281,7 @@ public struct Server: Sendable {
     /// The one string argument of a private extension.
     private static func argument(_ contents: Data) -> String? {
         var reader = Reader(contents)
-        guard let text = reader.text(), reader.isAtEnd else { return nil }
+        guard let text = reader.readText(), reader.isAtEnd else { return nil }
         return text
     }
 
@@ -298,7 +298,7 @@ public struct Server: Sendable {
     /// the session identifier and the signature.
     static func isForwarding(_ contents: Data) -> Bool {
         var reader = Reader(contents)
-        guard reader.string() != nil, reader.string() != nil, reader.string() != nil, let flag = reader.byte() else { return false }
+        guard reader.readString() != nil, reader.readString() != nil, reader.readString() != nil, let flag = reader.readByte() else { return false }
         return flag != 0
     }
 

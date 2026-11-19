@@ -68,7 +68,7 @@ public enum Wrapping {
         var plaintext = try recipient.open(wrapped.ciphertext, authenticating: authenticatedData(type: publicKey.keyType, publicBlob: publicBlob))
         defer { plaintext.resetBytes(in: 0..<plaintext.count) }
         var reader = Reader(plaintext)
-        guard let key = PrivateKey.read(from: &reader), let comment = reader.text(), reader.isAtEnd else {
+        guard let key = PrivateKey.read(from: &reader), let comment = reader.readText(), reader.isAtEnd else {
             throw WrappingError.malformed("the private key is unreadable")
         }
         guard key.publicKey.blob == publicBlob else { throw WrappingError.malformed("the private key belongs to another public key") }

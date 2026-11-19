@@ -44,39 +44,39 @@ public struct Reader: Sendable {
     /// Whether every byte has been read.
     public var isAtEnd: Bool { offset == data.endIndex }
 
-    public mutating func byte() -> UInt8? {
+    public mutating func readByte() -> UInt8? {
         guard offset < data.endIndex else { return nil }
         defer { offset += 1 }
         return data[offset]
     }
 
-    public mutating func uint32() -> UInt32? {
+    public mutating func readUInt32() -> UInt32? {
         guard data.endIndex - offset >= 4 else { return nil }
         let value = data[offset..<offset + 4].reduce(UInt32(0)) { $0 << 8 | UInt32($1) }
         offset += 4
         return value
     }
 
-    public mutating func string() -> Data? {
-        guard let length = uint32().map(Int.init), data.endIndex - offset >= length else { return nil }
+    public mutating func readString() -> Data? {
+        guard let length = readUInt32().map(Int.init), data.endIndex - offset >= length else { return nil }
         defer { offset += length }
         return Data(data[offset..<offset + length])
     }
 
     /// An SSH string that contains UTF-8 text.
-    public mutating func text() -> String? {
-        string().flatMap { String(data: $0, encoding: .utf8) }
+    public mutating func readText() -> String? {
+        readString().flatMap { String(data: $0, encoding: .utf8) }
     }
 
     /// An SSH mpint that must not be negative, as its unsigned big-endian magnitude.
-    public mutating func unsignedMPInt() -> Data? {
-        guard let bytes = string() else { return nil }
+    public mutating func readUnsignedMPInt() -> Data? {
+        guard let bytes = readString() else { return nil }
         if let first = bytes.first, first & 0x80 != 0 { return nil }
         return Data(bytes.drop { $0 == 0 })
     }
 
     /// The bytes not read yet.
-    public mutating func rest() -> Data {
+    public mutating func readRest() -> Data {
         defer { offset = data.endIndex }
         return Data(data[offset...])
     }

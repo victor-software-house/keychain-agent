@@ -94,33 +94,33 @@ public enum Request: Sendable, Equatable {
         case .signRequest: Self.sign(&reader)
         case .addIdentity: Self.add(&reader, constrained: false)
         case .addIdentityConstrained: Self.add(&reader, constrained: true)
-        case .removeIdentity: reader.string().map { .remove(keyBlob: $0) } ?? .malformed
+        case .removeIdentity: reader.readString().map { .remove(keyBlob: $0) } ?? .malformed
         case .removeAllIdentities: .removeAll
-        case .extension: reader.text().map { .extension(name: $0, contents: reader.rest()) } ?? .malformed
+        case .extension: reader.readText().map { .extension(name: $0, contents: reader.readRest()) } ?? .malformed
         default: .unsupported(type)
         }
     }
 
     private static func sign(_ reader: inout Reader) -> Request {
-        guard let keyBlob = reader.string(), let data = reader.string(), let flags = reader.uint32() else { return .malformed }
+        guard let keyBlob = reader.readString(), let data = reader.readString(), let flags = reader.readUInt32() else { return .malformed }
         return .sign(keyBlob: keyBlob, data: data, flags: SignFlags(rawValue: flags))
     }
 
     private static func add(_ reader: inout Reader, constrained: Bool) -> Request {
-        guard let key = PrivateKey.read(from: &reader), let comment = reader.text() else { return .malformed }
+        guard let key = PrivateKey.read(from: &reader), let comment = reader.readText() else { return .malformed }
         var constraints = Constraints()
         while constrained, !reader.isAtEnd {
-            switch reader.byte() {
+            switch reader.readByte() {
             case 1:
-                guard let seconds = reader.uint32() else { return .malformed }
+                guard let seconds = reader.readUInt32() else { return .malformed }
                 constraints.lifetime = seconds
             case 2:
                 constraints.confirm = true
             case 255:
                 // An extension constraint's details have no common framing, so parsing stops here.
-                guard let name = reader.text() else { return .malformed }
+                guard let name = reader.readText() else { return .malformed }
                 constraints.extensions.append(name)
-                _ = reader.rest()
+                _ = reader.readRest()
             default:
                 return .malformed
             }

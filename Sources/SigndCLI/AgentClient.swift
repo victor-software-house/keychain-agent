@@ -58,7 +58,7 @@ struct AgentClient {
     func status() -> AgentStatus? {
         guard let reply = callExtension(PrivateExtension.status), reply.first == MessageType.extensionResponse.rawValue else { return nil }
         var reader = Reader(reply.dropFirst())
-        guard reader.text() == PrivateExtension.status, let json = reader.string() else { return nil }
+        guard reader.readText() == PrivateExtension.status, let json = reader.readString() else { return nil }
         return try? JSONDecoder().decode(AgentStatus.self, from: json)
     }
 
@@ -107,7 +107,7 @@ struct AgentClient {
     private func decoded<Value: Decodable>(_ name: String, argument: String? = nil, timeout: Int) -> Value? {
         guard let reply = callExtension(name, argument: argument, timeout: timeout), reply.first == MessageType.extensionResponse.rawValue else { return nil }
         var reader = Reader(reply.dropFirst())
-        guard reader.text() == name, let json = reader.string() else { return nil }
+        guard reader.readText() == name, let json = reader.readString() else { return nil }
         return try? JSONDecoder().decode(Value.self, from: json)
     }
 
