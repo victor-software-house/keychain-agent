@@ -158,7 +158,7 @@ private func backupPayload(_ cloud: FakeCloud) throws -> BackupPayload {
     #expect(await a.service.snapshot().backup?.sealedFor == [a.device.recordName])
 }
 
-private let unreadableMessage = "1 records could not be read; the next check tries them again"
+private let unreadableMessage = "1 record could not be read; the next check tries it again"
 
 /// Shares a key named `deploy` from a device that knows every other device of the account.
 private func shareDeploy(from rig: DeviceRig) async throws {
@@ -267,6 +267,17 @@ private func shareDeploy(from rig: DeviceRig) async throws {
     cloud.failReads(of: [])
     #expect(await b.service.checkNow().removed.isEmpty)
     #expect(try b.shared().map(\.name) == ["deploy"])
+}
+
+@Test(.timeLimit(.minutes(1))) func theMessageCountsSeveralUnreadableRecordsInThePlural() async throws {
+    let (cloud, a, b) = try await loggedInAndWaiting()
+    _ = await b.service.checkNow()
+    try await shareDeploy(from: a)
+
+    cloud.failReads(of: ["key-deploy", BackupPayload.recordName])
+    let summary = await b.service.checkNow()
+    #expect(summary.outcome == .ok)
+    #expect(summary.message == "2 records could not be read; the next check tries them again")
 }
 
 @Test(.timeLimit(.minutes(1))) func theCheckAfterAFullReadWithAnUnreadableRecordIsIncremental() async throws {
