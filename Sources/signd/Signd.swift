@@ -497,7 +497,7 @@ struct Service: ParsableCommand {
 
         /// The arguments of `/usr/bin/log` for the agent's subsystem.
         static func arguments(follow: Bool) -> [String] {
-            (follow ? ["stream"] : ["show", "--last", "1h"]) + ["--predicate", "subsystem == \"com.victor-software-house.signd\""]
+            (follow ? ["stream", "--level", "debug"] : ["show", "--last", "1h", "--info", "--debug"]) + ["--predicate", "subsystem == \"com.victor-software-house.signd\""]
         }
 
         func run() throws {

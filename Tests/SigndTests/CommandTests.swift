@@ -14,6 +14,6 @@ import Testing
 
 @Test func logShowsTheLastHourAndStreamsWithFollow() {
     let predicate = ["--predicate", "subsystem == \"com.victor-software-house.signd\""]
-    #expect(Service.Log.arguments(follow: false) == ["show", "--last", "1h"] + predicate)
-    #expect(Service.Log.arguments(follow: true) == ["stream"] + predicate)
+    #expect(Service.Log.arguments(follow: false) == ["show", "--last", "1h", "--info", "--debug"] + predicate)
+    #expect(Service.Log.arguments(follow: true) == ["stream", "--level", "debug"] + predicate)
 }
