@@ -440,6 +440,13 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     )
     #expect(result.fetch == [["item-added"]])
     #expect(result.cache == ["item-current": entry])
+    // A target the cache recorded is kept.
+    let recorded = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: "tag-1", target: "item-other")
+    let again = BackupPlanner.plan(
+        sources: sources(shared: [key("current"), key("added")]), overviews: [overview(current), overview(added)], items: [],
+        cache: ["item-current": recorded], removed: .delete
+    )
+    #expect(again.cache == ["item-current": recorded])
     #expect(result.create.isEmpty && result.put.isEmpty && result.delete.isEmpty)
 }
 

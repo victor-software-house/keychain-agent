@@ -136,7 +136,9 @@ public enum BackupPlanner {
         // The groups and the targets below need the whole vault, so this plan can only keep what it knows.
         guard missing.isEmpty else {
             plan.fetch = chunks(missing, fetchBatch)
-            for entry in known { plan.cache[entry.id] = cacheEntry(entry, sourceTag: entry.cachedTag, targets: [:]) }
+            for entry in known {
+                plan.cache[entry.id] = BackupCacheEntry(id: entry.id, updatedAt: entry.updatedAt, owner: entry.owner, sourceTag: entry.cachedTag, target: entry.target)
+            }
             return plan
         }
 
