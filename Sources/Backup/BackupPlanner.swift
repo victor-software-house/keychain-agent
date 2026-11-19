@@ -20,6 +20,7 @@ public enum BackupRead: Sendable, Equatable {
 /// What a run plans from.
 public struct BackupSources: Sendable {
     /// The shared keys of the `Key` records the read returned.
+    /// A shared key this Mac has no private key for must still be in it, with no `privateKey`: a key left out is taken for a removed one, and its item goes.
     public var shared: [BackupKey]
     public var read: BackupRead
     /// This Mac's keys that are not shared.

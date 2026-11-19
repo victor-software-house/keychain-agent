@@ -1,5 +1,6 @@
 import Foundation
 import OnePassword
+import SSHWire
 import Sync
 
 /// How the backup writes an item and how it reads one back.
@@ -11,6 +12,14 @@ public enum BackupFormat {
     static let sectionID = "signd"
     static let sectionTitle = "signd"
     static let fingerprintPrefix = "SHA256:"
+    /// The version of the item shape: the title, notes, tags and fields a run writes.
+    /// Raise it when any of them changes, and every Mac then writes each item once.
+    static let itemVersion = 1
+
+    /// The change tag a run compares for an item: the source's tag with the item version, and the device name where the item shows it.
+    static func changeTag(source: String, deviceName: String? = nil) -> String {
+        [String(itemVersion), deviceName ?? "", source].joined(separator: "\u{1F}")
+    }
 
     /// Whether `scope` names a device: the record name of a `Device` record.
     static func isDevice(_ scope: String) -> Bool {
@@ -138,7 +147,7 @@ public struct BackupDesiredItem: Sendable, Equatable {
     init?(key: BackupKey, scope: String) {
         guard let privateKey = key.privateKey else { return nil }
         slot = .key(fingerprint: key.fingerprint, scope: scope)
-        changeTag = key.changeTag
+        changeTag = BackupFormat.changeTag(source: key.changeTag)
         content = ItemContent(
             category: .sshKey, title: key.name,
             fields: [
@@ -154,7 +163,7 @@ public struct BackupDesiredItem: Sendable, Equatable {
     /// The Secure Note that lists the Secure Enclave keys of one Mac.
     init(secureEnclave keys: [BackupSecureEnclaveKey], device: String, deviceName: String, changeTag: String) {
         slot = .list(device: device)
-        self.changeTag = changeTag
+        self.changeTag = BackupFormat.changeTag(source: changeTag, deviceName: deviceName)
         let notes = keys.sorted { $0.name < $1.name }
             .map { [$0.name, $0.publicKey, "hosts: " + $0.hosts.joined(separator: " ")].joined(separator: "\n") }
             .joined(separator: "\n\n")
@@ -182,13 +191,27 @@ public struct BackupDesiredItem: Sendable, Equatable {
 
     /// Whether `item` already has this item's title, notes, tags and fields.
     /// Fields the item has beyond the wanted ones, such as those 1Password adds to an SSH Key item, do not count.
+    /// An SSH key field matches by its public key, which 1Password derives from the private key and may write in another text form.
     func matches(_ item: Item) -> Bool {
         guard item.title == content.title, Self.trimmed(item.notes) == Self.trimmed(content.notes), Set(item.tags) == Set(content.tags) else { return false }
         let existing = Self.index(item.fields, item.sections)
         return Self.index(content.fields, content.sections).allSatisfy { key, wanted in
             guard let found = existing[key] else { return wanted.value.isEmpty }
-            return found.type == wanted.type && Self.trimmed(found.value) == Self.trimmed(wanted.value)
+            guard found.type == wanted.type else { return false }
+            if wanted.type == .sshKey {
+                guard let expected = slot.fingerprint, let actual = Self.fingerprint(ofPublicKey: found.publicKey) else { return false }
+                return actual == expected
+            }
+            return Self.trimmed(found.value) == Self.trimmed(wanted.value)
         }
+    }
+
+    /// The fingerprint of an `authorized_keys` line, or of a bare key blob in base64; nil when neither parses.
+    private static func fingerprint(ofPublicKey line: String?) -> String? {
+        guard let line else { return nil }
+        return line.split(whereSeparator: \.isWhitespace)
+            .compactMap { token in Data(base64Encoded: String(token)).flatMap { blob in PublicKey(blob: blob) } }
+            .first?.fingerprint
     }
 
     private struct FieldKey: Hashable {

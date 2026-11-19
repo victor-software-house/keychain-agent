@@ -43,7 +43,7 @@ let package = Package(
         .target(
             name: "Backup",
             dependencies: [
-                "KeyStore", "Sync",
+                "KeyStore", "SSHWire", "Sync",
                 .product(name: "OnePassword", package: "swift-onepassword"),
             ],
             swiftSettings: strict

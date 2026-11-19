@@ -2,6 +2,7 @@ import Foundation
 @testable import Backup
 @testable import KeyStore
 import OnePassword
+import SSHWire
 import Testing
 @testable import Sync
 
@@ -10,7 +11,19 @@ private let peer = "device-0002"
 private let epoch = Date(timeIntervalSince1970: 1_800_000_000)
 private let later = Date(timeIntervalSince1970: 1_800_000_600)
 
-private func fingerprint(_ name: String) -> String { "SHA256:" + name }
+/// A public key of 32 bytes made from the name, so each name has its own fingerprint.
+private func publicKey(_ name: String) -> PublicKey {
+    let bytes = Array(name.utf8.prefix(32))
+    return .ed25519(Data(bytes + Array(repeating: 0, count: 32 - bytes.count)))
+}
+
+private func fingerprint(_ name: String) -> String { publicKey(name).fingerprint }
+
+/// The public key of an SSH Key field as the vault shows it.
+private func publicKeyLine(_ name: String) -> String { publicKey(name).openSSHLine(comment: name + "@example") }
+
+/// The tag a plan records for a source tag.
+private func tagged(_ source: String) -> String { BackupFormat.changeTag(source: source) }
 
 private func key(_ name: String, hosts: [String] = [], tag: String = "tag-1") -> BackupKey {
     BackupKey(name: name, fingerprint: fingerprint(name), comment: name + "@example", hosts: hosts, privateKey: "private-" + name, changeTag: tag)
@@ -26,24 +39,30 @@ private func enclaveKey(_ name: String, hosts: [String] = []) -> BackupSecureEnc
 
 private func sources(
     shared: [BackupKey] = [], read: BackupRead = .completeFull, local: [BackupKey] = [], secureEnclave: [BackupSecureEnclaveKey] = [],
-    store: [String] = [], devices: Set<String> = [me, peer], unreadable: [UnreadableRecord] = []
+    store: [String] = [], devices: Set<String> = [me, peer], unreadable: [UnreadableRecord] = [], deviceName: String = "mac-a"
 ) -> BackupSources {
     BackupSources(
-        shared: shared, read: read, local: local, secureEnclave: secureEnclave, secureEnclaveTag: "enclave-1", deviceID: me, deviceName: "mac-a",
+        shared: shared, read: read, local: local, secureEnclave: secureEnclave, secureEnclaveTag: "enclave-1", deviceID: me, deviceName: deviceName,
         devices: devices, unreadable: unreadable, storeFingerprints: Set(local.map(\.fingerprint)).union(store.map(fingerprint))
     )
 }
 
-private func vaultItem(_ content: ItemContent, id: String, updatedAt: Date = epoch) -> Item {
-    Item(
-        id: id, title: content.title, category: content.category, vaultID: "vault", fields: content.fields, sections: content.sections,
+/// `publicKey` is what the vault shows in an SSH key field, which holds the private key in `content`.
+private func vaultItem(_ content: ItemContent, id: String, updatedAt: Date = epoch, publicKey: String? = nil) -> Item {
+    let fields = content.fields.map { field in
+        field.type == .sshKey
+            ? Item.Field(id: field.id, title: field.title, type: field.type, value: field.value, sectionID: field.sectionID, publicKey: publicKey)
+            : field
+    }
+    return Item(
+        id: id, title: content.title, category: content.category, vaultID: "vault", fields: fields, sections: content.sections,
         notes: content.notes, tags: content.tags, version: 1, updatedAt: updatedAt
     )
 }
 
 /// The item the backup writes for `key`, as the vault stores it.
 private func keyItem(_ key: BackupKey, scope: String = BackupFormat.shared, id: String, updatedAt: Date = epoch) throws -> Item {
-    vaultItem(try #require(BackupDesiredItem(key: key, scope: scope)).content, id: id, updatedAt: updatedAt)
+    vaultItem(try #require(BackupDesiredItem(key: key, scope: scope)).content, id: id, updatedAt: updatedAt, publicKey: publicKeyLine(key.name))
 }
 
 private func listItem(_ keys: [BackupSecureEnclaveKey], device: String, name: String, id: String) -> Item {
@@ -130,6 +149,39 @@ private func ownerOfKey(_ name: String, scope: String = BackupFormat.shared) -> 
     )
     let result = plan(sources(shared: [key("work")]), vault: [item])
     #expect(result.isIdle)
+}
+
+/// `item` with another text in its private key field.
+private func rewritten(_ item: Item, privateKey: String) -> Item {
+    let fields = item.fields.map { field in
+        field.type == .sshKey
+            ? Item.Field(id: field.id, title: field.title, type: field.type, value: privateKey, sectionID: field.sectionID, publicKey: field.publicKey)
+            : field
+    }
+    return Item(
+        id: item.id, title: item.title, category: item.category, vaultID: item.vaultID, fields: fields, sections: item.sections,
+        notes: item.notes, tags: item.tags, version: item.version, updatedAt: item.updatedAt
+    )
+}
+
+@Test func anSSHKeyFieldIsComparedByItsPublicKeyNotByItsPrivateText() throws {
+    let item = try keyItem(key("work"), id: "item-work")
+    // 1Password may write the same private key in another form.
+    let reformatted = rewritten(item, privateKey: "same key, other text")
+    #expect(plan(sources(shared: [key("work")]), vault: [reformatted]).isIdle)
+
+    // Another public key is another key, whatever the text says.
+    let swapped = vaultItem(try #require(BackupDesiredItem(key: key("work"), scope: BackupFormat.shared)).content, id: "item-work", publicKey: publicKeyLine("other"))
+    #expect(plan(sources(shared: [key("work")]), vault: [swapped]).put.map(\.itemID) == ["item-work"])
+
+    // An item that shows no public key cannot be shown current.
+    let bare = vaultItem(try #require(BackupDesiredItem(key: key("work"), scope: BackupFormat.shared)).content, id: "item-work")
+    #expect(plan(sources(shared: [key("work")]), vault: [bare]).put.map(\.itemID) == ["item-work"])
+
+    // The public key may come as a bare blob.
+    let blob = try #require(publicKeyLine("work").split(separator: " ").dropFirst().first.map(String.init))
+    let plain = vaultItem(try #require(BackupDesiredItem(key: key("work"), scope: BackupFormat.shared)).content, id: "item-work", publicKey: blob)
+    #expect(plan(sources(shared: [key("work")]), vault: [plain]).isIdle)
 }
 
 @Test(arguments: BackupRemoved.allCases)
@@ -377,7 +429,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     let moved = Date(timeIntervalSince1970: 1_800_001_200)
     let written = try keyItem(key("work", hosts: ["new"]), id: "copy-oldest", updatedAt: moved)
     var recorded = result.cache
-    recorded["copy-oldest"] = BackupCacheEntry(id: "copy-oldest", updatedAt: moved, owner: ownerOfKey("work"), sourceTag: "tag-1", target: "copy-oldest")
+    recorded["copy-oldest"] = BackupCacheEntry(id: "copy-oldest", updatedAt: moved, owner: ownerOfKey("work"), sourceTag: tagged("tag-1"), target: "copy-oldest")
     let second = plan(sources(shared: [key("work", hosts: ["new"])]), vault: [newest, written], cache: recorded)
     #expect(second.isIdle)
     #expect(second.cache["copy-oldest"]?.target == "copy-oldest" && second.cache["copy-newest"]?.target == "copy-oldest")
@@ -405,7 +457,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(plan(wanted, vault: [stale, current]).isIdle)
 
     // A copy the cache shows current counts too, and is not read.
-    let cache = ["copy-current": BackupCacheEntry(id: "copy-current", updatedAt: later, owner: ownerOfKey("work"), sourceTag: "tag-1")]
+    let cache = ["copy-current": BackupCacheEntry(id: "copy-current", updatedAt: later, owner: ownerOfKey("work"), sourceTag: tagged("tag-1"))]
     let overviews = [overview(stale), overview(current)]
     let result = BackupPlanner.plan(sources: wanted, overviews: overviews, items: [stale], cache: cache, removed: .delete)
     #expect(result.fetch.isEmpty && result.isIdle)
@@ -442,7 +494,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
 @Test func aPlanThatAsksForReadsKeepsTheCacheItKnows() throws {
     let current = try keyItem(key("current"), id: "item-current")
     let added = try keyItem(key("added"), id: "item-added")
-    let entry = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: "tag-1")
+    let entry = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: tagged("tag-1"))
     let result = BackupPlanner.plan(
         sources: sources(shared: [key("current"), key("added")]), overviews: [overview(current), overview(added)], items: [],
         cache: ["item-current": entry], removed: .delete
@@ -450,13 +502,36 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     #expect(result.fetch == [["item-added"]])
     #expect(result.cache == ["item-current": entry])
     // A target the cache recorded is kept.
-    let recorded = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: "tag-1", target: "item-other")
+    let recorded = BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: tagged("tag-1"), target: "item-other")
     let again = BackupPlanner.plan(
         sources: sources(shared: [key("current"), key("added")]), overviews: [overview(current), overview(added)], items: [],
         cache: ["item-current": recorded], removed: .delete
     )
     #expect(again.cache == ["item-current": recorded])
     #expect(result.create.isEmpty && result.put.isEmpty && result.delete.isEmpty)
+}
+
+@Test func aRenamedMacOrANewItemFormatWritesEachItemOnce() throws {
+    let list = listItem([enclaveKey("a")], device: me, name: "mac-a", id: "list-mine")
+    let tag = BackupFormat.changeTag(source: "enclave-1", deviceName: "mac-a")
+    let cache = ["list-mine": BackupCacheEntry(id: "list-mine", updatedAt: epoch, owner: BackupOwner(slot: .list(device: me), name: nil), sourceTag: tag)]
+    func run(_ sources: BackupSources, cache: [String: BackupCacheEntry]) -> BackupPlan {
+        BackupPlanner.plan(sources: sources, overviews: [overview(list)], items: [], cache: cache, removed: .delete)
+    }
+
+    #expect(run(sources(secureEnclave: [enclaveKey("a")]), cache: cache).isIdle)
+    // The device name is in the list's title.
+    let renamed = run(sources(secureEnclave: [enclaveKey("a")], deviceName: "mac-b"), cache: cache)
+    #expect(renamed.fetch.isEmpty)
+    #expect(renamed.put.map(\.itemID) == ["list-mine"])
+
+    // A tag written before the format had a version is not current.
+    let before = ["list-mine": BackupCacheEntry(id: "list-mine", updatedAt: epoch, owner: BackupOwner(slot: .list(device: me), name: nil), sourceTag: "enclave-1")]
+    #expect(run(sources(secureEnclave: [enclaveKey("a")]), cache: before).put.map(\.itemID) == ["list-mine"])
+
+    let desired = try #require(BackupDesiredItem(key: key("work"), scope: BackupFormat.shared))
+    #expect(desired.changeTag == BackupFormat.changeTag(source: "tag-1"))
+    #expect(desired.changeTag != "tag-1")
 }
 
 @Test func aPlanWithNoUnreadItemsListsNone() throws {
@@ -477,7 +552,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
 
     let second = BackupPlanner.plan(sources: wanted, overviews: listed, items: [item], cache: [:], removed: .delete)
     #expect(second.isIdle)
-    let entry = BackupCacheEntry(id: "item-work", updatedAt: epoch, owner: ownerOfKey("work"), sourceTag: "tag-1")
+    let entry = BackupCacheEntry(id: "item-work", updatedAt: epoch, owner: ownerOfKey("work"), sourceTag: tagged("tag-1"))
     #expect(second.cache == ["item-work": entry])
 
     let third = BackupPlanner.plan(sources: wanted, overviews: listed, items: [], cache: second.cache, removed: .delete)
@@ -497,8 +572,8 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
     let current = try keyItem(key("current"), id: "item-current")
     let added = try keyItem(key("added"), id: "item-added")
     let cache = [
-        "item-current": BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: "tag-1"),
-        "item-moved": BackupCacheEntry(id: "item-moved", updatedAt: epoch, owner: ownerOfKey("moved"), sourceTag: "tag-1"),
+        "item-current": BackupCacheEntry(id: "item-current", updatedAt: epoch, owner: ownerOfKey("current"), sourceTag: tagged("tag-1")),
+        "item-moved": BackupCacheEntry(id: "item-moved", updatedAt: epoch, owner: ownerOfKey("moved"), sourceTag: tagged("tag-1")),
     ]
     let movedLater = try keyItem(key("moved"), id: "item-moved", updatedAt: later)
     let listed = [overview(current), overview(movedLater), overview(added)]
@@ -514,7 +589,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
 
 @Test func aChangedSourceWithACurrentCacheIsPutWithoutReadingTheItem() throws {
     let item = try keyItem(key("work"), id: "item-work")
-    let cache = ["item-work": BackupCacheEntry(id: "item-work", updatedAt: epoch, owner: ownerOfKey("work"), sourceTag: "tag-1")]
+    let cache = ["item-work": BackupCacheEntry(id: "item-work", updatedAt: epoch, owner: ownerOfKey("work"), sourceTag: tagged("tag-1"))]
     let result = BackupPlanner.plan(sources: sources(shared: [key("work", hosts: ["new"], tag: "tag-2")]), overviews: [overview(item)], items: [], cache: cache, removed: .delete)
     #expect(result.fetch.isEmpty)
     #expect(result.put.map(\.itemID) == ["item-work"])
@@ -523,7 +598,7 @@ func aTaggedItemThatIsNotWellFormedIsNeverChangedOrRemoved(malformed: MalformedI
 
 @Test func aCurrentCacheStillRemovesAKeyThatIsGone() throws {
     let item = try keyItem(key("gone"), id: "item-gone")
-    let cache = ["item-gone": BackupCacheEntry(id: "item-gone", updatedAt: epoch, owner: ownerOfKey("gone"), sourceTag: "tag-1")]
+    let cache = ["item-gone": BackupCacheEntry(id: "item-gone", updatedAt: epoch, owner: ownerOfKey("gone"), sourceTag: tagged("tag-1"))]
     let result = BackupPlanner.plan(sources: sources(), overviews: [overview(item)], items: [], cache: cache, removed: .delete)
     #expect(result.fetch.isEmpty)
     #expect(result.delete == [["item-gone"]])
