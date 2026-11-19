@@ -85,6 +85,7 @@ queue:
       - The PR records the binary size before and after Noora.
     notes:
       - 2026-11-18, operator picked Noora 0.57.7 to match qctl and verctl.
+    plan: openspec/changes/terminal-output/proposal.md
 
   - id: SGD-014
     title: Update signd itself from each release
