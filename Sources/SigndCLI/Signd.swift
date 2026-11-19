@@ -687,21 +687,30 @@ struct Postinstall: ParsableCommand {
         }
         if linkOnly { return }
         if root == "/" {
-            // The daemon is system-wide, so it loads with nobody logged in. A first install has nothing to boot out.
-            let daemon = "/Library/LaunchDaemons/com.victor-software-house.signd.updater.plist"
-            for arguments in [["bootout", "system/com.victor-software-house.signd.updater"], ["bootstrap", "system", daemon]] {
+            // The daemon is system-wide, so it loads with nobody logged in.
+            // A first install has nothing to boot out, and a bootout can return before launchd has removed the job, so the bootstrap retries.
+            func launchctl(_ arguments: [String]) -> Int32? {
                 let process = Process()
                 process.executableURL = URL(fileURLWithPath: "/bin/launchctl")
                 process.arguments = arguments
                 do {
                     try process.run()
                     process.waitUntilExit()
-                    if arguments[0] == "bootstrap", process.terminationStatus != 0 {
-                        log.error("launchctl bootstrap of the updater failed with status \(process.terminationStatus)")
-                    }
+                    return process.terminationStatus
                 } catch {
                     log.error("cannot run launchctl \(arguments[0], privacy: .public): \(String(describing: error), privacy: .public)")
+                    return nil
                 }
+            }
+            _ = launchctl(["bootout", "system/com.victor-software-house.signd.updater"])
+            var status: Int32?
+            for attempt in 1...10 {
+                status = launchctl(["bootstrap", "system", "/Library/LaunchDaemons/com.victor-software-house.signd.updater.plist"])
+                if status == 0 || status == nil { break }
+                if attempt < 10 { Thread.sleep(forTimeInterval: 0.5) }
+            }
+            if let status, status != 0 {
+                log.error("launchctl bootstrap of the updater failed with status \(status)")
             }
         }
         var uid: uid_t = 0
