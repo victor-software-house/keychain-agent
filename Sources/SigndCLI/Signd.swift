@@ -10,6 +10,7 @@ import ServiceManagement
 import SSHEncoding
 import Sync
 import SystemConfiguration
+import Updates
 
 public struct Signd: ParsableCommand {
     public init() {}
@@ -17,7 +18,7 @@ public struct Signd: ParsableCommand {
     public static let configuration = CommandConfiguration(
         abstract: "An SSH agent for keys only its signed app can use, shared through iCloud.",
         version: signdVersion,
-        subcommands: [KeyCommand.self, DeviceCommand.self, BackupCommand.self, SyncNow.self, Status.self, Config.self, Service.self, Serve.self, Postinstall.self]
+        subcommands: [KeyCommand.self, DeviceCommand.self, BackupCommand.self, SyncNow.self, UpdateNow.self, Status.self, Config.self, Service.self, Serve.self, UpdaterDaemon.self, Postinstall.self]
     )
 }
 
@@ -270,11 +271,12 @@ struct Status: ParsableCommand {
         let agent: AgentStatus?
         let sync: SyncStatus
         let backup: BackupStatus?
+        let update: UpdateStatus
         let loginItem: LoginItemState
         let isSSHIncludeEnabled: Bool
 
         enum CodingKeys: String, CodingKey {
-            case version, socket, agentAnswers, agent, sync, backup, loginItem
+            case version, socket, agentAnswers, agent, sync, backup, update, loginItem
             case isSSHIncludeEnabled = "sshInclude"
         }
     }
@@ -284,9 +286,10 @@ struct Status: ParsableCommand {
         let agent = client.status()
         let sync = SyncStatus(state: client.syncState() ?? SyncState.load())
         let backup = BackupCommand.status(client: client, settings: Settings())
+        let update = UpdateStatus()
         let loginItem = Service.loginItem
         let isSSHIncludeEnabled = SSHInclude.isEnabled(home: FileManager.default.homeDirectoryForCurrentUser)
-        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, backup: backup, loginItem: loginItem, isSSHIncludeEnabled: isSSHIncludeEnabled)
+        let report = Report(version: signdVersion, socket: socket, agentAnswers: agent != nil, agent: agent, sync: sync, backup: backup, update: update, loginItem: loginItem, isSSHIncludeEnabled: isSSHIncludeEnabled)
         if output.json {
             try output.print(report)
         } else {
@@ -313,6 +316,7 @@ struct Status: ParsableCommand {
             for setting in sync.ignoredSettings { print("ignored  \(setting.key) \(setting.value) (local): \(setting.reason)") }
             for key in sync.skipped { print("\(key.kind == .waiting ? "waiting" : "skipped")  \(key.name): \(key.reason)") }
             for line in backup.lines { print(line) }
+            for line in update.lines { print(line) }
         }
         if agent == nil { throw ExitCode.failure }
     }
