@@ -1,5 +1,10 @@
 # Changelog
 
+## signd 0.0.16
+
+- A changed backup setting now applies at once: `signd config set` and `unset` notify the running agent, which computes the wait for the next backup again.
+  `signd backup status` shows the time the agent waits for ([`9d211e0`](https://github.com/victor-software-house/signd/commit/9d211e0b16f107418f43653e32cdc0f88775ee45)).
+
 ## signd 0.0.15
 
 - `signd update` checks for a newer release now, installs it, restarts the agents on it, and prints the result ([`c6423c3`](https://github.com/victor-software-house/signd/commit/c6423c321b146f4a4e7887aa60c6eb2d61043a5f)).
