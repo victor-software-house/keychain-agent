@@ -107,6 +107,8 @@ Like every signd record, it keeps that payload in one encrypted field.
 
 A Mac claims it with a save that uses `ifServerRecordUnchanged`, so two claims cannot both succeed.
 A lease past its expiry counts as free, and the same save takes it over.
+
+Each Mac reads the expiry against its own clock, so clocks more than the lease length apart break the exclusion.
 Only the backup reads the lease, so no key change or SSH request ever waits on it.
 
 The holder renews it with the same conditional save before each batch of calls, and stops the run when a renewal fails.

@@ -57,6 +57,11 @@
   - 2026-11-19 UTC: A failed read of one item leaves that item alone and creates no item for a new key.
   - 2026-11-19 UTC: A key changed on this Mac reaches the schedule through the agent's reload request.
     The test sends that request and checks that a run is due after `backup-delay`.
+  - 2026-11-19 UTC: Review fixes of the run, each with a test in `BackupRunTests`.
+    `aKeyRecordWithAnotherPublicKeyGetsNoItemFromTheLocalKey` writes no item and caches nothing for a record whose public key differs from the local copy's.
+    `theLeaseIsRenewedBeforeACallOnceAThirdOfItHasPassed` and `aRenewalThatFailsBeforeAPutStopsTheRunBeforeThatCall` cover the renewal inside a put group.
+  - 2026-11-19 UTC: `aTokenThatDiffersFromTheStoredOneCountsAsAChange` in `BackupTests` covers the sync report that makes a backup run due on a Mac that did not log in.
+    `aPutOrArchiveThatThrowsIsCountedAndTheRunGoesOn`, `aLeaseOfAnotherFormatHoldsUntilItsExpiryAndOnlyAnUnreadableOneIsFree` and `resultsAreMatchedToTheirRequestsWhateverTheOrder` cover the rest.
 - [ ] 1.6 Add `signd backup restore` by design decision 7.
   Verify a unit test that skips a key the store already has.
 - [ ] 1.7 Report the backup in `signd status`.
