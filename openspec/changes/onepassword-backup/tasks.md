@@ -42,9 +42,19 @@
   - 2026-11-19 UTC: A plan that asks for reads returns the cache entries it has.
     An item whose read failed is left alone, and that run creates no item.
   - 2026-11-19 UTC: [CI run 44509529555][ci-69] passed with these tests at `30801d3`.
-- [ ] 1.5 Add the schedule and the lease by design decisions 4 and 5.
+- [x] 1.5 Add the backup run, its schedule and its lease by design decisions 4 and 5.
   Verify unit tests with a fake clock for the delay, the interval and the daily run.
   Verify unit tests for a lease held by another Mac, an expired lease, and a renewal that fails mid-run.
+  Verify a run end to end.
+  - 2026-11-19 UTC: `BackupRunTests` cover the delay, the interval and the daily run with fixed dates and a fake clock.
+    A failed run records its error and waits one interval, with no run after it until the slot comes.
+  - 2026-11-19 UTC: They cover a lease held by another Mac, which stops the run with no CloudKit save and no 1Password call.
+    They cover an expired lease taken over, and a late clear that leaves another Mac's newer claim.
+    A renewal that fails between two create batches stops the run before the second batch.
+  - 2026-11-19 UTC: One run end to end creates four items, then puts one, deletes one and creates one with no item read.
+    The saved cache has each item's exact `updatedAt`, so a third run makes only the list call.
+    The private key field of a created item reads back as the shared key.
+  - 2026-11-19 UTC: A failed read of one item leaves that item alone and creates no item for a new key.
 - [ ] 1.6 Add `signd backup restore` by design decision 7.
   Verify a unit test that skips a key the store already has.
 - [ ] 1.7 Report the backup in `signd status`.
