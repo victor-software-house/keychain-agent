@@ -10,13 +10,14 @@ struct UpdateNow: ParsableCommand {
 
     func run() throws {
         let out = colorOption.standardOutput
+        let asked = Date()
         guard let state = Updater.requestCheck() else { throw Failure("the updater does not answer; install signd from its package") }
         switch state.outcome {
         case .upToDate?:
             print(out.success("signd is up to date (\(state.installed ?? "unknown version"))"))
         case .installed?:
             if let error = state.error { throw Failure(error) }
-            print(out.success("installed \(state.installed ?? "the new version"); the agents restart on it"))
+            print(out.success(Self.installedLine(state, asked: asked)))
         case .off?:
             print(out.warning("updates are off (\(UpdateSettings().enabledSource.rawValue))"))
         case .failed?:
@@ -24,6 +25,17 @@ struct UpdateNow: ParsableCommand {
         case nil:
             throw Failure("the updater answered with no result")
         }
+    }
+
+    /// The line for a check that installed a version.
+    /// Within 5 minutes of a check, the updater answers each request with that check's result.
+    /// A result from a check that began before the request is no new install, so the line gives the time of the install.
+    static func installedLine(_ state: UpdateState, asked: Date) -> String {
+        let version = state.installed ?? "the new version"
+        if let at = state.lastCheck, at < asked.addingTimeInterval(-1) {
+            return "signd is up to date (\(version)), installed at \(at.formatted(.iso8601))"
+        }
+        return "installed \(version); the agents restart on it"
     }
 }
 

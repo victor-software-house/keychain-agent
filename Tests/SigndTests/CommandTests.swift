@@ -97,3 +97,22 @@ private let noUpdates = UpdateStatus(settings: UpdateSettings(managed: noPlist, 
     #expect(Service.Log.arguments(follow: false) == ["show", "--last", "1h", "--info", "--debug"] + predicate)
     #expect(Service.Log.arguments(follow: true) == ["stream", "--level", "debug"] + predicate)
 }
+
+@Test func anInstallFromThisRequestReadsAsAnInstall() {
+    let asked = Date(timeIntervalSince1970: 1_000)
+    var state = UpdateState()
+    state.lastCheck = asked
+    state.installed = "1.2.3"
+    state.outcome = .installed
+    #expect(UpdateNow.installedLine(state, asked: asked) == "installed 1.2.3; the agents restart on it")
+}
+
+@Test func aRepeatedInstallReadsAsUpToDateWithItsTime() {
+    let asked = Date(timeIntervalSince1970: 1_000)
+    var state = UpdateState()
+    state.lastCheck = asked.addingTimeInterval(-60)
+    state.installed = "1.2.3"
+    state.outcome = .installed
+    let at = asked.addingTimeInterval(-60).formatted(.iso8601)
+    #expect(UpdateNow.installedLine(state, asked: asked) == "signd is up to date (1.2.3), installed at \(at)")
+}
