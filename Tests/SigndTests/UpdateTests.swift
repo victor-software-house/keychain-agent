@@ -14,7 +14,7 @@ func temporaryDirectory() throws -> URL {
     var buffer = [CChar](repeating: 0, count: Int(PATH_MAX))
     guard realpath(NSTemporaryDirectory(), &buffer) != nil else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
     let base = URL(filePath: String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self), directoryHint: .isDirectory)
-    let directory = base.appending(path: "signd-updates-\(UUID().uuidString)", directoryHint: .isDirectory)
+    let directory = base.appending(path: "update-tests-\(UUID().uuidString)", directoryHint: .isDirectory)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
     return directory
 }
