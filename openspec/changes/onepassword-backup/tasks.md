@@ -21,13 +21,27 @@
     Those keep their last known state, the next check is incremental, and each check reads them by name.
   - 2026-11-19 UTC: Unit tests also cover a state file and results that contain neither the token nor its base64.
   - 2026-11-19 UTC: The prompt that reads the token with echo off has no test, as it needs a terminal.
-- [ ] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
+- [x] 1.3 Plan a run by design decisions 1 to 3, scope by scope.
   Verify unit tests of the plan for new, changed, removed and foreign items, and for each `backupRemoved` value.
   Verify unit tests for a tagged item with no section, a `--local` key, and a Secure Enclave list per Mac.
-- [ ] 1.4 Cover removals, duplicates and the cache.
+  - 2026-11-19 UTC: `BackupPlannerTests` cover new, changed, renamed, removed and foreign items, and each `backupRemoved` value.
+    They also cover seven malformed tagged items, a `--local` key, and a Secure Enclave list per Mac.
+  - 2026-11-19 UTC: An SSH key field matches by its public key, so a private key in another text form is no change.
+    A renamed Mac or a new item format writes each item once.
+    A printed key, item or plan contains no private key.
+- [x] 1.4 Cover removals, duplicates and the cache.
   Verify unit tests for a failed or partial CloudKit read, which removes nothing.
   Verify a unit test for a completed empty read, which removes the last key's item.
   Verify unit tests for duplicate items and for a current cache, where a run with no difference makes only the list call.
+  - 2026-11-19 UTC: The same tests cover a read that did not complete, which removes nothing and shows why.
+    They cover a completed empty read and a key still in the store.
+    A `Key` record that could not be read keeps every shared item, and this Mac's own keys still go.
+  - 2026-11-19 UTC: They cover duplicates: a slot with a current copy is not written.
+    Otherwise a run writes to the copy the cache records.
+    They cover a current cache with only the list call, and items read in batches of 50.
+  - 2026-11-19 UTC: A plan that asks for reads returns the cache entries it has.
+    An item whose read failed is left alone, and that run creates no item.
+  - 2026-11-19 UTC: [CI run 44509529555][ci-69] passed with these tests at `30801d3`.
 - [ ] 1.5 Add the schedule and the lease by design decisions 4 and 5.
   Verify unit tests with a fake clock for the delay, the interval and the daily run.
   Verify unit tests for a lease held by another Mac, an expired lease, and a renewal that fails mid-run.
@@ -54,3 +68,4 @@
   Verify the key signs on both Macs.
 
 [so-004]: https://github.com/victor-software-house/swift-onepassword/releases/tag/v0.0.4
+[ci-69]: https://github.com/victor-software-house/signd/actions/runs/44509529555

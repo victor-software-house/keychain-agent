@@ -9,12 +9,22 @@ public struct Settings: Sendable {
         case keyLifetime = "key-lifetime"
         case interval
         case backupVault = "backup-vault"
+        case backupRemoved = "backup-removed"
 
         public var defaultValue: String {
             switch self {
             case .keyLifetime: "1h"
             case .interval: "2s"
             case .backupVault: "signd"
+            case .backupRemoved: "delete"
+            }
+        }
+
+        /// The values a text setting accepts, or nil when any name does.
+        public var choices: [String]? {
+            switch self {
+            case .backupRemoved: ["delete", "archive", "keep"]
+            case .keyLifetime, .interval, .backupVault: nil
             }
         }
 
@@ -24,7 +34,7 @@ public struct Settings: Sendable {
             switch self {
             case .keyLifetime: 1...2_592_000
             case .interval: 1...3600
-            case .backupVault: nil
+            case .backupVault, .backupRemoved: nil
             }
         }
     }
@@ -79,7 +89,7 @@ public struct Settings: Sendable {
             guard let value = value(key), !Self.isValid(key, value) else { return nil }
             let reason = key.bounds.map {
                 "not a duration such as 90s, 30m, 1h or 2d from \(Int($0.lowerBound)) to \(Int($0.upperBound)) seconds"
-            } ?? "not a name: use text with no control characters"
+            } ?? key.choices.map { "not one of \($0.joined(separator: ", "))" } ?? "not a name: use text with no control characters"
             return Ignored(key: key.rawValue, value: value, reason: reason)
         }
     }
@@ -107,8 +117,11 @@ public struct Settings: Sendable {
     /// A text setting's value: the local one, else the default. A local value that is not valid text is passed over.
     public func text(_ key: Key) -> String { resolve(key).value }
 
-    /// Whether `text` suits `key`: a duration within its bounds, or for a text setting a non-empty name with no control characters.
+    /// Whether `text` suits `key`.
+    /// A duration must be within its bounds, and a setting with choices takes one of them.
+    /// Another text setting takes a non-empty name with no control characters.
     static func isValid(_ key: Key, _ text: String) -> Bool {
+        if let choices = key.choices { return choices.contains(text) }
         guard key.bounds != nil else { return !text.isEmpty && !text.unicodeScalars.contains { $0.properties.generalCategory == .control } }
         return validSeconds(key, text) != nil
     }
@@ -140,6 +153,7 @@ public enum SettingsError: Error, Sendable, CustomStringConvertible {
         switch self {
         case let .invalid(key, value):
             let setting = Settings.Key(rawValue: key)
+            if let choices = setting?.choices { return "invalid value \(value) for \(key): use one of \(choices.joined(separator: ", "))" }
             if let setting, setting.bounds == nil { return "invalid value \(value) for \(key): use a name with no control characters" }
             let range = setting?.bounds.map { ", from \(Int($0.lowerBound)) to \(Int($0.upperBound)) seconds" } ?? ""
             return "invalid value \(value) for \(key): use a duration such as 90s, 30m, 1h or 2d\(range)"
