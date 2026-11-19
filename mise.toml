@@ -41,7 +41,8 @@ includes = [
 CLOUDKIT_CONTAINER = "iCloud.com.victor-software-house.signd"
 
 [tools]
-"aqua:yonaskolb/XcodeGen" = "2.47.0"
+# XcodeGen ships macOS builds only, and the Linux jobs install every locked tool.
+"aqua:yonaskolb/XcodeGen" = { version = "2.47.0", os = ["macos"] }
 
 # Swift comes from the selected Xcode, which macOS runners and the box hosts carry.
 [tasks.build]
