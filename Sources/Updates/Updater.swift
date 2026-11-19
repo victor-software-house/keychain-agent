@@ -20,7 +20,6 @@ public actor Updater {
     private var state: UpdateState
     private var running: Task<UpdateState, Never>?
     private var lastActivity: Date
-    private var isStopping = false
 
     /// `run` performs one check; `UpdateRun.perform`.
     public init(run: @escaping @Sendable () async -> UpdateState, now: @escaping @Sendable () -> Date = { Date() }, stateURL: URL = UpdateState.defaultURL) {
@@ -32,14 +31,7 @@ public actor Updater {
     }
 
     /// Checks now, or answers with the check that is running or was recorded in the last 5 minutes.
-    /// After `shutdown` it refuses, with a failed result that asks for a new request, since the process is about to exit.
     public func check() async -> UpdateState {
-        if isStopping {
-            var refused = state
-            refused.outcome = .failed
-            refused.error = "the updater is shutting down; run the request again"
-            return refused
-        }
         lastActivity = now()
         if let running { return await running.value }
         if let outcome = state.outcome, outcome != .off, let last = state.lastCheck, now().timeIntervalSince(last) < Self.recheckWindow { return state }
@@ -54,14 +46,6 @@ public actor Updater {
     /// Whether no check is running and none began or ended in the last `seconds`.
     public func isIdle(for seconds: TimeInterval) -> Bool {
         running == nil && now().timeIntervalSince(lastActivity) >= seconds
-    }
-
-    /// Marks the updater as stopping, unless a check runs or began or ended in the last `seconds`.
-    /// It returns whether it did: the caller exits the process only then, and later `check` calls refuse.
-    public func shutdown(idleFor seconds: TimeInterval) -> Bool {
-        guard isIdle(for: seconds) else { return false }
-        isStopping = true
-        return true
     }
 
     private func perform() async -> UpdateState {
