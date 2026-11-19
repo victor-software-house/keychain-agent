@@ -5,19 +5,103 @@ import Foundation
 import KeyStore
 import Sync
 
-/// Answers the agent's backup requests with the vault check and the sync service.
-struct BackupAgent: BackupLogin {
+/// Answers the agent's backup requests with the vault check, the restore and the sync service.
+struct BackupAgent: BackupCommands {
     let service: BackupLoginService
+    let restorer: BackupRestore
+    let sync: SyncService
+    let agent: Agent
+    let backup: BackupService?
+    let tokens: any TokenStore
+    let settings: Settings
 
     func logIn(token: String, vault: String) async -> SyncResult { await service.logIn(token: token, vault: vault) }
 
     func logOut() async -> SyncResult { await service.logOut() }
+
+    func list() async -> BackupRestoreList { await restorer.list() }
+
+    /// Restores the keys into the store, shares each unless `local`, and reloads the agent once.
+    func restore(names: [String], all: Bool, local: Bool) async -> [RestoredKey] {
+        var results = await restorer.restore(names: names, all: all)
+        guard results.contains(where: { $0.outcome == .restored }) else { return results }
+        if !local {
+            for index in results.indices where results[index].outcome == .restored {
+                let name = results[index].name
+                let shared = await sync.share(name)
+                switch shared.outcome {
+                case .done:
+                    break
+                case .off:
+                    results[index].reason = shared.message ?? "sync is off; \(name) stays on this Mac"
+                case .failed:
+                    results[index] = RestoredKey(
+                        name: name, outcome: .failed, reason: "restored on this Mac, but not shared: \(shared.message ?? "unknown reason"); run signd key share \(name)"
+                    )
+                }
+            }
+        }
+        await agent.reload()
+        await backup?.keysDidChange()
+        return results
+    }
+
+    func status() async -> BackupStatus {
+        let state = await backup?.snapshot() ?? BackupState.load()
+        return BackupStatus(isOn: isTokenStored(), vault: settings.text(.backupVault), state: state, schedule: BackupSchedule(settings: settings))
+    }
+
+    /// Whether a token is stored; nil when the keychain cannot be read.
+    private func isTokenStored() -> Bool? {
+        do {
+            guard var token = try tokens.read() else { return false }
+            token.resetBytes(in: 0..<token.count)
+            return true
+        } catch {
+            return nil
+        }
+    }
+}
+
+extension RestoredKey {
+    /// The line `signd backup restore` prints.
+    var line: String {
+        switch outcome {
+        case .restored: reason.map { "restored \(name): \($0)" } ?? "restored \(name)"
+        case .skipped: "skipped \(name): \(reason ?? "no reason")"
+        case .failed: "failed \(name): \(reason ?? "no reason")"
+        }
+    }
+}
+
+extension BackupStatus {
+    /// The lines `signd status` and `signd backup status` print.
+    var lines: [String] {
+        var lines: [String]
+        switch isOn {
+        case true?: lines = ["backup  on, vault \(vault)"]
+        case false?: lines = ["backup  off; run signd backup login"]
+        case nil: lines = ["backup  not known, vault \(vault)"]
+        }
+        if let lastRun, let lastOutcome {
+            lines.append("last backup  \(lastRun.formatted(.iso8601)) \(lastOutcome.rawValue)\(lastError.map { ": \($0)" } ?? "")")
+        }
+        if let nextRun { lines.append("next backup  \(nextRun.formatted(.iso8601))") }
+        return lines
+    }
 }
 
 struct BackupCommand: ParsableCommand {
     static let configuration = CommandConfiguration(
-        commandName: "backup", abstract: "Log in to and out of the 1Password backup.", subcommands: [Login.self, Logout.self]
+        commandName: "backup", abstract: "Log in to and out of the 1Password backup, restore keys from it and show its state.",
+        subcommands: [Login.self, Logout.self, Restore.self, Status.self]
     )
+
+    /// The backup's status from the agent, or from the state file with the token unknown when no agent answers.
+    static func status(client: AgentClient, settings: Settings) -> BackupStatus {
+        client.backupStatus()
+            ?? BackupStatus(isOn: nil, vault: settings.text(.backupVault), state: BackupState.load(), schedule: BackupSchedule(settings: settings))
+    }
 
     /// The token as stdin gave it, without its one trailing newline.
     static func token(from input: Data) -> String? {
@@ -68,6 +152,56 @@ struct BackupCommand: ParsableCommand {
             guard let result = AgentClient(path: defaultSocketPath).logOutOfBackup() else { throw Failure("the agent does not answer") }
             guard result.outcome == .done else { throw Failure(result.message ?? "the logout failed") }
             print("logged out")
+        }
+    }
+
+    struct Restore: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "List the keys of the backup, or restore them.",
+            discussion: "With no names and no --all, it lists the keys. A restored key is shared with every Mac unless --local. A key the store already has is skipped."
+        )
+        @Argument(help: "The names of the keys to restore.") var names: [String] = []
+        @Flag(help: "Restore every key of the backup.") var all = false
+        @Flag(help: "Keep the restored keys on this Mac instead of sharing them through iCloud.") var local = false
+        @OptionGroup var output: JSONOption
+
+        func validate() throws {
+            if all && !names.isEmpty { throw ValidationError("give key names or --all, not both") }
+        }
+
+        func run() throws {
+            let client = AgentClient(path: defaultSocketPath)
+            if names.isEmpty && !all {
+                guard let list = client.backupKeys() else { throw Failure("the agent does not answer") }
+                if output.json {
+                    try output.print(list)
+                } else {
+                    for key in list.keys { print([key.name, key.scope, key.fingerprint].joined(separator: "  ")) }
+                }
+                if let failure = list.failure { throw Failure(failure) }
+                return
+            }
+            guard let results = client.restoreBackupKeys(names: names, all: all, local: local) else { throw Failure("the agent does not answer") }
+            if output.json {
+                try output.print(results)
+            } else {
+                for result in results { print(result.line) }
+            }
+            if results.contains(where: { $0.outcome == .failed }) { throw ExitCode.failure }
+        }
+    }
+
+    struct Status: ParsableCommand {
+        static let configuration = CommandConfiguration(abstract: "Show whether the backup is on, its last run and its next run.")
+        @OptionGroup var output: JSONOption
+
+        func run() throws {
+            let status = BackupCommand.status(client: AgentClient(path: defaultSocketPath), settings: Settings())
+            if output.json {
+                try output.print(status)
+            } else {
+                for line in status.lines { print(line) }
+            }
         }
     }
 }

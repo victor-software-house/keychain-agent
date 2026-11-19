@@ -53,7 +53,7 @@ let package = Package(
         .target(
             name: "AgentServer",
             dependencies: [
-                "AgentProtocol", "KeyStore", "SSHEncoding", "Sync",
+                "AgentProtocol", "Backup", "KeyStore", "SSHEncoding", "Sync",
                 .product(name: "NIOCore", package: "swift-nio"),
                 .product(name: "NIOPosix", package: "swift-nio"),
                 .product(name: "NIOFoundationCompat", package: "swift-nio"),
