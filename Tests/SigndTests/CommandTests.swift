@@ -5,10 +5,13 @@ import Foundation
 import Testing
 @testable import SigndCLI
 @testable import Sync
+@testable import Updates
+
+private let noUpdates = UpdateStatus(settings: UpdateSettings(managed: noPlist, machine: noPlist), state: UpdateState())
 
 @Test func theJSONReportCarriesTheLoginItemAndTheSSHInclude() throws {
     let sync = SyncStatus(state: SyncState(), settings: Settings(local: { _ in nil }))
-    let report = Status.Report(version: "0.0.0", socket: "/s", agentAnswers: false, agent: nil, sync: sync, backup: nil, loginItem: .requiresApproval, isSSHIncludeEnabled: true)
+    let report = Status.Report(version: "0.0.0", socket: "/s", agentAnswers: false, agent: nil, sync: sync, backup: nil, update: noUpdates, loginItem: .requiresApproval, isSSHIncludeEnabled: true)
     let object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any])
     #expect(object["loginItem"] as? String == "requiresApproval")
     #expect(object["sshInclude"] as? Bool == true)
@@ -22,7 +25,7 @@ import Testing
     state.lastError = "boom"
     let sync = SyncStatus(state: SyncState(), settings: Settings(local: { _ in nil }))
     func backup(of status: BackupStatus) throws -> [String: Any] {
-        let report = Status.Report(version: "0.0.0", socket: "/s", agentAnswers: true, agent: nil, sync: sync, backup: status, loginItem: .enabled, isSSHIncludeEnabled: true)
+        let report = Status.Report(version: "0.0.0", socket: "/s", agentAnswers: true, agent: nil, sync: sync, backup: status, update: noUpdates, loginItem: .enabled, isSSHIncludeEnabled: true)
         let object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any])
         return try #require(object["backup"] as? [String: Any])
     }
@@ -45,6 +48,43 @@ import Testing
     #expect(unknown["isOn"] == nil)
     // A run that has never happened is due now.
     #expect(unknown["nextRun"] as? Double == at(10).timeIntervalSinceReferenceDate)
+}
+
+@Test func theJSONReportCarriesTheUpdateFields() throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let machine = directory.appending(path: "machine.plist")
+    try writePlist(["updates": false], to: machine)
+    var state = UpdateState()
+    state.lastCheck = at(0)
+    state.installed = "0.0.13"
+    state.latest = "0.0.14"
+    state.outcome = .failed
+    state.error = "boom"
+    let update = UpdateStatus(settings: UpdateSettings(managed: noPlist, machine: machine), state: state)
+    let sync = SyncStatus(state: SyncState(), settings: Settings(local: { _ in nil }))
+    let report = Status.Report(
+        version: "0.0.0", socket: "/s", agentAnswers: true, agent: nil, sync: sync, backup: nil, update: update, loginItem: .enabled, isSSHIncludeEnabled: true
+    )
+    let object = try #require(JSONSerialization.jsonObject(with: JSONEncoder().encode(report)) as? [String: Any])
+    let json = try #require(object["update"] as? [String: Any])
+    let settings = try #require(json["settings"] as? [String: Any])
+    #expect(settings["updates"] as? Bool == false)
+    #expect(settings["updatesSource"] as? String == "machine")
+    #expect(settings["interval"] as? String == "6h")
+    #expect(settings["intervalSource"] as? String == "default")
+    let last = try #require(json["state"] as? [String: Any])
+    #expect(last["outcome"] as? String == "failed")
+    #expect(last["error"] as? String == "boom")
+    #expect(last["installed"] as? String == "0.0.13")
+    #expect(last["latest"] as? String == "0.0.14")
+    #expect(last["lastCheck"] as? Double == at(0).timeIntervalSinceReferenceDate)
+    #expect(update.lines == ["updates  off (machine)", "last update check  \(at(0).formatted(.iso8601)) failed: boom"])
+}
+
+@Test func theUpdateLinesShowTheIntervalAndItsSource() {
+    let settings = UpdateSettings(managed: noPlist, machine: noPlist)
+    #expect(UpdateStatus(settings: settings, state: UpdateState()).lines == ["updates  on, every 6h (default)"])
 }
 
 @Test func serviceEnableTakesAtLoginFromTheHook() throws {
