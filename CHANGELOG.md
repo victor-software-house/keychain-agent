@@ -1,5 +1,13 @@
 # Changelog
 
+## signd 0.0.19
+
+- Command messages read as plain English.
+  After an update, `signd update` prints `updated signd from 0.0.17 to 0.0.18 and restarted the agent`.
+  A later run within 5 minutes prints `signd is up to date`, with the versions and the time of the update.
+  When the updater cannot be reached, the error gives the command that fixes it.
+  `signd status` shows the agent as `running` or `not running` ([`d46233a`](https://github.com/victor-software-house/signd/commit/d46233a00d05f2e9df81ddd8cb8f72bc4f3a82d7)).
+
 ## signd 0.0.18
 
 - On a terminal, signd marks each result with a coloured symbol and colours the values of `signd status`.
